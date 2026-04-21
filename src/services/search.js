@@ -45,6 +45,89 @@ function normalizeQuery(query) {
     .replace(/[－–—]/g, '-')
 }
 
+function parseCoordinateText(value) {
+  const match = value.match(/(-?\d+\.\d+),\s*(-?\d+\.\d+)/)
+  if (!match) return null
+
+  return {
+    lat: Number(match[1]),
+    lng: Number(match[2]),
+  }
+}
+
+function extractGoogleMapsResult(rawUrl) {
+  let url
+
+  try {
+    url = new URL(rawUrl)
+  } catch {
+    return null
+  }
+
+  const hostname = url.hostname.toLowerCase()
+  if (!hostname.includes('google.') && hostname !== 'maps.app.goo.gl') {
+    return null
+  }
+
+  if (hostname === 'maps.app.goo.gl') {
+    return { needsResolve: true, url: rawUrl }
+  }
+
+  const latLngMatch = url.href.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/)
+  if (latLngMatch) {
+    return {
+      label: decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || 'Google Maps pin'),
+      lat: Number(latLngMatch[1]),
+      lng: Number(latLngMatch[2]),
+    }
+  }
+
+  const queryCandidates = [
+    url.searchParams.get('query'),
+    url.searchParams.get('q'),
+    url.searchParams.get('ll'),
+    url.searchParams.get('destination'),
+  ].filter(Boolean)
+
+  for (const candidate of queryCandidates) {
+    const coordinates = parseCoordinateText(candidate)
+    if (coordinates) {
+      return {
+        label: 'Google Maps pin',
+        ...coordinates,
+      }
+    }
+  }
+
+  const pathSegments = url.pathname.split('/').filter(Boolean)
+  const placeIndex = pathSegments.findIndex((segment) => segment === 'place')
+  if (placeIndex >= 0 && pathSegments[placeIndex + 1]) {
+    const label = decodeURIComponent(pathSegments[placeIndex + 1]).replace(/\+/g, ' ')
+    return {
+      needsSearch: true,
+      query: label,
+    }
+  }
+
+  if (queryCandidates.length) {
+    return {
+      needsSearch: true,
+      query: queryCandidates[0],
+    }
+  }
+
+  return null
+}
+
+async function resolveGoogleShortUrl(url) {
+  const response = await fetch(`/api/resolve-map?url=${encodeURIComponent(url)}`)
+  if (!response.ok) {
+    throw new Error('Unable to resolve Google Maps short link')
+  }
+
+  return response.json()
+}
+
 function buildVariants(query) {
   const normalized = normalizeQuery(query)
   if (!normalized) return []
@@ -88,7 +171,7 @@ async function runNominatimSearch(query) {
   const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
     headers: {
       Accept: 'application/json',
-      'Accept-Language': 'ja,en',
+      'Accept-Language': 'ja,en,zh-Hant,zh-Hans',
     },
   })
 
@@ -99,7 +182,7 @@ async function runNominatimSearch(query) {
   return response.json()
 }
 
-export async function searchPlaces(query) {
+async function searchByText(query) {
   const variants = buildVariants(query)
   if (!variants.length) return []
 
@@ -127,4 +210,44 @@ export async function searchPlaces(query) {
   }
 
   return results
+}
+
+export async function searchPlaces(query) {
+  const trimmed = query.trim()
+  if (!trimmed) return []
+
+  const googleCandidate = extractGoogleMapsResult(trimmed)
+
+  if (googleCandidate?.needsResolve) {
+    const resolved = await resolveGoogleShortUrl(googleCandidate.url)
+    if (resolved?.lat && resolved?.lng) {
+      return [
+        {
+          label: resolved.label || 'Google Maps pin',
+          lat: Number(resolved.lat),
+          lng: Number(resolved.lng),
+        },
+      ]
+    }
+
+    if (resolved?.query) {
+      return searchByText(resolved.query)
+    }
+  }
+
+  if (googleCandidate?.lat && googleCandidate?.lng) {
+    return [
+      {
+        label: googleCandidate.label || 'Google Maps pin',
+        lat: googleCandidate.lat,
+        lng: googleCandidate.lng,
+      },
+    ]
+  }
+
+  if (googleCandidate?.needsSearch) {
+    return searchByText(googleCandidate.query)
+  }
+
+  return searchByText(trimmed)
 }
