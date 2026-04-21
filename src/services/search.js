@@ -66,6 +66,21 @@ function parseGoogleDataPayload(value) {
   }
 }
 
+function getGoogleLabelFromUrl(url) {
+  const pathSegments = url.pathname.split('/').filter(Boolean)
+  const placeIndex = pathSegments.findIndex((segment) => segment === 'place')
+  if (placeIndex >= 0 && pathSegments[placeIndex + 1]) {
+    return decodeURIComponent(pathSegments[placeIndex + 1]).replace(/\+/g, ' ')
+  }
+
+  const lastSegment = pathSegments[pathSegments.length - 1]
+  if (!lastSegment || lastSegment.startsWith('data=')) {
+    return 'Google Maps pin'
+  }
+
+  return decodeURIComponent(lastSegment).replace(/\+/g, ' ')
+}
+
 function extractGoogleMapsResult(rawUrl) {
   let url
 
@@ -87,7 +102,7 @@ function extractGoogleMapsResult(rawUrl) {
   const latLngMatch = url.href.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/)
   if (latLngMatch) {
     return {
-      label: decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || 'Google Maps pin'),
+      label: getGoogleLabelFromUrl(url),
       lat: Number(latLngMatch[1]),
       lng: Number(latLngMatch[2]),
     }
