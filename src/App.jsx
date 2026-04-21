@@ -10,28 +10,20 @@ import React, {
   useState,
 } from 'react'
 import {
-  CarFront,
   Check,
   Cloud,
   CloudRain,
   Copy,
   ExternalLink,
-  Hotel,
-  Laptop,
   Loader2,
   MapPinned,
   Navigation,
-  PartyPopper,
-  Plane,
   Plus,
   Search,
-  ShoppingBag,
-  Smartphone,
-  Sparkles,
   Sun,
   X,
 } from 'lucide-react'
-import { STATIC_ITINERARY, TRAVELLER_PROFILE, TRIP_DATES } from './data/seedItinerary'
+import { STATIC_ITINERARY, TRIP_DATES } from './data/seedItinerary'
 import {
   ensureAnonymousAuth,
   firebaseEnabled,
@@ -46,10 +38,6 @@ const SAVE_DEBOUNCE_MS = 1000
 const LONG_PRESS_MS = 600
 const MOVE_THRESHOLD = 10
 const DAY_FILTERS = ['All', ...TRIP_DATES]
-const VIEW_MODES = [
-  { id: 'desktop', label: 'Desktop', icon: Laptop },
-  { id: 'mobile', label: 'Mobile portrait', icon: Smartphone },
-]
 const TripMap = lazy(() => import('./components/TripMap'))
 
 function getDateKey(iso) {
@@ -77,12 +65,16 @@ function formatDay(date) {
   }).format(new Date(`${date}T00:00:00+09:00`))
 }
 
+function getLocation(item) {
+  return item.location || item.venue || ''
+}
+
 function typeMeta(category) {
-  if (category === 'Flight') return { icon: Plane, tone: 'bg-sky-50 text-sky-600' }
-  if (category === 'Car') return { icon: CarFront, tone: 'bg-indigo-50 text-indigo-600' }
-  if (category === 'Hotel') return { icon: Hotel, tone: 'bg-amber-50 text-amber-600' }
-  if (category === 'Wedding') return { icon: PartyPopper, tone: 'bg-pink-50 text-pink-600' }
-  return { icon: ShoppingBag, tone: 'bg-emerald-50 text-emerald-600' }
+  if (category === 'Flight') return { tone: 'bg-sky-50 text-sky-600' }
+  if (category === 'Car') return { tone: 'bg-indigo-50 text-indigo-600' }
+  if (category === 'Hotel') return { tone: 'bg-amber-50 text-amber-600' }
+  if (category === 'Wedding') return { tone: 'bg-pink-50 text-pink-600' }
+  return { tone: 'bg-emerald-50 text-emerald-600' }
 }
 
 function distanceKm(from, to) {
@@ -95,15 +87,69 @@ function routeLabel(mode) {
   return mode === 'foot' ? 'Walk' : 'Drive'
 }
 
+function getWeatherDisplay(activeDay, weatherState, selectedWeather) {
+  if (activeDay === 'All') {
+    return null
+  }
+
+  if (weatherState.loading) {
+    return {
+      headline: 'Loading weather',
+      detail: 'Checking the Open-Meteo forecast for this day.',
+      icon: Cloud,
+    }
+  }
+
+  if (weatherState.error) {
+    return {
+      headline: weatherState.error,
+      detail: 'Live weather could not be loaded right now.',
+      icon: Cloud,
+    }
+  }
+
+  if (selectedWeather) {
+    return {
+      headline: `${Math.round(selectedWeather.tempMax)}° · Rain ${selectedWeather.rainProbability ?? 0}%`,
+      detail: selectedWeather.label,
+      icon: selectedWeather.rainProbability >= 40 ? CloudRain : Sun,
+    }
+  }
+
+  const availableDates = weatherState.data?.availableDates || []
+  const firstAvailable = availableDates[0]
+  const lastAvailable = availableDates[availableDates.length - 1]
+
+  return {
+    headline: 'Forecast not available yet',
+    detail:
+      firstAvailable && lastAvailable
+        ? `Open-Meteo currently covers ${formatDay(firstAvailable)} to ${formatDay(lastAvailable)} only.`
+        : 'Open-Meteo has not returned a usable forecast window yet.',
+    icon: Cloud,
+  }
+}
+
+function normalizeItem(item) {
+  return {
+    ...item,
+    location: getLocation(item),
+  }
+}
+
 function mergeItems(overrides) {
   const staticIds = new Set(STATIC_ITINERARY.map((item) => item.id))
-  const mergedStatic = STATIC_ITINERARY.map((item) => ({ ...item, ...(overrides[item.id] || {}) }))
+  const mergedStatic = STATIC_ITINERARY.map((item) =>
+    normalizeItem({ ...item, ...(overrides[item.id] || {}) }),
+  )
   const userItems = Object.entries(overrides)
     .filter(([id]) => !staticIds.has(id))
-    .map(([id, item]) => ({
-      id,
-      ...item,
-    }))
+    .map(([id, item]) =>
+      normalizeItem({
+        id,
+        ...item,
+      }),
+    )
 
   return [...mergedStatic, ...userItems].sort((a, b) => a.startISO.localeCompare(b.startISO))
 }
@@ -115,9 +161,38 @@ function getRoutePairs(items) {
     .filter(([from, to]) => typeof from.lat === 'number' && typeof to.lat === 'number')
 }
 
+function useResponsiveMode() {
+  const [isMobilePortrait, setIsMobilePortrait] = useState(() =>
+    typeof window === 'undefined'
+      ? false
+      : window.matchMedia('(max-width: 900px)').matches,
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+
+    const media = window.matchMedia('(max-width: 900px)')
+    const update = () => {
+      setIsMobilePortrait(media.matches)
+    }
+
+    update()
+    media.addEventListener('change', update)
+    window.addEventListener('resize', update)
+    window.addEventListener('orientationchange', update)
+
+    return () => {
+      media.removeEventListener('change', update)
+      window.removeEventListener('resize', update)
+      window.removeEventListener('orientationchange', update)
+    }
+  }, [])
+
+  return isMobilePortrait
+}
+
 export default function App() {
   const [activeDay, setActiveDay] = useState('All')
-  const [viewMode, setViewMode] = useState('desktop')
   const [overrides, setOverrides] = useState({})
   const [authReady, setAuthReady] = useState(false)
   const [firestoreState, setFirestoreState] = useState({
@@ -125,11 +200,12 @@ export default function App() {
     error: '',
   })
   const [weatherState, setWeatherState] = useState({ loading: true, data: null, error: '' })
-  const [editingItem, setEditingItem] = useState(null)
+  const [noteItem, setNoteItem] = useState(null)
+  const [detailItem, setDetailItem] = useState(null)
   const [autosaveStatus, setAutosaveStatus] = useState(firebaseEnabled ? 'saved' : 'offline')
-  const [actionItem, setActionItem] = useState(null)
   const [routeMap, setRouteMap] = useState({})
 
+  const isMobilePortrait = useResponsiveMode()
   const debounceRef = useRef(null)
   const routeCacheRef = useRef(new Map())
   const pressStateRef = useRef({
@@ -170,15 +246,18 @@ export default function App() {
         if (!active) return
 
         setAuthReady(true)
-        unsubscribe = await subscribeToOverrides((payload) => {
-          setOverrides(payload?.items || {})
-          setFirestoreState({ status: 'ready', error: '' })
-        }, (error) => {
-          console.error(error)
-          if (active) {
-            setFirestoreState({ status: 'error', error: error?.message || 'Snapshot failed' })
-          }
-        })
+        unsubscribe = await subscribeToOverrides(
+          (payload) => {
+            setOverrides(payload?.items || {})
+            setFirestoreState({ status: 'ready', error: '' })
+          },
+          (error) => {
+            console.error(error)
+            if (active) {
+              setFirestoreState({ status: 'error', error: error?.message || 'Snapshot failed' })
+            }
+          },
+        )
       } catch (error) {
         console.error(error)
         if (active) {
@@ -213,7 +292,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!editingItem || !firebaseEnabled || !authReady) return
+    if (!detailItem || !firebaseEnabled || !authReady) return
 
     if (debounceRef.current) {
       window.clearTimeout(debounceRef.current)
@@ -221,16 +300,16 @@ export default function App() {
 
     debounceRef.current = window.setTimeout(async () => {
       try {
-        await upsertItemOverride(editingItem.id, {
-          title: editingItem.title,
-          venue: editingItem.venue,
-          description: editingItem.description,
-          bookingRef: editingItem.bookingRef,
-          startISO: editingItem.startISO,
-          endISO: editingItem.endISO,
-          category: editingItem.category,
-          lat: editingItem.lat,
-          lng: editingItem.lng,
+        await upsertItemOverride(detailItem.id, {
+          title: detailItem.title,
+          location: detailItem.location,
+          description: detailItem.description,
+          bookingRef: detailItem.bookingRef,
+          startISO: detailItem.startISO,
+          endISO: detailItem.endISO,
+          category: detailItem.category,
+          lat: detailItem.lat,
+          lng: detailItem.lng,
         })
         setAutosaveStatus('saved')
       } catch (error) {
@@ -244,13 +323,12 @@ export default function App() {
         window.clearTimeout(debounceRef.current)
       }
     }
-  }, [editingItem, authReady])
+  }, [detailItem, authReady])
 
   const routePairs = useMemo(() => getRoutePairs(deferredItems), [deferredItems])
 
   useEffect(() => {
     let cancelled = false
-
     if (!routePairs.length) return
 
     async function loadRoutes() {
@@ -297,22 +375,31 @@ export default function App() {
         const next = deferredItems[index + 1]
         const mode = distanceKm(item, next) <= 1.5 ? 'foot' : 'driving'
         const key = `${item.id}:${next.id}:${mode}`
-
         return { id: key, from: item, to: next, route: routeMap[key], mode }
       }),
     [deferredItems, routeMap],
   )
 
-  function openEditor(item) {
-    if (!firestoreReady) return
-    setAutosaveStatus('saved')
-    setEditingItem({ ...item })
+  function openNotes(item) {
+    setNoteItem({
+      id: item.id,
+      title: item.title,
+      description: item.description || '',
+      bookingRef: item.bookingRef || '',
+      location: item.location,
+    })
   }
 
-  function updateEditing(changes) {
+  function openDetails(item) {
+    if (!firestoreReady) return
+    setAutosaveStatus('saved')
+    setDetailItem({ ...item })
+  }
+
+  function updateDetail(changes) {
     if (!firestoreReady) return
     setAutosaveStatus('saving')
-    setEditingItem((current) => (current ? { ...current, ...changes } : current))
+    setDetailItem((current) => (current ? { ...current, ...changes } : current))
   }
 
   function clearPressState() {
@@ -340,8 +427,7 @@ export default function App() {
         const state = pressStateRef.current
         if (!state.moved && state.itemId === item.id) {
           pressStateRef.current.longPressed = true
-          navigator.vibrate?.(50)
-          setActionItem(item)
+          openDetails(item)
         }
       }, LONG_PRESS_MS),
       pointerId: event.pointerId,
@@ -372,139 +458,92 @@ export default function App() {
     const state = pressStateRef.current
     if (state.pointerId !== event.pointerId) return
 
-    const shouldOpenEditor = !state.moved && !state.longPressed && state.itemId === item.id
+    const shouldOpenNotes = !state.moved && !state.longPressed && state.itemId === item.id
     clearPressState()
-    if (shouldOpenEditor) {
-      openEditor(item)
+    if (shouldOpenNotes) {
+      openNotes(item)
     }
   }
-
-  const plannerPanel = (
-    <PlannerPanel
-      activeDay={activeDay}
-      filteredItems={filteredItems}
-      firestoreReady={firestoreReady}
-      firestoreState={firestoreState}
-      routeSegments={routeSegments}
-      onDayChange={(day) => {
-        startTransition(() => {
-          setActiveDay(day)
-        })
-      }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerEnd={handlePointerEnd}
-      onPointerCancel={clearPressState}
-      onSaveNewItem={upsertItemOverride}
-      selectedWeather={selectedWeather}
-      weatherState={weatherState}
-    />
-  )
-
-  const mapPanel = (
-    <MemoMapPanel
-      activeDay={activeDay}
-      filteredItems={deferredItems}
-      movementPoints={movementPoints}
-      routeSegments={routeSegments}
-      viewMode={viewMode}
-    />
-  )
 
   return (
     <main className="mx-auto min-h-screen max-w-7xl px-4 py-5 text-slate-900 sm:px-6 lg:px-8">
       <section className="glass-panel rounded-[2rem] border border-white/60 px-5 py-5 sm:px-7">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-indigo-700">
-              <Sparkles className="h-3.5 w-3.5" />
-              Trip control
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="headline text-3xl leading-tight sm:text-5xl">Trip planner</h1>
+          {firestoreState.status === 'error' ? (
+            <div className="rounded-full bg-rose-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-rose-600">
+              Firestore error
             </div>
-            <h1 className="headline mt-3 text-3xl leading-tight sm:text-5xl">Interactive trip planner</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-700">
-              Plan the May 9-13 family trip, review movement on the map, and keep every itinerary detail synced to Firestore.
-            </p>
-          </div>
-
-          <div className="grid gap-2 sm:grid-cols-2 xl:min-w-[27rem]">
-            <StatCard
-              icon={Cloud}
-              label="Firestore sync"
-              value={
-                firestoreState.status === 'ready'
-                  ? 'Ready for save'
-                  : firestoreState.status === 'connecting'
-                    ? 'Connecting'
-                    : firestoreState.status === 'error'
-                      ? 'Connection error'
-                      : 'Not configured'
-              }
-            />
-            <StatCard icon={Plane} label="Travellers" value={TRAVELLER_PROFILE.party.join(' · ')} />
-          </div>
-        </div>
-
-        <div className="mt-5 flex flex-col gap-3 border-t border-white/60 pt-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">View mode</p>
-            <h2 className="headline mt-2 text-2xl text-slate-900">Toggle desktop or mobile portrait</h2>
-          </div>
-
-          <div className="inline-flex rounded-[1.25rem] bg-slate-100 p-1.5">
-            {VIEW_MODES.map((mode) => {
-              const Icon = mode.icon
-              return (
-                <button
-                  key={mode.id}
-                  type="button"
-                  onClick={() => {
-                    startTransition(() => {
-                      setViewMode(mode.id)
-                    })
-                  }}
-                  className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
-                    viewMode === mode.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  {mode.label}
-                </button>
-              )
-            })}
-          </div>
+          ) : null}
         </div>
       </section>
 
-      {viewMode === 'desktop' ? (
-        <section className="mt-6 grid gap-6 lg:grid-cols-[1.06fr_0.94fr]">
-          <div className="space-y-4">{plannerPanel}</div>
-          <div className="space-y-4">{mapPanel}</div>
-        </section>
-      ) : (
-        <section className="mt-6 mx-auto max-w-md space-y-4">
-          {plannerPanel}
-          {mapPanel}
-        </section>
-      )}
+      <section
+        className={
+          isMobilePortrait
+            ? 'mx-auto mt-6 max-w-md space-y-4'
+            : 'mt-6 grid gap-6 lg:grid-cols-[1.06fr_0.94fr]'
+        }
+      >
+        <div className="space-y-4">
+          <PlannerPanel
+            activeDay={activeDay}
+            filteredItems={filteredItems}
+            firestoreReady={firestoreReady}
+            firestoreState={firestoreState}
+            routeSegments={routeSegments}
+            onDayChange={(day) => {
+              startTransition(() => {
+                setActiveDay(day)
+              })
+            }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerEnd={handlePointerEnd}
+            onPointerCancel={clearPressState}
+            onSaveNewItem={upsertItemOverride}
+            selectedWeather={selectedWeather}
+            weatherState={weatherState}
+            isMobilePortrait={isMobilePortrait}
+          />
+        </div>
 
-      {editingItem ? (
-        <EditModal
-          autosaveStatus={autosaveStatus}
-          editingItem={editingItem}
-          onChange={updateEditing}
-          onClose={() => setEditingItem(null)}
+        <div className="space-y-4">
+          <MemoMapPanel
+            activeDay={activeDay}
+            filteredItems={deferredItems}
+            movementPoints={movementPoints}
+            routeSegments={routeSegments}
+            isMobilePortrait={isMobilePortrait}
+          />
+        </div>
+      </section>
+
+      {noteItem ? (
+        <NoteModal
+          item={noteItem}
+          isMobilePortrait={isMobilePortrait}
+          onClose={() => setNoteItem(null)}
+          onOpenDetails={() => {
+            const match = items.find((item) => item.id === noteItem.id)
+            setNoteItem(null)
+            if (match) {
+              openDetails(match)
+            }
+          }}
         />
       ) : null}
 
-      {actionItem ? (
-        <ActionSheet
-          actionItem={actionItem}
-          onClose={() => setActionItem(null)}
-          onEdit={() => {
-            const item = actionItem
-            setActionItem(null)
-            openEditor(item)
-          }}
+      {detailItem ? (
+        <DetailModal
+          key={detailItem.id}
+          autosaveStatus={autosaveStatus}
+          detailItem={detailItem}
+          firestoreReady={firestoreReady}
+          firestoreState={firestoreState}
+          isMobilePortrait={isMobilePortrait}
+          onChange={updateDetail}
+          onClose={() => setDetailItem(null)}
         />
       ) : null}
     </main>
@@ -525,14 +564,16 @@ function PlannerPanel({
   onSaveNewItem,
   selectedWeather,
   weatherState,
+  isMobilePortrait,
 }) {
+  const weatherDisplay = getWeatherDisplay(activeDay, weatherState, selectedWeather)
   const [searchState, setSearchState] = useState({ loading: false, results: [], error: '' })
   const [newItem, setNewItem] = useState({
     date: '2026-05-10',
     time: '10:00',
     category: 'Activity',
     title: '',
-    venue: '',
+    location: '',
     description: '',
     bookingRef: '',
     lat: null,
@@ -560,7 +601,7 @@ function PlannerPanel({
     await onSaveNewItem(id, {
       id,
       title: newItem.title || 'New plan item',
-      venue: newItem.venue || 'Location TBD',
+      location: newItem.location || 'Location TBD',
       category: newItem.category,
       startISO,
       endISO: startISO,
@@ -574,7 +615,7 @@ function PlannerPanel({
       ...current,
       time: '10:00',
       title: '',
-      venue: '',
+      location: '',
       description: '',
       bookingRef: '',
       lat: null,
@@ -588,14 +629,11 @@ function PlannerPanel({
     <>
       <div className="glass-panel rounded-[1.75rem] border border-white/60 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Planner</p>
-            <h2 className="headline mt-2 text-3xl text-slate-900">
-              {activeDay === 'All' ? 'Full itinerary' : formatDay(activeDay)}
-            </h2>
-          </div>
+          <h2 className="headline text-3xl text-slate-900">
+            {activeDay === 'All' ? 'Full itinerary' : formatDay(activeDay)}
+          </h2>
           <div className="rounded-full bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Tap to edit · Hold to navigate
+            Tap notes · Hold details
           </div>
         </div>
 
@@ -614,30 +652,16 @@ function PlannerPanel({
           ))}
         </div>
 
-        {activeDay !== 'All' ? (
+        {weatherDisplay ? (
           <div className="mt-4 rounded-[1.4rem] bg-white px-4 py-4 shadow-sm">
             <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Weather snapshot</p>
             <div className="mt-3 flex items-center justify-between gap-3">
               <div>
-                <div className="text-lg font-bold text-slate-900">
-                  {weatherState.loading
-                    ? 'Loading weather'
-                    : selectedWeather
-                      ? `${Math.round(selectedWeather.tempMax)}° · Rain ${selectedWeather.rainProbability ?? 0}%`
-                      : weatherState.error}
-                </div>
-                <div className="mt-1 text-sm text-slate-600">
-                  {selectedWeather?.label || 'Weather is only shown in individual day view.'}
-                </div>
+                <div className="text-lg font-bold text-slate-900">{weatherDisplay.headline}</div>
+                <div className="mt-1 text-sm text-slate-600">{weatherDisplay.detail}</div>
               </div>
               <div className="rounded-2xl bg-slate-100 p-3 text-slate-700">
-                {selectedWeather?.rainProbability >= 40 ? (
-                  <CloudRain className="h-5 w-5" />
-                ) : selectedWeather ? (
-                  <Sun className="h-5 w-5" />
-                ) : (
-                  <Cloud className="h-5 w-5" />
-                )}
+                <weatherDisplay.icon className="h-5 w-5" />
               </div>
             </div>
           </div>
@@ -662,22 +686,18 @@ function PlannerPanel({
               >
                 <div className="flex items-start gap-4">
                   <div className={`rounded-2xl p-3 ${meta.tone}`}>
-                    <meta.icon className="h-5 w-5" />
+                    <MapPinned className="h-5 w-5" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-[11px] font-black uppercase tracking-[0.18em] text-indigo-600">
                         {getTimeValue(item.startISO)}
                       </span>
-                      <div className="flex items-center gap-2 text-slate-300">
-                        <MapPinned className="h-4 w-4" />
-                        <Search className="h-4 w-4" />
-                      </div>
                     </div>
                     <h3 className="mt-1 text-lg font-bold text-slate-900">{item.title}</h3>
-                    <p className="mt-1 text-sm text-slate-600">{item.venue}</p>
+                    <p className="mt-1 text-sm text-slate-600">{item.location}</p>
                     <p className="mt-3 rounded-2xl bg-slate-50 px-3 py-2 text-sm text-slate-500">
-                      {item.description || 'Tap to add notes and booking refs.'}
+                      {item.description || 'Tap to open notes.'}
                     </p>
                   </div>
                 </div>
@@ -686,7 +706,7 @@ function PlannerPanel({
               {nextSegment ? (
                 <div className="rounded-[1.25rem] bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
                   {nextSegment.route
-                    ? `${routeLabel(nextSegment.mode)} ${Math.round(nextSegment.route.durationMin)} min · ${nextSegment.route.distanceKm.toFixed(1)} km to ${nextSegment.to.title}`
+                    ? `${routeLabel(nextSegment.mode)} ${Math.round(nextSegment.route.durationMin)} min · ${nextSegment.route.distanceKm.toFixed(1)} km`
                     : `Fetching route to ${nextSegment.to.title}`}
                 </div>
               ) : null}
@@ -697,16 +717,13 @@ function PlannerPanel({
 
       <div className="glass-panel rounded-[1.75rem] border border-white/60 p-4">
         <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Add detail</p>
-            <h3 className="headline mt-2 text-2xl text-slate-900">New stop or note</h3>
-          </div>
+          <h3 className="headline text-2xl text-slate-900">New stop</h3>
           <div className="rounded-2xl bg-slate-900 p-3 text-white">
             <Plus className="h-5 w-5" />
           </div>
         </div>
 
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div className={`mt-4 grid gap-4 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
           <Field label="Date">
             <select
               value={newItem.date}
@@ -751,7 +768,7 @@ function PlannerPanel({
         </div>
 
         <div className="mt-4 space-y-3">
-          <Field label="Search location">
+          <Field label="Location search">
             <div className="flex gap-2">
               <input
                 value={newItem.query}
@@ -770,37 +787,29 @@ function PlannerPanel({
           </Field>
 
           {searchState.results.length ? (
-            <div className="space-y-2 rounded-2xl bg-slate-50 p-3">
-              {searchState.results.map((result) => (
-                <button
-                  key={`${result.lat}-${result.lng}`}
-                  type="button"
-                  onClick={() => {
-                    setNewItem((current) => ({
-                      ...current,
-                      venue: result.label,
-                      query: result.label,
-                      lat: result.lat,
-                      lng: result.lng,
-                    }))
-                    setSearchState({ loading: false, results: [], error: '' })
-                  }}
-                  className="block w-full rounded-2xl bg-white px-4 py-3 text-left text-sm text-slate-700"
-                >
-                  {result.label}
-                </button>
-              ))}
-            </div>
+            <SearchResults
+              results={searchState.results}
+              onSelect={(result) => {
+                setNewItem((current) => ({
+                  ...current,
+                  location: result.label,
+                  query: result.label,
+                  lat: result.lat,
+                  lng: result.lng,
+                }))
+                setSearchState({ loading: false, results: [], error: '' })
+              }}
+            />
           ) : null}
 
-          <Field label="Venue">
+          <Field label="Location">
             <input
-              value={newItem.venue}
-              onChange={(event) => setNewItem((current) => ({ ...current, venue: event.target.value }))}
+              value={newItem.location}
+              onChange={(event) => setNewItem((current) => ({ ...current, location: event.target.value }))}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
             />
           </Field>
-          <Field label="Description / notes">
+          <Field label="Notes">
             <textarea
               rows={4}
               value={newItem.description}
@@ -831,14 +840,93 @@ function PlannerPanel({
   )
 }
 
-function EditModal({ autosaveStatus, editingItem, onChange, onClose }) {
+function SearchResults({ results, onSelect }) {
+  return (
+    <div className="space-y-2 rounded-2xl bg-slate-50 p-3">
+      {results.map((result) => (
+        <button
+          key={`${result.lat}-${result.lng}`}
+          type="button"
+          onClick={() => onSelect(result)}
+          className="block w-full rounded-2xl bg-white px-4 py-3 text-left text-sm text-slate-700"
+        >
+          {result.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function NoteModal({ item, isMobilePortrait, onClose, onOpenDetails }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-4 backdrop-blur-sm sm:items-center sm:justify-center">
-      <div className="glass-panel w-full max-w-xl rounded-[2rem] border border-white/60 p-6">
+      <div className={`glass-panel w-full border border-white/60 p-6 ${isMobilePortrait ? 'rounded-[2rem] sm:max-w-md' : 'max-w-lg rounded-[2rem]'}`}>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Item editor</p>
-            <h3 className="mt-2 text-2xl font-bold text-slate-900">{editingItem.title}</h3>
+            <h3 className="text-2xl font-bold text-slate-900">{item.title}</h3>
+            <p className="mt-1 text-sm text-slate-600">{item.location}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="mt-5 space-y-4">
+          <div className="rounded-2xl bg-white px-4 py-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Notes</div>
+            <div className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">
+              {item.description || 'No notes yet.'}
+            </div>
+          </div>
+          {item.bookingRef ? (
+            <div className="rounded-2xl bg-white px-4 py-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Booking ref</div>
+              <div className="mt-2 text-sm font-semibold text-slate-900">{item.bookingRef}</div>
+            </div>
+          ) : null}
+        </div>
+
+        <button
+          type="button"
+          onClick={onOpenDetails}
+          className="mt-5 w-full rounded-[1.4rem] bg-slate-900 px-4 py-4 text-sm font-bold text-white"
+        >
+          Open details
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function DetailModal({
+  autosaveStatus,
+  detailItem,
+  firestoreReady,
+  firestoreState,
+  isMobilePortrait,
+  onChange,
+  onClose,
+}) {
+  const [searchState, setSearchState] = useState({ loading: false, results: [], error: '' })
+  const [searchQuery, setSearchQuery] = useState(detailItem.location || '')
+
+  async function runSearch() {
+    try {
+      setSearchState({ loading: true, results: [], error: '' })
+      const results = await searchPlaces(searchQuery)
+      setSearchState({ loading: false, results, error: '' })
+    } catch (error) {
+      console.error(error)
+      setSearchState({ loading: false, results: [], error: 'Search failed' })
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-4 backdrop-blur-sm sm:items-center sm:justify-center">
+      <div className={`glass-panel w-full border border-white/60 p-6 ${isMobilePortrait ? 'rounded-[2rem] sm:max-w-md' : 'max-w-2xl rounded-[2rem]'}`}>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-2xl font-bold text-slate-900">{detailItem.title}</h3>
             <div className="mt-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
               {autosaveStatus === 'saving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
               {autosaveStatus === 'saving'
@@ -853,29 +941,29 @@ function EditModal({ autosaveStatus, editingItem, onChange, onClose }) {
           </button>
         </div>
 
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        <div className={`mt-5 grid gap-4 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
           <Field label="Title">
             <input
-              value={editingItem.title}
+              value={detailItem.title}
               onChange={(event) => onChange({ title: event.target.value })}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
             />
           </Field>
-          <Field label="Venue">
+          <Field label="Category">
             <input
-              value={editingItem.venue || ''}
-              onChange={(event) => onChange({ venue: event.target.value })}
+              value={detailItem.category}
+              onChange={(event) => onChange({ category: event.target.value })}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
             />
           </Field>
           <Field label="Date">
             <input
               type="date"
-              value={getDateKey(editingItem.startISO)}
+              value={getDateKey(detailItem.startISO)}
               onChange={(event) =>
                 onChange({
-                  startISO: replaceDate(editingItem.startISO, event.target.value),
-                  endISO: replaceDate(editingItem.endISO, event.target.value),
+                  startISO: replaceDate(detailItem.startISO, event.target.value),
+                  endISO: replaceDate(detailItem.endISO, event.target.value),
                 })
               }
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
@@ -884,106 +972,122 @@ function EditModal({ autosaveStatus, editingItem, onChange, onClose }) {
           <Field label="Start time">
             <input
               type="time"
-              value={getTimeValue(editingItem.startISO)}
-              onChange={(event) => onChange({ startISO: replaceTime(editingItem.startISO, event.target.value) })}
+              value={getTimeValue(detailItem.startISO)}
+              onChange={(event) => onChange({ startISO: replaceTime(detailItem.startISO, event.target.value) })}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+            />
+          </Field>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          <Field label="Location search">
+            <div className="flex gap-2">
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search with OpenStreetMap"
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => void runSearch()}
+                className="rounded-2xl bg-slate-900 px-4 text-white"
+              >
+                {searchState.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              </button>
+            </div>
+          </Field>
+
+          {searchState.results.length ? (
+            <SearchResults
+              results={searchState.results}
+              onSelect={(result) => {
+                setSearchQuery(result.label)
+                onChange({
+                  location: result.label,
+                  lat: result.lat,
+                  lng: result.lng,
+                })
+                setSearchState({ loading: false, results: [], error: '' })
+              }}
+            />
+          ) : null}
+
+          <Field label="Location">
+            <input
+              value={detailItem.location || ''}
+              onChange={(event) => onChange({ location: event.target.value })}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
             />
           </Field>
           <Field label="Booking ref">
             <input
-              value={editingItem.bookingRef || ''}
+              value={detailItem.bookingRef || ''}
               onChange={(event) => onChange({ bookingRef: event.target.value })}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
             />
           </Field>
-          <Field label="Category">
-            <input
-              value={editingItem.category}
-              onChange={(event) => onChange({ category: event.target.value })}
+          <Field label="Notes">
+            <textarea
+              rows={5}
+              value={detailItem.description || ''}
+              onChange={(event) => onChange({ description: event.target.value })}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
             />
           </Field>
         </div>
 
-        <Field label="Notes" className="mt-4">
-          <textarea
-            rows={5}
-            value={editingItem.description || ''}
-            onChange={(event) => onChange({ description: event.target.value })}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
-          />
-        </Field>
-      </div>
-    </div>
-  )
-}
-
-function ActionSheet({ actionItem, onClose, onEdit }) {
-  return (
-    <div className="fixed inset-0 z-40 flex items-end bg-slate-950/45 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="glass-panel w-full max-w-lg rounded-[2rem] border border-white/60 p-4"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="mb-3 flex items-center gap-3 p-3">
-          <div className="rounded-2xl bg-indigo-50 p-3 text-indigo-600">
-            <Navigation className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Navigator</p>
-            <div className="font-semibold text-slate-900">{actionItem.title}</div>
-          </div>
-        </div>
-        <div className="space-y-2">
+        <div className={`mt-5 grid gap-2 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
           <a
-            href={`https://www.google.com/maps/search/?api=1&query=${actionItem.lat},${actionItem.lng}`}
+            href={
+              typeof detailItem.lat === 'number' && typeof detailItem.lng === 'number'
+                ? `https://www.google.com/maps/search/?api=1&query=${detailItem.lat},${detailItem.lng}`
+                : '#'
+            }
             target="_blank"
             rel="noreferrer"
-            className="flex items-center justify-between rounded-2xl bg-indigo-600 px-4 py-4 text-sm font-bold text-white"
+            className={`flex items-center justify-between rounded-2xl px-4 py-4 text-sm font-bold ${
+              typeof detailItem.lat === 'number' && typeof detailItem.lng === 'number'
+                ? 'bg-indigo-600 text-white'
+                : 'pointer-events-none bg-slate-100 text-slate-400'
+            }`}
           >
             Open in Google Maps
             <ExternalLink className="h-4 w-4" />
           </a>
           <button
             type="button"
-            onClick={() => {
-              navigator.clipboard?.writeText(`${actionItem.lat}, ${actionItem.lng}`)
-              onClose()
-            }}
-            className="flex w-full items-center justify-between rounded-2xl bg-white px-4 py-4 text-sm font-bold text-slate-900"
+            onClick={() => navigator.clipboard?.writeText(`${detailItem.lat}, ${detailItem.lng}`)}
+            disabled={typeof detailItem.lat !== 'number' || typeof detailItem.lng !== 'number'}
+            className="flex items-center justify-between rounded-2xl bg-white px-4 py-4 text-sm font-bold text-slate-900 disabled:text-slate-400"
           >
             Copy coordinates
             <Copy className="h-4 w-4" />
           </button>
-          <button
-            type="button"
-            onClick={onEdit}
-            className="flex w-full items-center justify-between rounded-2xl bg-slate-100 px-4 py-4 text-sm font-bold text-slate-900"
-          >
-            Edit details
-            <MapPinned className="h-4 w-4" />
-          </button>
         </div>
+
+        {!firestoreReady ? (
+          <div className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-rose-500">
+            {firestoreButtonLabel(firestoreState)}
+          </div>
+        ) : null}
       </div>
     </div>
   )
 }
 
-function MapPanel({ activeDay, filteredItems, movementPoints, routeSegments, viewMode }) {
+function MapPanel({ activeDay, filteredItems, movementPoints, routeSegments, isMobilePortrait }) {
   return (
     <>
       <div className="glass-panel rounded-[1.75rem] border border-white/60 p-4">
         <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Movement view</p>
-            <h2 className="headline mt-2 text-3xl text-slate-900">Interactive map</h2>
-          </div>
+          <h2 className="headline text-3xl text-slate-900">Map</h2>
           <div className="rounded-2xl bg-slate-900 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white">
             {activeDay === 'All' ? 'Whole trip' : formatDay(activeDay)}
           </div>
         </div>
 
-        <div className={`mt-4 overflow-hidden rounded-[1.5rem] border border-slate-200 bg-slate-100 ${viewMode === 'mobile' ? 'h-[320px]' : 'h-[420px]'}`}>
+        <div className={`mt-4 overflow-hidden rounded-[1.5rem] border border-slate-200 bg-slate-100 ${isMobilePortrait ? 'h-[320px]' : 'h-[420px]'}`}>
           <Suspense
             fallback={
               <div className="flex h-full items-center justify-center bg-slate-100 text-sm font-semibold text-slate-500">
@@ -997,13 +1101,7 @@ function MapPanel({ activeDay, filteredItems, movementPoints, routeSegments, vie
       </div>
 
       <div className="glass-panel rounded-[1.75rem] border border-white/60 p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Route list</p>
-            <h3 className="headline mt-2 text-2xl text-slate-900">Movement summary</h3>
-          </div>
-        </div>
-
+        <h3 className="headline text-2xl text-slate-900">Movement</h3>
         <div className="mt-4 space-y-3">
           {routeSegments.length ? (
             routeSegments.map((segment) => (
@@ -1036,18 +1134,6 @@ function firestoreButtonLabel(firestoreState) {
   if (firestoreState.status === 'connecting') return 'Connecting to Firestore'
   if (firestoreState.status === 'error') return 'Firestore error'
   return 'Firestore not configured'
-}
-
-function StatCard({ icon, label, value }) {
-  return (
-    <div className="rounded-2xl bg-white/80 px-4 py-3 shadow-sm">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-        {React.createElement(icon, { className: 'h-4 w-4' })}
-        {label}
-      </div>
-      <div className="mt-2 text-sm font-semibold text-slate-900">{value}</div>
-    </div>
-  )
 }
 
 function Field({ label, children, className = '' }) {

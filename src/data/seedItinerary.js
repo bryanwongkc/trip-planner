@@ -8,20 +8,15 @@ export const TRIP_DATES = [
   '2026-05-13',
 ]
 
-export const TRAVELLER_PROFILE = {
-  party: ['You', 'Wife', '2yo son'],
-  notes: 'Family trip for you, your wife, and your 2-year-old son.',
-}
-
 export const STATIC_ITINERARY = [
   {
     id: 'flight-hkg-nrt',
     title: 'Flight HKG to NRT (CX526)',
-    venue: 'Narita International Airport',
+    location: 'Narita International Airport',
     category: 'Flight',
     startISO: '2026-05-09T08:15:00+09:00',
     endISO: '2026-05-09T13:40:00+09:00',
-    description: 'Inbound flight from Hong Kong. Final time can be updated later if needed.',
+    description: 'Inbound flight from Hong Kong.',
     bookingRef: '',
     lat: 35.772,
     lng: 140.3929,
@@ -29,11 +24,11 @@ export const STATIC_ITINERARY = [
   {
     id: 'rental-pickup',
     title: 'Pick up rental car',
-    venue: 'TOYOTA Rent-a-Car Narita Airport',
+    location: 'TOYOTA Rent-a-Car Narita Airport',
     category: 'Car',
     startISO: '2026-05-09T14:00:00+09:00',
     endISO: '2026-05-09T15:00:00+09:00',
-    description: 'Rental reference 99945994100. Confirm child seat and luggage fit.',
+    description: 'Rental reference 99945994100.',
     bookingRef: '99945994100',
     lat: 35.7725,
     lng: 140.392,
@@ -41,11 +36,11 @@ export const STATIC_ITINERARY = [
   {
     id: 'hotel-mikazuki',
     title: 'First night at 龍宮城スパ・ホテル三日月 龍宮亭',
-    venue: 'Ryugujo Spa Hotel Mikazuki Ryugutei',
+    location: 'Ryugujo Spa Hotel Mikazuki Ryugutei',
     category: 'Hotel',
     startISO: '2026-05-09T17:00:00+09:00',
     endISO: '2026-05-10T10:00:00+09:00',
-    description: 'First night stay. Add booking refs and family packing notes here.',
+    description: 'First night stay.',
     bookingRef: '',
     lat: 35.419,
     lng: 139.9069,
@@ -53,7 +48,7 @@ export const STATIC_ITINERARY = [
   {
     id: 'wedding-ceremony',
     title: 'Wedding ceremony',
-    venue: '京成ホテルミラマーレ',
+    location: '京成ホテルミラマーレ',
     category: 'Wedding',
     startISO: '2026-05-12T12:45:00+09:00',
     endISO: '2026-05-12T14:00:00+09:00',
@@ -65,7 +60,7 @@ export const STATIC_ITINERARY = [
   {
     id: 'outlet-makuhari',
     title: '三井 Outlet Park 幕張',
-    venue: 'Mitsui Outlet Park Makuhari',
+    location: 'Mitsui Outlet Park Makuhari',
     category: 'Shopping',
     startISO: '2026-05-12T14:30:00+09:00',
     endISO: '2026-05-12T16:30:00+09:00',
@@ -77,11 +72,11 @@ export const STATIC_ITINERARY = [
   {
     id: 'wedding-dinner',
     title: 'Wedding dinner at KISAKU',
-    venue: 'aune Building Kaihin Makuhari',
+    location: 'aune Building Kaihin Makuhari',
     category: 'Wedding',
     startISO: '2026-05-12T17:00:00+09:00',
     endISO: '2026-05-12T19:00:00+09:00',
-    description: 'Wedding dinner. Venue: 1 Chome-14 Hibino, Mihama Ward, Chiba.',
+    description: 'Venue: 1 Chome-14 Hibino, Mihama Ward, Chiba.',
     bookingRef: '',
     lat: 35.6484,
     lng: 140.0425,
@@ -89,7 +84,7 @@ export const STATIC_ITINERARY = [
   {
     id: 'rental-dropoff',
     title: 'Drop off rental car',
-    venue: 'Haneda Airport rental return',
+    location: 'Haneda Airport rental return',
     category: 'Car',
     startISO: '2026-05-13T15:00:00+09:00',
     endISO: '2026-05-13T15:30:00+09:00',
@@ -101,7 +96,7 @@ export const STATIC_ITINERARY = [
   {
     id: 'flight-hnd-hkg',
     title: 'Flight HND to HKG (CX549)',
-    venue: 'Haneda Airport',
+    location: 'Haneda Airport',
     category: 'Flight',
     startISO: '2026-05-13T16:00:00+09:00',
     endISO: '2026-05-13T20:00:00+09:00',

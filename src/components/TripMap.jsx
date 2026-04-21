@@ -67,7 +67,7 @@ function TripMap({ filteredItems, movementPoints, routeSegments }) {
               <Popup>
                 <div className="space-y-1">
                   <div className="font-semibold">{item.title}</div>
-                  <div className="text-xs text-slate-600">{item.venue}</div>
+                  <div className="text-xs text-slate-600">{item.location || item.venue}</div>
                   <div className="text-xs text-slate-600">{getTimeValue(item.startISO)}</div>
                 </div>
               </Popup>

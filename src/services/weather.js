@@ -22,6 +22,7 @@ function classifyWeatherCode(code) {
 }
 
 export async function fetchWeatherSnapshot() {
+  const forecastDays = 16
   const params = new URLSearchParams({
     latitude: String(CHIBA_TOKYO_CORRIDOR.lat),
     longitude: String(CHIBA_TOKYO_CORRIDOR.lng),
@@ -29,7 +30,7 @@ export async function fetchWeatherSnapshot() {
     daily:
       'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
     timezone: 'Asia/Tokyo',
-    forecast_days: '16',
+    forecast_days: String(forecastDays),
   })
 
   const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`)
@@ -62,5 +63,7 @@ export async function fetchWeatherSnapshot() {
       label: WEATHER_LABELS[currentWeatherKey],
     },
     dailyByDate,
+    availableDates: payload.daily.time,
+    forecastDays,
   }
 }
