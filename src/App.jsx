@@ -567,7 +567,12 @@ function PlannerPanel({
   isMobilePortrait,
 }) {
   const weatherDisplay = getWeatherDisplay(activeDay, weatherState, selectedWeather)
-  const [searchState, setSearchState] = useState({ loading: false, results: [], error: '' })
+  const [searchState, setSearchState] = useState({
+    loading: false,
+    results: [],
+    error: '',
+    searched: false,
+  })
   const [newItem, setNewItem] = useState({
     date: '2026-05-10',
     time: '10:00',
@@ -583,12 +588,17 @@ function PlannerPanel({
 
   async function runSearch() {
     try {
-      setSearchState({ loading: true, results: [], error: '' })
+      setSearchState({ loading: true, results: [], error: '', searched: false })
       const results = await searchPlaces(newItem.query)
-      setSearchState({ loading: false, results, error: '' })
+      setSearchState({ loading: false, results, error: '', searched: true })
     } catch (error) {
       console.error(error)
-      setSearchState({ loading: false, results: [], error: 'Search failed' })
+      setSearchState({
+        loading: false,
+        results: [],
+        error: 'OpenStreetMap search failed',
+        searched: true,
+      })
     }
   }
 
@@ -622,7 +632,7 @@ function PlannerPanel({
       lng: null,
       query: '',
     }))
-    setSearchState({ loading: false, results: [], error: '' })
+    setSearchState({ loading: false, results: [], error: '', searched: false })
   }
 
   return (
@@ -797,10 +807,12 @@ function PlannerPanel({
                   lat: result.lat,
                   lng: result.lng,
                 }))
-                setSearchState({ loading: false, results: [], error: '' })
+                setSearchState({ loading: false, results: [], error: '', searched: true })
               }}
             />
           ) : null}
+
+          <SearchFeedback searchState={searchState} />
 
           <Field label="Location">
             <input
@@ -857,6 +869,28 @@ function SearchResults({ results, onSelect }) {
   )
 }
 
+function SearchFeedback({ searchState }) {
+  if (searchState.loading) return null
+
+  if (searchState.error) {
+    return (
+      <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600">
+        {searchState.error}
+      </div>
+    )
+  }
+
+  if (searchState.searched && !searchState.results.length) {
+    return (
+      <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+        No places matched that search.
+      </div>
+    )
+  }
+
+  return null
+}
+
 function NoteModal({ item, isMobilePortrait, onClose, onOpenDetails }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-4 backdrop-blur-sm sm:items-center sm:justify-center">
@@ -907,17 +941,27 @@ function DetailModal({
   onChange,
   onClose,
 }) {
-  const [searchState, setSearchState] = useState({ loading: false, results: [], error: '' })
+  const [searchState, setSearchState] = useState({
+    loading: false,
+    results: [],
+    error: '',
+    searched: false,
+  })
   const [searchQuery, setSearchQuery] = useState(detailItem.location || '')
 
   async function runSearch() {
     try {
-      setSearchState({ loading: true, results: [], error: '' })
+      setSearchState({ loading: true, results: [], error: '', searched: false })
       const results = await searchPlaces(searchQuery)
-      setSearchState({ loading: false, results, error: '' })
+      setSearchState({ loading: false, results, error: '', searched: true })
     } catch (error) {
       console.error(error)
-      setSearchState({ loading: false, results: [], error: 'Search failed' })
+      setSearchState({
+        loading: false,
+        results: [],
+        error: 'OpenStreetMap search failed',
+        searched: true,
+      })
     }
   }
 
@@ -1008,10 +1052,12 @@ function DetailModal({
                   lat: result.lat,
                   lng: result.lng,
                 })
-                setSearchState({ loading: false, results: [], error: '' })
+                setSearchState({ loading: false, results: [], error: '', searched: true })
               }}
             />
           ) : null}
+
+          <SearchFeedback searchState={searchState} />
 
           <Field label="Location">
             <input

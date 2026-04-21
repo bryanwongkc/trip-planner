@@ -185,24 +185,13 @@ function buildVariants(query) {
 }
 
 async function runNominatimSearch(query, options = {}) {
-  const params = new URLSearchParams({
-    q: query,
-    format: 'jsonv2',
-    limit: String(SEARCH_LIMIT),
-    addressdetails: '1',
-    dedupe: '1',
-  })
+  const params = new URLSearchParams({ q: query })
 
   if (options.countrycodes) {
     params.set('countrycodes', options.countrycodes)
   }
 
-  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-    headers: {
-      Accept: 'application/json',
-      'Accept-Language': 'ja,en,zh-Hant,zh-Hans',
-    },
-  })
+  const response = await fetch(`/api/search-place?${params.toString()}`)
 
   if (!response.ok) {
     throw new Error('Unable to search places')
