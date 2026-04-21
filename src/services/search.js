@@ -184,15 +184,18 @@ function buildVariants(query) {
   return [...variants]
 }
 
-async function runNominatimSearch(query) {
+async function runNominatimSearch(query, options = {}) {
   const params = new URLSearchParams({
     q: query,
     format: 'jsonv2',
     limit: String(SEARCH_LIMIT),
     addressdetails: '1',
-    countrycodes: 'jp',
     dedupe: '1',
   })
+
+  if (options.countrycodes) {
+    params.set('countrycodes', options.countrycodes)
+  }
 
   const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
     headers: {
@@ -214,24 +217,34 @@ async function searchByText(query) {
 
   const seen = new Set()
   const results = []
+  const searchPlans = [
+    { countrycodes: 'jp' },
+    {},
+  ]
 
-  for (const variant of variants) {
-    const payload = await runNominatimSearch(variant)
+  for (const plan of searchPlans) {
+    for (const variant of variants) {
+      const payload = await runNominatimSearch(variant, plan)
 
-    for (const result of payload) {
-      const key = `${result.lat}:${result.lon}:${result.display_name}`
-      if (seen.has(key)) continue
+      for (const result of payload) {
+        const key = `${result.lat}:${result.lon}:${result.display_name}`
+        if (seen.has(key)) continue
 
-      seen.add(key)
-      results.push({
-        label: result.display_name,
-        lat: Number(result.lat),
-        lng: Number(result.lon),
-      })
+        seen.add(key)
+        results.push({
+          label: result.display_name,
+          lat: Number(result.lat),
+          lng: Number(result.lon),
+        })
 
-      if (results.length >= SEARCH_LIMIT) {
-        return results
+        if (results.length >= SEARCH_LIMIT) {
+          return results
+        }
       }
+    }
+
+    if (results.length) {
+      return results
     }
   }
 
