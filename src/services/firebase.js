@@ -1,6 +1,3 @@
-import { getApp, getApps, initializeApp } from 'firebase/app'
-import { getAuth, signInAnonymously } from 'firebase/auth'
-import { doc, getFirestore, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import { TRIP_ID } from '../data/seedItinerary'
 
 const firebaseConfig = {
@@ -14,42 +11,54 @@ const firebaseConfig = {
 
 export const firebaseEnabled = Object.values(firebaseConfig).every(Boolean)
 
-let appInstance
-let authInstance
-let firestoreInstance
+let servicesPromise
 
-function getFirebaseApp() {
+async function loadFirebaseServices() {
   if (!firebaseEnabled) {
-    return null
+    return {
+      auth: null,
+      db: null,
+      doc: null,
+      onSnapshot: null,
+      serverTimestamp: null,
+      setDoc: null,
+      signInAnonymously: null,
+    }
   }
 
-  if (!appInstance) {
-    appInstance = getApps().length ? getApp() : initializeApp(firebaseConfig)
+  if (!servicesPromise) {
+    servicesPromise = Promise.all([
+      import('firebase/app'),
+      import('firebase/auth'),
+      import('firebase/firestore'),
+    ]).then(([appModule, authModule, firestoreModule]) => {
+      const app = appModule.getApps().length
+        ? appModule.getApp()
+        : appModule.initializeApp(firebaseConfig)
+
+      return {
+        auth: authModule.getAuth(app),
+        db: firestoreModule.getFirestore(app),
+        doc: firestoreModule.doc,
+        onSnapshot: firestoreModule.onSnapshot,
+        serverTimestamp: firestoreModule.serverTimestamp,
+        setDoc: firestoreModule.setDoc,
+        signInAnonymously: authModule.signInAnonymously,
+      }
+    })
   }
 
-  return appInstance
+  return servicesPromise
 }
 
-export function getFirebaseServices() {
-  const app = getFirebaseApp()
-
-  if (!app) {
-    return { auth: null, db: null }
-  }
-
-  if (!authInstance) {
-    authInstance = getAuth(app)
-  }
-
-  if (!firestoreInstance) {
-    firestoreInstance = getFirestore(app)
-  }
-
-  return { auth: authInstance, db: firestoreInstance }
+function stripUndefined(value) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, fieldValue]) => fieldValue !== undefined),
+  )
 }
 
 export async function ensureAnonymousAuth() {
-  const { auth } = getFirebaseServices()
+  const { auth, signInAnonymously } = await loadFirebaseServices()
 
   if (!auth) {
     return null
@@ -63,28 +72,14 @@ export async function ensureAnonymousAuth() {
   return credential.user
 }
 
-function getOverridesDoc() {
-  const { db } = getFirebaseServices()
+export async function subscribeToOverrides(onValue, onError) {
+  const { db, doc, onSnapshot } = await loadFirebaseServices()
 
   if (!db) {
-    return null
-  }
-
-  return doc(db, 'trips', TRIP_ID, 'overrides', 'shared')
-}
-
-function stripUndefined(value) {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, fieldValue]) => fieldValue !== undefined),
-  )
-}
-
-export function subscribeToOverrides(onValue, onError) {
-  const overridesDoc = getOverridesDoc()
-
-  if (!overridesDoc) {
     return () => {}
   }
+
+  const overridesDoc = doc(db, 'trips', TRIP_ID, 'overrides', 'shared')
 
   return onSnapshot(
     overridesDoc,
@@ -94,11 +89,13 @@ export function subscribeToOverrides(onValue, onError) {
 }
 
 export async function upsertItemOverride(itemId, override) {
-  const overridesDoc = getOverridesDoc()
+  const { db, doc, serverTimestamp, setDoc } = await loadFirebaseServices()
 
-  if (!overridesDoc) {
+  if (!db) {
     return
   }
+
+  const overridesDoc = doc(db, 'trips', TRIP_ID, 'overrides', 'shared')
 
   await setDoc(
     overridesDoc,

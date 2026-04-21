@@ -10,7 +10,7 @@ export const TRIP_DATES = [
 
 export const TRAVELLER_PROFILE = {
   party: ['You', 'Wife', '2yo son'],
-  notes: 'Family trip with a toddler, so buffer matters for every transfer.',
+  notes: 'Family trip for you, your wife, and your 2-year-old son.',
 }
 
 export const STATIC_ITINERARY = [
@@ -33,7 +33,7 @@ export const STATIC_ITINERARY = [
     category: 'Car',
     startISO: '2026-05-09T14:00:00+09:00',
     endISO: '2026-05-09T15:00:00+09:00',
-    description: 'Rental reference 99945994100. Confirm toddler seat and luggage fit.',
+    description: 'Rental reference 99945994100. Confirm child seat and luggage fit.',
     bookingRef: '99945994100',
     lat: 35.7725,
     lng: 140.392,
@@ -110,10 +110,4 @@ export const STATIC_ITINERARY = [
     lat: 35.5494,
     lng: 139.779,
   },
-]
-
-export const TRIP_EXPENSES = [
-  { id: 'hotel', label: 'Hotel', amountJPY: 48600, note: 'Ryugutei first night' },
-  { id: 'car', label: 'Car rental', amountJPY: 27800, note: 'Toyota estimate' },
-  { id: 'wedding', label: 'Wedding gift', amountJPY: 30000, note: 'Shugi-fukuro' },
 ]
