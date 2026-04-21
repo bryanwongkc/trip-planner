@@ -1,4 +1,4 @@
-export async function fetchRoadRoute(from, to) {
+export async function fetchRoadRoute(from, to, mode = 'driving') {
   if (
     typeof from?.lat !== 'number' ||
     typeof from?.lng !== 'number' ||
@@ -15,7 +15,7 @@ export async function fetchRoadRoute(from, to) {
   })
 
   const response = await fetch(
-    `https://router.project-osrm.org/route/v1/driving/${coordinates}?${params.toString()}`,
+    `https://router.project-osrm.org/route/v1/${mode}/${coordinates}?${params.toString()}`,
   )
 
   if (!response.ok) {
@@ -30,6 +30,7 @@ export async function fetchRoadRoute(from, to) {
   }
 
   return {
+    mode,
     distanceKm: route.distance / 1000,
     durationMin: route.duration / 60,
     geometry: route.geometry.coordinates.map(([lng, lat]) => [lat, lng]),
