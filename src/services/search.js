@@ -55,6 +55,17 @@ function parseCoordinateText(value) {
   }
 }
 
+function parseGoogleDataPayload(value) {
+  const coordinateMatch = value.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/)
+  if (!coordinateMatch) return null
+
+  return {
+    label: 'Google Maps pin',
+    lat: Number(coordinateMatch[1]),
+    lng: Number(coordinateMatch[2]),
+  }
+}
+
 function extractGoogleMapsResult(rawUrl) {
   let url
 
@@ -215,6 +226,11 @@ async function searchByText(query) {
 export async function searchPlaces(query) {
   const trimmed = query.trim()
   if (!trimmed) return []
+
+  const dataPayloadResult = parseGoogleDataPayload(trimmed)
+  if (dataPayloadResult) {
+    return [dataPayloadResult]
+  }
 
   const googleCandidate = extractGoogleMapsResult(trimmed)
 
