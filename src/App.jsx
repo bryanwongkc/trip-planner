@@ -1,48 +1,28 @@
-import React, {
-  startTransition,
-  useDeferredValue,
-  useEffect,
-  useEffectEvent,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  CalendarDays,
-  CarFront,
-  Check,
-  Clock3,
-  CloudDrizzle,
-  CloudFog,
-  CloudSun,
-  Copy,
-  DollarSign,
-  LoaderCircle,
-  MapPinned,
-  Navigation,
-  NotebookPen,
-  Monitor,
-  Route,
-  ShieldAlert,
+  Plane,
+  Car,
+  Hotel,
+  PartyPopper,
   ShoppingBag,
-  Snowflake,
-  Sparkles,
-  Smartphone,
-  SunMedium,
-  Umbrella,
-  WalletCards,
+  MapPin,
+  Plus,
+  X,
+  Map as MapIcon,
+  Cloud,
+  Loader2,
+  Wallet,
+  Sun,
+  ArrowLeftRight,
+  RefreshCw,
+  CloudRain,
+  Edit3,
+  ExternalLink,
+  Copy,
+  Navigation2,
+  Check,
 } from 'lucide-react'
-import {
-  CircleMarker,
-  MapContainer,
-  Polyline,
-  Popup,
-  TileLayer,
-  Tooltip,
-  useMap,
-} from 'react-leaflet'
-import 'leaflet/dist/leaflet.css'
-import { STATIC_ITINERARY, TRIP_DATES, TRIP_EXPENSES } from './data/seedItinerary'
+import { STATIC_ITINERARY, TRIP_DATES } from './data/seedItinerary'
 import {
   ensureAnonymousAuth,
   firebaseEnabled,
@@ -50,495 +30,157 @@ import {
   upsertItemOverride,
 } from './services/firebase'
 import { fetchLatestJpyHkdRate } from './services/currency'
-import { fetchRoadRoute } from './services/osrm'
 import { fetchWeatherSnapshot } from './services/weather'
 
 const SAVE_DEBOUNCE_MS = 1000
+const DATES = ['All', ...TRIP_DATES]
 
-const formatDateChip = (date) =>
-  new Intl.DateTimeFormat('en-HK', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'Asia/Tokyo',
-  }).format(new Date(`${date}T00:00:00+09:00`))
+const EXPENSES = [
+  { id: 'hotel', label: 'Hotel Mikazuki', amountJPY: 48600 },
+  { id: 'car', label: 'Rental car', amountJPY: 27800 },
+  { id: 'shugi', label: 'Shugi-fukuro', amountJPY: 30000 },
+]
 
-const formatDateHeading = (date) =>
-  new Intl.DateTimeFormat('en-HK', {
+function getDateKey(isoString) {
+  return isoString.slice(0, 10)
+}
+
+function toTimeValue(isoString) {
+  return isoString.slice(11, 16)
+}
+
+function withUpdatedTime(isoString, nextTime) {
+  return `${isoString.slice(0, 10)}T${nextTime}:00+09:00`
+}
+
+function formatDate(dateStr) {
+  const date = new Date(`${dateStr}T00:00:00+09:00`)
+  return date.toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
-    timeZone: 'Asia/Tokyo',
-  }).format(new Date(`${date}T00:00:00+09:00`))
-
-const formatCurrency = (value, currency) =>
-  new Intl.NumberFormat('en-HK', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: currency === 'JPY' ? 0 : 2,
-  }).format(value)
-
-const getDateKey = (iso) => iso.slice(0, 10)
-const getTimeLabel = (iso) => iso.slice(11, 16)
-const isoToMinutes = (iso) => new Date(iso).getTime() / 60000
-const replaceTimeInIso = (iso, nextTime) => `${iso.slice(0, 10)}T${nextTime}:00+09:00`
-const buildRouteKey = (from, to) => `${from.id}:${to.id}:${from.lat},${from.lng}:${to.lat},${to.lng}`
-
-function mergeItinerary(staticItems, overrides) {
-  return staticItems
-    .map((item) => ({ ...item, ...(overrides[item.id] || {}) }))
-    .sort((a, b) => a.startISO.localeCompare(b.startISO))
-}
-
-function mergeRemoteOverrides(currentOverrides, remoteItems, dirtyIds) {
-  const next = { ...currentOverrides }
-  Object.entries(remoteItems).forEach(([itemId, override]) => {
-    if (dirtyIds.has(itemId)) return
-    next[itemId] = { ...next[itemId], ...override }
   })
-  return next
 }
 
-function getBufferLabel(bufferMinutes) {
-  if (bufferMinutes < 15) return { tone: 'warning', label: 'Tight buffer' }
-  if (bufferMinutes > 45) return { tone: 'easy', label: 'Easy pace' }
-  return { tone: 'steady', label: 'Manageable' }
+function classifyType(category) {
+  if (category === 'Transit') {
+    return 'car'
+  }
+  if (category === 'Stay') {
+    return 'hotel'
+  }
+  if (category === 'Wedding') {
+    return 'wedding'
+  }
+  if (category === 'Shopping') {
+    return 'activity'
+  }
+  return 'activity'
 }
 
-function WeatherGlyph({ weatherKey, className }) {
-  if (weatherKey === 'clear') return <SunMedium className={className} />
-  if (weatherKey === 'cloudy') return <CloudSun className={className} />
-  if (weatherKey === 'fog') return <CloudFog className={className} />
-  if (weatherKey === 'snow') return <Snowflake className={className} />
-  if (weatherKey === 'thunder') return <Umbrella className={className} />
-  return <CloudDrizzle className={className} />
-}
-
-function FitSelectedBounds({ points }) {
-  const map = useMap()
-
-  useEffect(() => {
-    if (!points.length) return
-    if (points.length === 1) {
-      map.setView(points[0], 12)
-      return
-    }
-    map.fitBounds(points, { padding: [36, 36] })
-  }, [map, points])
-
-  return null
-}
-
-function StatusCard({ icon, eyebrow, title, children }) {
-  const IconGlyph = icon
-
-  return (
-    <div className="rounded-[1.6rem] border border-white/60 bg-white/72 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.22em] text-slate-500">{eyebrow}</p>
-          <h2 className="mt-2 text-lg font-bold text-slate-900">{title}</h2>
-        </div>
-        <div className="rounded-2xl bg-slate-900 p-3 text-white">
-          <IconGlyph className="h-5 w-5" />
-        </div>
-      </div>
-      <div className="mt-4">{children}</div>
-    </div>
+function mergeItinerary(overrides) {
+  return STATIC_ITINERARY.map((item) => ({
+    ...item,
+    type: classifyType(item.category),
+    time: toTimeValue(item.startISO),
+    ...(overrides[item.id] || {}),
+  })).sort((first, second) =>
+    `${first.date ?? getDateKey(first.startISO)}T${first.time ?? toTimeValue(first.startISO)}`.localeCompare(
+      `${second.date ?? getDateKey(second.startISO)}T${second.time ?? toTimeValue(second.startISO)}`,
+    ),
   )
 }
 
-function LoadingLine({ label }) {
-  return (
-    <div className="inline-flex items-center gap-2 text-xs font-medium text-slate-500">
-      <LoaderCircle className="h-4 w-4 animate-spin" />
-      {label}
-    </div>
-  )
-}
-
-function InputGroup({ label, value, onChange, type = 'text', inputMode }) {
-  return (
-    <label className="block">
-      <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-        {label}
-      </span>
-      <input
-        type={type}
-        inputMode={inputMode}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-[1.2rem] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500"
-      />
-    </label>
-  )
-}
-
-function StatusPill({ label, good }) {
-  return (
-    <div
-      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${
-        good ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'
-      }`}
-    >
-      {good ? <Check className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
-      {label}
-    </div>
-  )
-}
-
-function SegmentButton({ active, icon, label, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
-        active
-          ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/15'
-          : 'bg-white text-slate-600 hover:bg-slate-100'
-      }`}
-    >
-      {React.createElement(icon, { className: 'h-4 w-4' })}
-      {label}
-    </button>
-  )
-}
-
-function QuickStat({ label, value, tone = 'light' }) {
-  return (
-    <div
-      className={`rounded-2xl border px-3 py-3 ${
-        tone === 'dark'
-          ? 'border-slate-800 bg-slate-900 text-white'
-          : 'border-white/60 bg-white/70 text-slate-900'
-      }`}
-    >
-      <div className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${tone === 'dark' ? 'text-white/60' : 'text-slate-500'}`}>
-        {label}
-      </div>
-      <div className="mt-1 text-sm font-semibold">{value}</div>
-    </div>
-  )
-}
-
-function ItineraryCard({ item, nextRoute, isActive, onSelect, pressHandlers }) {
-  const categoryIcon =
-    item.category === 'Transit'
-      ? CarFront
-      : item.category === 'Stay'
-        ? MapPinned
-        : item.category === 'Wedding'
-          ? Umbrella
-          : NotebookPen
-
-  return (
-    <div className="space-y-3">
-      <article
-        className={`glass-panel rounded-[1.5rem] border px-4 py-4 transition sm:px-5 ${
-          isActive ? 'border-slate-900/60 ring-2 ring-slate-900/10' : 'border-white/60'
-        }`}
-        onClick={onSelect}
-        {...pressHandlers}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              {React.createElement(categoryIcon, { className: 'h-4 w-4' })}
-              {item.category}
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-slate-900 sm:text-xl">{item.title}</h3>
-              <p className="mt-1 text-sm text-slate-600">{item.venue}</p>
-            </div>
-          </div>
-          <div className="rounded-2xl bg-slate-900 px-3 py-2 text-right text-white">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-white/60">Window</div>
-            <div className="text-sm font-semibold">
-              {getTimeLabel(item.startISO)} - {getTimeLabel(item.endISO)}
-            </div>
-          </div>
-        </div>
-        <p className="mt-4 text-sm leading-7 text-slate-700">{item.description}</p>
-        <div className="mt-4 flex flex-wrap gap-2 text-xs">
-          {item.bookingRef ? (
-            <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
-              Ref: {item.bookingRef}
-            </span>
-          ) : null}
-          <span className="rounded-full bg-teal-100 px-3 py-1 font-medium text-teal-800">
-            {item.startISO.slice(0, 10)}
-          </span>
-        </div>
-      </article>
-
-      {nextRoute ? (
-        <div className="rounded-[1.3rem] border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-700">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="rounded-2xl bg-slate-900 p-2 text-white">
-                <Route className="h-4 w-4" />
-              </div>
-              <div>
-                <div className="font-semibold text-slate-900">
-                  {nextRoute.route
-                    ? `${nextRoute.route.distanceKm.toFixed(1)} km · ${Math.round(nextRoute.route.durationMin)} min drive`
-                    : 'OSRM route pending'}
-                </div>
-                <div className="text-xs text-slate-500">
-                  {nextRoute.pace.label} · {Math.round(nextRoute.bufferMinutes)} min buffer
-                </div>
-              </div>
-            </div>
-            <div
-              className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${
-                nextRoute.pace.tone === 'warning'
-                  ? 'bg-rose-100 text-rose-800'
-                  : nextRoute.pace.tone === 'easy'
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : 'bg-amber-100 text-amber-900'
-              }`}
-            >
-              Toddler buffer
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-function NavigatorMap({ selectedDayItems, routeSegments, mapPoints, setActiveItemId, routeState }) {
-  return (
-    <div className="glass-panel rounded-[1.5rem] border border-white/60 p-4">
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Navigator</p>
-          <h2 className="headline mt-2 text-3xl text-slate-900">Map</h2>
-        </div>
-        {routeState.loading ? <LoadingLine label="Refreshing drive times..." /> : null}
-      </div>
-      <div className="h-[360px] overflow-hidden rounded-[1.4rem] border border-slate-200 bg-slate-100">
-        <MapContainer center={[35.6074, 140.1065]} zoom={10} scrollWheelZoom={false}>
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-          <FitSelectedBounds points={mapPoints} />
-          {selectedDayItems.map((item, index) => (
-            <CircleMarker
-              key={item.id}
-              center={[item.lat, item.lng]}
-              pathOptions={{
-                color: index === 0 ? '#0f766e' : '#1e293b',
-                fillColor: index === 0 ? '#14b8a6' : '#f59e0b',
-                fillOpacity: 0.9,
-              }}
-              radius={10}
-              eventHandlers={{ click: () => setActiveItemId(item.id) }}
-            >
-              <Tooltip direction="top" offset={[0, -8]} opacity={1}>
-                {item.title}
-              </Tooltip>
-              <Popup>
-                <div className="space-y-1">
-                  <div className="font-semibold">{item.title}</div>
-                  <div className="text-xs text-slate-600">{item.venue}</div>
-                </div>
-              </Popup>
-            </CircleMarker>
-          ))}
-          {routeSegments
-            .filter((segment) => segment.route?.geometry?.length)
-            .map((segment) => (
-              <Polyline
-                key={segment.id}
-                positions={segment.route.geometry}
-                pathOptions={{ color: '#0f172a', weight: 4, opacity: 0.72 }}
-              />
-            ))}
-        </MapContainer>
-      </div>
-    </div>
-  )
-}
-
-function EditorPanel({ activeItem, commitLocalEdit, saveState }) {
-  if (!activeItem) {
-    return null
+function weatherIcon(snapshot) {
+  if (!snapshot) {
+    return <Cloud className="text-slate-300" />
   }
 
-  return (
-    <div className="glass-panel rounded-[1.5rem] border border-white/60 p-4">
-      <div className="mb-4 flex items-center gap-3">
-        <div className="rounded-2xl bg-amber-100 p-3 text-amber-700">
-          <ShieldAlert className="h-5 w-5" />
-        </div>
-        <div>
-          <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Edit stop</p>
-          <h2 className="headline text-3xl text-slate-900">{activeItem.title}</h2>
-        </div>
-      </div>
-      <div className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <InputGroup label="Title" value={activeItem.title} onChange={(value) => commitLocalEdit(activeItem.id, { title: value })} />
-          <InputGroup label="Booking Ref" value={activeItem.bookingRef || ''} onChange={(value) => commitLocalEdit(activeItem.id, { bookingRef: value })} />
-          <InputGroup label="Start time" type="time" value={getTimeLabel(activeItem.startISO)} onChange={(value) => commitLocalEdit(activeItem.id, { startISO: replaceTimeInIso(activeItem.startISO, value) })} />
-          <InputGroup label="End time" type="time" value={getTimeLabel(activeItem.endISO)} onChange={(value) => commitLocalEdit(activeItem.id, { endISO: replaceTimeInIso(activeItem.endISO, value) })} />
-        </div>
-        <label className="block">
-          <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-            Notes / booking details
-          </span>
-          <textarea
-            value={activeItem.description}
-            onChange={(event) => commitLocalEdit(activeItem.id, { description: event.target.value })}
-            rows={5}
-            className="min-h-32 w-full rounded-[1.35rem] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-500"
-          />
-        </label>
-        <div className="rounded-[1.2rem] bg-slate-900 px-4 py-3 text-sm text-white">
-          Autosave cadence: 1000ms debounce · state: {saveState}
-        </div>
-      </div>
-    </div>
-  )
+  if (snapshot.rainProbability >= 40) {
+    return <CloudRain className="text-indigo-400" />
+  }
+
+  if (snapshot.weatherKey === 'clear') {
+    return <Sun className="text-yellow-400" />
+  }
+
+  return <Cloud className="text-blue-300" />
 }
 
-function App() {
-  const [selectedDate, setSelectedDate] = useState(TRIP_DATES[0])
-  const [previewMode, setPreviewMode] = useState('desktop')
+export default function App() {
+  const [activeTab, setActiveTab] = useState('itinerary')
+  const [activeDay, setActiveDay] = useState('All')
+  const [userReady, setUserReady] = useState(false)
   const [overrides, setOverrides] = useState({})
-  const [authState, setAuthState] = useState(firebaseEnabled ? 'connecting' : 'disabled')
-  const [saveState, setSaveState] = useState(firebaseEnabled ? 'saved' : 'local-only')
+  const [editingItem, setEditingItem] = useState(null)
+  const [actionItem, setActionItem] = useState(null)
+  const [autosaveStatus, setAutosaveStatus] = useState(firebaseEnabled ? 'saved' : 'local')
+  const [rate, setRate] = useState(null)
   const [weatherState, setWeatherState] = useState({ loading: true, data: null, error: '' })
-  const [rateState, setRateState] = useState({ loading: true, data: null, error: '' })
-  const [routeState, setRouteState] = useState({ loading: false, map: {} })
-  const [navigatorItem, setNavigatorItem] = useState(null)
-  const [activeItemId, setActiveItemId] = useState(STATIC_ITINERARY[0]?.id ?? null)
-  const [converter, setConverter] = useState({ jpy: '10000', hkd: '' })
-  const [copyState, setCopyState] = useState('')
-  const dirtyIdsRef = useRef(new Set())
-  const [dirtyVersion, setDirtyVersion] = useState(0)
-  const pressRegistryRef = useRef(new Map())
-  const routeCacheRef = useRef(new Map())
 
-  const itinerary = useMemo(() => mergeItinerary(STATIC_ITINERARY, overrides), [overrides])
-  const selectedDayItems = useMemo(
-    () => itinerary.filter((item) => getDateKey(item.startISO) === selectedDate),
-    [itinerary, selectedDate],
-  )
-  const deferredSelectedDayItems = useDeferredValue(selectedDayItems)
-  const activeItem = itinerary.find((item) => item.id === activeItemId) || selectedDayItems[0] || null
-  const weatherSnapshot = weatherState.data?.dailyByDate?.[selectedDate] ?? null
-  const mapPoints = selectedDayItems.map((item) => [item.lat, item.lng])
-  const totalExpensesHkd = rateState.data
-    ? TRIP_EXPENSES.reduce((sum, expense) => sum + expense.amountJPY * rateState.data.rate, 0)
-    : null
+  const longPressTimer = useRef(null)
+  const movedRef = useRef(false)
+  const longPressedRef = useRef(false)
+  const debounceTimer = useRef(null)
+  const dirtyItemIdRef = useRef(null)
 
-  const routeSegments = useMemo(
-    () =>
-      selectedDayItems.slice(0, -1).map((item, index) => {
-        const next = selectedDayItems[index + 1]
-        const routeKey = buildRouteKey(item, next)
-        const route = routeState.map[routeKey]
-        const bufferMinutes = isoToMinutes(next.startISO) - isoToMinutes(item.endISO) - (route?.durationMin ?? 0)
-
-        return {
-          id: routeKey,
-          route,
-          pace: getBufferLabel(bufferMinutes),
-          bufferMinutes,
-        }
-      }),
-    [routeState.map, selectedDayItems],
-  )
-
-  const flushDirtyItems = useEffectEvent(async (itemIds) => {
-    if (!firebaseEnabled) return
-
-    try {
-      setSaveState('saving')
-      for (const itemId of itemIds) {
-        const latest = overrides[itemId]
-        if (!latest) continue
-        await upsertItemOverride(itemId, latest)
-        dirtyIdsRef.current.delete(itemId)
-      }
-      setSaveState('saved')
-    } catch (error) {
-      console.error(error)
-      setSaveState('error')
-    }
-  })
+  const items = useMemo(() => mergeItinerary(overrides), [overrides])
+  const filteredItems = items.filter((item) => activeDay === 'All' || item.date === activeDay)
 
   useEffect(() => {
-    let unsubscribe = () => {}
+    let unsub = () => {}
 
-    async function bootstrapSync() {
-      if (!firebaseEnabled) return
+    async function bootstrap() {
+      if (!firebaseEnabled) {
+        setUserReady(true)
+        return
+      }
 
       try {
         await ensureAnonymousAuth()
-        setAuthState('connected')
-        unsubscribe = subscribeToOverrides(
-          (payload) => {
-            setOverrides((current) =>
-              mergeRemoteOverrides(current, payload?.items || {}, dirtyIdsRef.current),
-            )
-          },
-          (error) => {
-            console.error(error)
-            setAuthState('error')
-          },
-        )
+        setUserReady(true)
+        unsub = subscribeToOverrides((payload) => {
+          setOverrides(payload?.items || {})
+        }, console.error)
       } catch (error) {
         console.error(error)
-        setAuthState('error')
+        setUserReady(true)
       }
     }
 
-    bootstrapSync()
-    return () => unsubscribe()
+    bootstrap()
+    return () => unsub()
   }, [])
 
   useEffect(() => {
     let cancelled = false
-    fetchWeatherSnapshot()
-      .then((data) => {
-        if (!cancelled) setWeatherState({ loading: false, data, error: '' })
-      })
-      .catch((error) => {
-        console.error(error)
-        if (!cancelled) {
-          setWeatherState({
-            loading: false,
-            data: null,
-            error: 'Weather snapshot is temporarily unavailable.',
-          })
-        }
-      })
 
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
     fetchLatestJpyHkdRate()
       .then((data) => {
         if (!cancelled) {
-          setRateState({ loading: false, data, error: '' })
-          setConverter((current) => ({
-            ...current,
-            hkd: data.rate ? (Number(current.jpy || 0) * data.rate).toFixed(2) : '',
-          }))
+          setRate(data.rate)
+        }
+      })
+      .catch(console.error)
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    fetchWeatherSnapshot()
+      .then((data) => {
+        if (!cancelled) {
+          setWeatherState({ loading: false, data, error: '' })
         }
       })
       .catch((error) => {
         console.error(error)
         if (!cancelled) {
-          setRateState({ loading: false, data: null, error: 'Live rate is unavailable right now.' })
+          setWeatherState({ loading: false, data: null, error: 'Weather unavailable' })
         }
       })
 
@@ -548,430 +190,486 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!firebaseEnabled || dirtyIdsRef.current.size === 0) return
-    setSaveState('pending')
-    const pendingIds = Array.from(dirtyIdsRef.current)
-    const timeoutId = window.setTimeout(() => void flushDirtyItems(pendingIds), SAVE_DEBOUNCE_MS)
-    return () => window.clearTimeout(timeoutId)
-  }, [dirtyVersion, overrides])
-
-  useEffect(() => {
-    let cancelled = false
-    const pairs = deferredSelectedDayItems
-      .slice(0, -1)
-      .map((item, index) => [item, deferredSelectedDayItems[index + 1]])
-
-    if (!pairs.length) return
-
-    async function loadRoutes() {
-      setRouteState((current) => ({ ...current, loading: true }))
-
-      const entries = await Promise.all(
-        pairs.map(async ([from, to]) => {
-          const routeKey = buildRouteKey(from, to)
-          const cached = routeCacheRef.current.get(routeKey)
-          if (cached) return [routeKey, cached]
-
-          try {
-            const route = await fetchRoadRoute(from, to)
-            if (route) routeCacheRef.current.set(routeKey, route)
-            return [routeKey, route]
-          } catch (error) {
-            console.error(error)
-            return [routeKey, null]
-          }
-        }),
-      )
-
-      if (!cancelled) setRouteState({ loading: false, map: Object.fromEntries(entries) })
+    if (!editingItem) {
+      return
     }
 
-    loadRoutes()
+    if (!firebaseEnabled || !userReady) {
+      return
+    }
+
+    dirtyItemIdRef.current = editingItem.id
+
+    if (debounceTimer.current) {
+      window.clearTimeout(debounceTimer.current)
+    }
+
+    debounceTimer.current = window.setTimeout(async () => {
+      try {
+        await upsertItemOverride(editingItem.id, {
+          title: editingItem.title,
+          description: editingItem.description,
+          startISO: withUpdatedTime(editingItem.startISO, editingItem.time),
+          time: editingItem.time,
+        })
+        setAutosaveStatus('saved')
+      } catch (error) {
+        console.error(error)
+        setAutosaveStatus('error')
+      }
+    }, SAVE_DEBOUNCE_MS)
+
     return () => {
-      cancelled = true
-    }
-  }, [deferredSelectedDayItems])
-
-  function commitLocalEdit(itemId, changes) {
-    setOverrides((current) => ({
-      ...current,
-      [itemId]: { ...current[itemId], ...changes },
-    }))
-    dirtyIdsRef.current.add(itemId)
-    setDirtyVersion((value) => value + 1)
-  }
-
-  function handleConverterChange(field, value) {
-    if (!rateState.data?.rate) {
-      setConverter((current) => ({ ...current, [field]: value }))
-      return
-    }
-
-    if (field === 'jpy') {
-      setConverter({ jpy: value, hkd: value ? (Number(value) * rateState.data.rate).toFixed(2) : '' })
-      return
-    }
-
-    setConverter({ hkd: value, jpy: value ? (Number(value) / rateState.data.rate).toFixed(0) : '' })
-  }
-
-  function openEditSheet(item) {
-    setActiveItemId(item.id)
-  }
-
-  function openNavigatorMenu(item) {
-    navigator.vibrate?.(35)
-    setNavigatorItem(item)
-  }
-
-  function getPressState(itemId) {
-    if (!pressRegistryRef.current.has(itemId)) {
-      pressRegistryRef.current.set(itemId, {
-        timerId: null,
-        moved: false,
-        longPressed: false,
-        startX: 0,
-        startY: 0,
-      })
-    }
-    return pressRegistryRef.current.get(itemId)
-  }
-
-  function cancelPress(itemId) {
-    const state = getPressState(itemId)
-    if (state.timerId) {
-      window.clearTimeout(state.timerId)
-      state.timerId = null
-    }
-  }
-
-  function buildPressHandlers(item) {
-    function beginPress(clientX, clientY) {
-      const state = getPressState(item.id)
-      state.moved = false
-      state.longPressed = false
-      state.startX = clientX
-      state.startY = clientY
-      cancelPress(item.id)
-      state.timerId = window.setTimeout(() => {
-        state.longPressed = true
-        openNavigatorMenu(item)
-      }, 600)
-    }
-
-    function movePress(clientX, clientY) {
-      const state = getPressState(item.id)
-      const travel = Math.abs(clientX - state.startX) + Math.abs(clientY - state.startY)
-      if (travel > 14) {
-        state.moved = true
-        cancelPress(item.id)
+      if (debounceTimer.current) {
+        window.clearTimeout(debounceTimer.current)
       }
     }
+  }, [editingItem, userReady])
 
-    function endPress() {
-      const state = getPressState(item.id)
-      cancelPress(item.id)
-      if (!state.moved && !state.longPressed) openEditSheet(item)
+  const activeWeather =
+    activeDay !== 'All' ? weatherState.data?.dailyByDate?.[activeDay] ?? null : null
+
+  function updateEditingItem(changes) {
+    setAutosaveStatus(firebaseEnabled && userReady ? 'saving' : 'local')
+    setEditingItem((current) => (current ? { ...current, ...changes } : current))
+    setOverrides((current) => ({
+      ...current,
+      [dirtyItemIdRef.current || editingItem?.id]: {
+        ...(current[dirtyItemIdRef.current || editingItem?.id] || {}),
+        ...changes,
+      },
+    }))
+  }
+
+  function handleStartPress(item) {
+    movedRef.current = false
+    longPressedRef.current = false
+    longPressTimer.current = window.setTimeout(() => {
+      if (!movedRef.current) {
+        longPressedRef.current = true
+        navigator.vibrate?.(50)
+        setActionItem(item)
+      }
+    }, 600)
+  }
+
+  function handleMovePress() {
+    movedRef.current = true
+  }
+
+  function handleEndPress(item) {
+    if (longPressTimer.current) {
+      window.clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
     }
 
-    return {
-      onMouseDown: (event) => beginPress(event.clientX, event.clientY),
-      onMouseLeave: () => cancelPress(item.id),
-      onMouseUp: endPress,
-      onTouchStart: (event) => {
-        const touch = event.touches[0]
-        beginPress(touch.clientX, touch.clientY)
-      },
-      onTouchMove: (event) => {
-        const touch = event.touches[0]
-        movePress(touch.clientX, touch.clientY)
-      },
-      onTouchCancel: () => cancelPress(item.id),
-      onTouchEnd: endPress,
+    if (!movedRef.current && !longPressedRef.current) {
+      setAutosaveStatus(firebaseEnabled && userReady ? 'saved' : 'local')
+      setEditingItem({
+        ...item,
+        time: item.time || toTimeValue(item.startISO),
+        date: item.date || getDateKey(item.startISO),
+      })
     }
   }
 
-  async function copyCoordinates(item) {
-    try {
-      await navigator.clipboard.writeText(`${item.lat}, ${item.lng}`)
-      setCopyState('Coordinates copied')
-      window.setTimeout(() => setCopyState(''), 1600)
-    } catch (error) {
-      console.error(error)
-      setCopyState('Copy failed')
-      window.setTimeout(() => setCopyState(''), 1600)
-    }
+  function handleCloseEditor() {
+    setEditingItem(null)
+    setAutosaveStatus(firebaseEnabled ? 'saved' : 'local')
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl px-4 py-5 text-slate-900 sm:px-6 lg:px-8">
-      <section className="glass-panel animate-float-in rounded-[2rem] border border-white/60 px-5 py-5 sm:px-7">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-3">
-            <div className="inline-flex items-center gap-2 rounded-full border border-teal-900/10 bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-teal-900/70">
-              <Sparkles className="h-3.5 w-3.5" />
-              Tokyo / Chiba family trip
-            </div>
-            <div>
-              <h1 className="headline text-3xl leading-tight text-slate-900 sm:text-5xl">
-                Simple trip control board.
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-700 sm:text-base">
-                Pick a day, review the schedule, then toggle between a full desktop board and a mobile portrait preview.
-              </p>
-            </div>
+    <div className="flex h-screen flex-col overflow-hidden bg-slate-50 font-sans text-slate-900">
+      <header className="shrink-0 border-b border-slate-100 bg-white px-6 pb-4 pt-10">
+        <div className="flex items-end justify-between">
+          <div>
+            <p className="mb-1 text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600">
+              Chiba Family Trip
+            </p>
+            <h1 className="text-2xl font-black tracking-tighter text-slate-900">MAY 09 — 13</h1>
           </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <SegmentButton active={previewMode === 'desktop'} icon={Monitor} label="Desktop Board" onClick={() => setPreviewMode('desktop')} />
-            <SegmentButton active={previewMode === 'mobile'} icon={Smartphone} label="Mobile Portrait" onClick={() => setPreviewMode('mobile')} />
+          <div className="flex items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50 p-2">
+            <Cloud className={`h-4 w-4 ${firebaseEnabled ? 'text-emerald-500' : 'text-slate-300'}`} />
+            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+              {firebaseEnabled ? 'Cloud Synced' : 'Ready'}
+            </span>
           </div>
         </div>
+      </header>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-4">
-          <QuickStat label="Selected day" value={formatDateHeading(selectedDate)} />
-          <QuickStat
-            label="Weather"
-            value={
-              weatherState.loading
-                ? 'Loading...'
-                : weatherSnapshot
-                  ? `${Math.round(weatherSnapshot.tempMax)}° / rain ${weatherSnapshot.rainProbability ?? 0}%`
-                  : weatherState.error
-            }
-          />
-          <QuickStat label="Cloud sync" value={firebaseEnabled ? `${authState} · ${saveState}` : 'Local preview'} />
-          <QuickStat
-            label="Expenses"
-            value={totalExpensesHkd ? formatCurrency(totalExpensesHkd, 'HKD') : 'Waiting for rate'}
-            tone="dark"
-          />
-        </div>
-
-        <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
-          {TRIP_DATES.map((date) => (
-            <button
-              key={date}
-              type="button"
-              onClick={() => startTransition(() => setSelectedDate(date))}
-              className={`min-w-[124px] rounded-2xl border px-3 py-3 text-left transition ${
-                date === selectedDate
-                  ? 'border-slate-900 bg-slate-900 text-white'
-                  : 'border-slate-200 bg-white/75 text-slate-800 hover:border-slate-400'
-              }`}
-            >
-              <div className="text-xs uppercase tracking-[0.18em] opacity-70">Trip day</div>
-              <div className="mt-1 text-sm font-semibold">{formatDateChip(date)}</div>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {previewMode === 'desktop' ? (
-        <section className="mt-6 grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-          <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <StatusCard icon={CalendarDays} eyebrow="Weather" title={weatherSnapshot ? weatherSnapshot.label : 'Forecast'}>
-                {weatherState.loading ? (
-                  <LoadingLine label="Loading corridor weather..." />
-                ) : weatherSnapshot ? (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-2xl bg-amber-400/15 p-3 text-amber-600">
-                        <WeatherGlyph weatherKey={weatherSnapshot.weatherKey} className="h-6 w-6" />
-                      </div>
-                      <div className="text-sm text-slate-700">
-                        {Math.round(weatherSnapshot.tempMax)}° high · {Math.round(weatherSnapshot.tempMin)}° low
-                      </div>
-                    </div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Rain probability {weatherSnapshot.rainProbability ?? 0}%
-                    </div>
+      <div className="flex-1 overflow-hidden">
+        {activeTab === 'itinerary' ? (
+          <div className="flex h-full flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto px-4 py-6">
+              <div className="space-y-6">
+                <div className="flex items-center justify-between rounded-3xl border border-slate-100 bg-white p-6 shadow-sm">
+                  <div>
+                    <h2 className="text-2xl font-black tracking-tight text-slate-900">
+                      {activeDay === 'All' ? 'Schedule' : formatDate(activeDay)}
+                    </h2>
+                    <p className="mt-1 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      <Navigation2 className="h-3 w-3 text-indigo-500" />
+                      Hold for map • Tap to edit
+                    </p>
                   </div>
-                ) : (
-                  <p className="text-sm text-slate-600">{weatherState.error}</p>
-                )}
-              </StatusCard>
-
-              <StatusCard icon={WalletCards} eyebrow="Sync" title={firebaseEnabled ? 'Firestore live' : 'Local only'}>
-                <div className="space-y-2">
-                  <StatusPill label={`Auth: ${authState}`} good={authState === 'connected'} />
-                  <StatusPill label={`Autosave: ${saveState}`} good={saveState === 'saved'} />
+                  {activeDay !== 'All' && (
+                    <div className="flex flex-col items-end">
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl font-black text-slate-800">
+                          {activeWeather ? `${Math.round(activeWeather.tempMax)}°` : '--'}
+                        </span>
+                        {weatherIcon(activeWeather)}
+                      </div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                        {activeWeather ? `${activeWeather.label} • rain ${activeWeather.rainProbability ?? 0}%` : weatherState.error || 'Loading'}
+                      </p>
+                    </div>
+                  )}
                 </div>
-              </StatusCard>
 
-              <StatusCard icon={DollarSign} eyebrow="Outlet math" title="JPY / HKD">
-                <div className="space-y-2">
-                  <InputGroup label="JPY" inputMode="decimal" value={converter.jpy} onChange={(value) => handleConverterChange('jpy', value)} />
-                  <InputGroup label="HKD" inputMode="decimal" value={converter.hkd} onChange={(value) => handleConverterChange('hkd', value)} />
+                <div className="no-scrollbar flex gap-2 overflow-x-auto pb-2">
+                  {DATES.map((date) => (
+                    <button
+                      key={date}
+                      onClick={() => setActiveDay(date)}
+                      className={`whitespace-nowrap rounded-2xl px-5 py-2.5 text-[10px] font-black uppercase shadow-sm transition-all ${
+                        activeDay === date
+                          ? 'bg-indigo-600 text-white ring-4 ring-indigo-50'
+                          : 'bg-white text-slate-400'
+                      }`}
+                    >
+                      {date === 'All' ? 'Overview' : date.split('-').slice(1).join('/')}
+                    </button>
+                  ))}
                 </div>
-              </StatusCard>
-            </div>
 
-            <div className="space-y-4">
-              {selectedDayItems.map((item, index) => (
-                <ItineraryCard
-                  key={item.id}
-                  item={item}
-                  nextRoute={routeSegments[index]}
-                  isActive={activeItem?.id === item.id}
-                  onSelect={() => setActiveItemId(item.id)}
-                  pressHandlers={buildPressHandlers(item)}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <NavigatorMap
-              selectedDayItems={selectedDayItems}
-              routeSegments={routeSegments}
-              mapPoints={mapPoints}
-              setActiveItemId={setActiveItemId}
-              routeState={routeState}
-            />
-            <EditorPanel activeItem={activeItem} commitLocalEdit={commitLocalEdit} saveState={saveState} />
-          </div>
-        </section>
-      ) : (
-        <section className="mt-6 flex justify-center">
-          <div className="w-full max-w-[430px] rounded-[2.2rem] border border-slate-900/10 bg-[#171b24] p-3 shadow-[0_28px_90px_rgba(15,23,42,0.24)]">
-            <div className="rounded-[2rem] bg-[#f7f3ea] p-4">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">Mobile portrait</div>
-                  <div className="mt-1 text-lg font-bold text-slate-900">{formatDateHeading(selectedDate)}</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => activeItem && openNavigatorMenu(activeItem)}
-                  className="rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white"
-                >
-                  Navigator
-                </button>
-              </div>
-
-              <div className="grid gap-2 sm:grid-cols-2">
-                <QuickStat
-                  label="Weather"
-                  value={
-                    weatherSnapshot
-                      ? `${Math.round(weatherSnapshot.tempMax)}° · rain ${weatherSnapshot.rainProbability ?? 0}%`
-                      : weatherState.loading
-                        ? 'Loading...'
-                        : 'Unavailable'
-                  }
-                />
-                <QuickStat
-                  label="Rate"
-                  value={rateState.data ? `${rateState.data.rate.toFixed(4)} HKD` : 'Loading...'}
-                />
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {selectedDayItems.map((item, index) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setActiveItemId(item.id)}
-                    className={`w-full rounded-[1.5rem] border px-4 py-4 text-left ${
-                      activeItem?.id === item.id
-                        ? 'border-slate-900 bg-slate-900 text-white'
-                        : 'border-slate-200 bg-white text-slate-900'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${activeItem?.id === item.id ? 'text-white/65' : 'text-slate-500'}`}>
-                          {item.category}
+                <div className="space-y-3">
+                  {filteredItems.map((item) => (
+                    <div key={item.id} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                      <div
+                        onMouseDown={() => handleStartPress(item)}
+                        onMouseUp={() => handleEndPress(item)}
+                        onMouseLeave={() => handleEndPress(item)}
+                        onTouchStart={() => handleStartPress(item)}
+                        onTouchEnd={() => handleEndPress(item)}
+                        onTouchMove={handleMovePress}
+                        onContextMenu={(event) => event.preventDefault()}
+                        className="group relative flex cursor-pointer select-none items-start gap-4 rounded-3xl border border-slate-100 bg-white p-5 shadow-sm transition-colors active:bg-slate-50"
+                      >
+                        <div className={`rounded-2xl p-3 ${iconTone(item.type)}`}>
+                          <TypeIcon type={item.type} className="h-5 w-5" />
                         </div>
-                        <div className="mt-1 text-base font-bold">{item.title}</div>
-                        <div className={`mt-1 text-sm ${activeItem?.id === item.id ? 'text-white/80' : 'text-slate-600'}`}>
-                          {item.venue}
+                        <div className="flex-1">
+                          <div className="flex items-start justify-between">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600">
+                              {item.time}
+                            </span>
+                            <div className="flex gap-1 opacity-20 transition-opacity group-hover:opacity-100">
+                              <MapIcon className="h-3 w-3 text-slate-400" />
+                              <Edit3 className="h-3 w-3 text-slate-400" />
+                            </div>
+                          </div>
+                          <h3 className="text-sm font-bold leading-tight text-slate-900">{item.title}</h3>
+                          {item.description ? (
+                            <p className="mt-2 rounded-xl bg-slate-50 p-2 px-3 text-[11px] italic text-slate-500">
+                              {item.description}
+                            </p>
+                          ) : null}
                         </div>
                       </div>
-                      <div className={`inline-flex items-center gap-1 text-sm font-semibold ${activeItem?.id === item.id ? 'text-white' : 'text-slate-700'}`}>
-                        <Clock3 className="h-4 w-4" />
-                        {getTimeLabel(item.startISO)}
-                      </div>
                     </div>
-                    {routeSegments[index] ? (
-                      <div className={`mt-3 text-xs ${activeItem?.id === item.id ? 'text-white/70' : 'text-slate-500'}`}>
-                        {routeSegments[index].route
-                          ? `${Math.round(routeSegments[index].route.durationMin)} min drive · ${Math.round(routeSegments[index].bufferMinutes)} min buffer`
-                          : 'Route loading'}
-                      </div>
-                    ) : null}
-                  </button>
-                ))}
-              </div>
-
-              {activeItem ? (
-                <div className="mt-4 rounded-[1.5rem] bg-white p-4 shadow-sm">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Focused stop</div>
-                  <div className="mt-2 text-lg font-bold text-slate-900">{activeItem.title}</div>
-                  <div className="mt-1 text-sm text-slate-600">{activeItem.description}</div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                      {getTimeLabel(activeItem.startISO)} - {getTimeLabel(activeItem.endISO)}
-                    </span>
-                    {activeItem.bookingRef ? (
-                      <span className="rounded-full bg-teal-100 px-3 py-1 text-xs font-semibold text-teal-800">
-                        {activeItem.bookingRef}
-                      </span>
-                    ) : null}
-                  </div>
+                  ))}
                 </div>
-              ) : null}
+              </div>
             </div>
           </div>
-        </section>
-      )}
+        ) : (
+          <CostTool rate={rate} />
+        )}
+      </div>
 
-      {navigatorItem ? (
-        <div className="fixed inset-0 z-20 flex items-end bg-slate-950/45 p-4 sm:items-center sm:justify-center">
-          <div className="glass-panel w-full max-w-md rounded-[1.75rem] border border-white/60 p-5">
-            <div className="flex items-start justify-between gap-4">
+      {actionItem ? (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg animate-in rounded-[2rem] bg-white p-4 duration-300 slide-in-from-bottom">
+            <div className="mb-2 flex items-center gap-4 border-b border-slate-50 p-4">
+              <div className="rounded-xl bg-indigo-50 p-2 text-indigo-600">
+                <MapPin className="h-5 w-5" />
+              </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Navigator Menu</p>
-                <h3 className="mt-2 text-xl font-bold text-slate-900">{navigatorItem.title}</h3>
-                <p className="mt-1 text-sm text-slate-600">{navigatorItem.venue}</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Destination</p>
+                <p className="truncate text-sm font-bold text-slate-900">{actionItem.title}</p>
               </div>
-              <button type="button" onClick={() => setNavigatorItem(null)} className="rounded-full border border-slate-200 px-3 py-1 text-sm font-medium text-slate-600">
-                Close
-              </button>
             </div>
-            <div className="mt-5 space-y-3">
-              <a
-                href={`https://www.google.com/maps/search/?api=1&query=${navigatorItem.lat},${navigatorItem.lng}`}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center justify-between rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4 text-slate-800"
-              >
-                <span className="flex items-center gap-3 font-semibold">
-                  <Navigation className="h-5 w-5 text-teal-700" />
-                  Open in Google Maps
-                </span>
-              </a>
+            <div className="space-y-2">
               <button
-                type="button"
-                onClick={() => void copyCoordinates(navigatorItem)}
-                className="flex w-full items-center justify-between rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4 text-left text-slate-800"
+                onClick={() => {
+                  window.open(
+                    `https://www.google.com/maps/search/?api=1&query=${actionItem.lat},${actionItem.lng}`,
+                    '_blank',
+                  )
+                  setActionItem(null)
+                }}
+                className="flex w-full items-center justify-between rounded-2xl bg-indigo-600 p-4 text-sm font-bold text-white shadow-lg shadow-indigo-100"
               >
-                <span className="flex items-center gap-3 font-semibold">
-                  <Copy className="h-5 w-5 text-sky-700" />
-                  Copy GPS coordinates
-                </span>
-                <span className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                  {copyState || `${navigatorItem.lat}, ${navigatorItem.lng}`}
-                </span>
+                Navigate in Google Maps
+                <ExternalLink className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => {
+                  navigator.clipboard?.writeText(`${actionItem.lat}, ${actionItem.lng}`)
+                  setActionItem(null)
+                }}
+                className="flex w-full items-center justify-between rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-900"
+              >
+                Copy GPS Coordinates
+                <Copy className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setActionItem(null)}
+                className="mt-2 w-full p-4 text-center text-xs font-black uppercase tracking-widest text-slate-400"
+              >
+                Cancel
               </button>
             </div>
           </div>
         </div>
       ) : null}
-    </main>
+
+      {editingItem ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/60 backdrop-blur-md sm:items-center">
+          <div className="w-full max-w-lg animate-in rounded-t-[2.5rem] bg-white p-8 duration-300 slide-in-from-bottom sm:rounded-[2.5rem]">
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-2xl bg-indigo-50 p-3 text-indigo-600">
+                    <TypeIcon type={editingItem.type} className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black uppercase leading-none tracking-tight text-slate-900">
+                      {editingItem.title}
+                    </h2>
+                    <div className="mt-1 flex items-center gap-2">
+                      {autosaveStatus === 'saving' ? (
+                        <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-indigo-500 animate-pulse">
+                          <RefreshCw className="h-3 w-3 animate-spin" />
+                          Autosaving...
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-emerald-500">
+                          <Check className="h-3 w-3" />
+                          {autosaveStatus === 'local' ? 'Stored locally' : 'All changes synced'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button onClick={handleCloseEditor} className="rounded-full bg-slate-100 p-2">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      Local Time
+                    </label>
+                    <input
+                      type="time"
+                      value={editingItem.time}
+                      onChange={(event) =>
+                        updateEditingItem({
+                          time: event.target.value,
+                          startISO: withUpdatedTime(editingItem.startISO, event.target.value),
+                        })
+                      }
+                      className="w-full rounded-2xl border-2 border-transparent bg-slate-50 p-4 text-sm font-bold outline-none transition focus:border-indigo-600"
+                    />
+                  </div>
+                  <div
+                    onClick={() => {
+                      setActionItem({ ...editingItem })
+                      setEditingItem(null)
+                    }}
+                    className="cursor-pointer"
+                  >
+                    <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-indigo-400">
+                      GPS Location
+                    </label>
+                    <div className="flex w-full items-center justify-between rounded-2xl bg-indigo-50 p-4 text-xs font-bold uppercase text-indigo-600">
+                      View Options
+                      <Navigation2 className="h-3 w-3" />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    Title
+                  </label>
+                  <input
+                    type="text"
+                    value={editingItem.title}
+                    onChange={(event) => updateEditingItem({ title: event.target.value })}
+                    className="w-full rounded-2xl border-2 border-transparent bg-slate-50 p-4 text-sm font-bold outline-none transition focus:border-indigo-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    Booking Refs / Toddler Notes
+                  </label>
+                  <textarea
+                    rows="4"
+                    value={editingItem.description || ''}
+                    onChange={(event) => updateEditingItem({ description: event.target.value })}
+                    className="w-full resize-none rounded-2xl border-2 border-transparent bg-slate-50 p-4 text-sm font-medium outline-none transition focus:border-indigo-600"
+                    placeholder="Paste booking codes or diaper bag reminders..."
+                  />
+                </div>
+              </div>
+
+              <button
+                onClick={handleCloseEditor}
+                className="w-full rounded-[1.5rem] bg-slate-900 py-5 text-xs font-black uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:bg-slate-800"
+              >
+                Done Planning
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <nav className="shrink-0 border-t border-slate-100 bg-white p-4 px-10 pb-10">
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setActiveTab('itinerary')}
+            className={`flex flex-col items-center gap-1.5 transition-all ${
+              activeTab === 'itinerary' ? 'scale-110 text-indigo-600' : 'text-slate-300'
+            }`}
+          >
+            <MapIcon className="h-6 w-6" />
+            <span className="text-[9px] font-black uppercase">Itinerary</span>
+          </button>
+
+          <button className="rounded-3xl border-4 border-white bg-indigo-600 p-4 text-white shadow-2xl transition-transform active:scale-95 -mt-12">
+            <Plus className="h-6 w-6" />
+          </button>
+
+          <button
+            onClick={() => setActiveTab('cost')}
+            className={`flex flex-col items-center gap-1.5 transition-all ${
+              activeTab === 'cost' ? 'scale-110 text-indigo-600' : 'text-slate-300'
+            }`}
+          >
+            <Wallet className="h-6 w-6" />
+            <span className="text-[9px] font-black uppercase">Exchange</span>
+          </button>
+        </div>
+      </nav>
+
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+          .no-scrollbar::-webkit-scrollbar { display: none; }
+          .animate-in { animation: slideUp 0.3s ease-out forwards; }
+          @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        `,
+        }}
+      />
+    </div>
   )
 }
 
-export default App
+function CostTool({ rate }) {
+  const [jpy, setJpy] = useState('5000')
+  const hkd = rate ? (Number(jpy || 0) * rate).toFixed(2) : '...'
+  const totalHkd = rate
+    ? EXPENSES.reduce((sum, expense) => sum + expense.amountJPY * rate, 0).toFixed(2)
+    : '...'
+
+  return (
+    <div className="flex-1 overflow-y-auto px-6 py-10 animate-in duration-300 slide-in-from-bottom">
+      <div className="space-y-8">
+        <div className="relative overflow-hidden rounded-[3rem] bg-slate-900 p-10 text-center text-white shadow-2xl">
+          <div className="relative z-10">
+            <p className="mb-6 text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400">
+              Shopping Converter
+            </p>
+            <div className="flex flex-col items-center gap-6">
+              <div className="flex items-center gap-4">
+                <span className="text-4xl font-black text-slate-700">¥</span>
+                <input
+                  type="number"
+                  value={jpy}
+                  onChange={(event) => setJpy(event.target.value)}
+                  className="w-48 border-b-2 border-slate-800 bg-transparent pb-2 text-center text-5xl font-black outline-none"
+                />
+              </div>
+              <ArrowLeftRight className="h-6 w-6 text-indigo-500" />
+              <div className="flex items-center gap-4">
+                <span className="text-4xl font-black text-slate-700">$</span>
+                <div className="text-5xl font-black">{hkd}</div>
+              </div>
+              <p className="mt-4 text-[10px] font-bold uppercase text-slate-500">
+                Live Exchange: {rate ? rate.toFixed(4) : 'loading'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {EXPENSES.map((expense) => (
+            <div
+              key={expense.id}
+              className="flex items-center justify-between rounded-3xl border border-slate-100 bg-white p-5 shadow-sm"
+            >
+              <div>
+                <p className="text-sm font-bold text-slate-900">{expense.label}</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  ¥{expense.amountJPY.toLocaleString()}
+                </p>
+              </div>
+              <p className="text-lg font-black text-indigo-600">
+                {rate ? `$${(expense.amountJPY * rate).toFixed(2)}` : '...'}
+              </p>
+            </div>
+          ))}
+          <div className="rounded-3xl bg-indigo-600 p-5 text-white shadow-lg shadow-indigo-100">
+            <p className="text-[10px] font-black uppercase tracking-widest text-indigo-100">Trip total</p>
+            <p className="mt-1 text-2xl font-black">${totalHkd}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TypeIcon({ type, className }) {
+  switch (type) {
+    case 'flight':
+      return <Plane className={className} />
+    case 'car':
+      return <Car className={className} />
+    case 'hotel':
+      return <Hotel className={className} />
+    case 'wedding':
+      return <PartyPopper className={className} />
+    case 'activity':
+      return <ShoppingBag className={className} />
+    default:
+      return <MapPin className={className} />
+  }
+}
+
+function iconTone(type) {
+  if (type === 'wedding') {
+    return 'bg-pink-50 text-pink-500'
+  }
+
+  if (type === 'hotel') {
+    return 'bg-amber-50 text-amber-500'
+  }
+
+  return 'bg-indigo-50 text-indigo-500'
+}
