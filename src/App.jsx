@@ -21,12 +21,14 @@ import {
   Plus,
   Search,
   Sun,
+  Trash2,
   X,
 } from 'lucide-react'
 import { STATIC_ITINERARY, TRIP_DATES } from './data/seedItinerary'
 import {
   ensureAnonymousAuth,
   firebaseEnabled,
+  hideItemOverride,
   subscribeToOverrides,
   upsertItemOverride,
 } from './services/firebase'
@@ -141,7 +143,7 @@ function mergeItems(overrides) {
   const staticIds = new Set(STATIC_ITINERARY.map((item) => item.id))
   const mergedStatic = STATIC_ITINERARY.map((item) =>
     normalizeItem({ ...item, ...(overrides[item.id] || {}) }),
-  )
+  ).filter((item) => !item.hidden)
   const userItems = Object.entries(overrides)
     .filter(([id]) => !staticIds.has(id))
     .map(([id, item]) =>
@@ -150,6 +152,7 @@ function mergeItems(overrides) {
         ...item,
       }),
     )
+    .filter((item) => !item.hidden)
 
   return [...mergedStatic, ...userItems].sort((a, b) => a.startISO.localeCompare(b.startISO))
 }
@@ -402,6 +405,22 @@ export default function App() {
     setDetailItem((current) => (current ? { ...current, ...changes } : current))
   }
 
+  async function deleteItem(itemId) {
+    if (!firestoreReady) return
+
+    try {
+      if (debounceRef.current) {
+        window.clearTimeout(debounceRef.current)
+      }
+      await hideItemOverride(itemId)
+      setNoteItem((current) => (current?.id === itemId ? null : current))
+      setDetailItem((current) => (current?.id === itemId ? null : current))
+    } catch (error) {
+      console.error(error)
+      setFirestoreState({ status: 'error', error: error?.message || 'Delete failed' })
+    }
+  }
+
   function clearPressState() {
     const state = pressStateRef.current
     if (state.timer) {
@@ -522,8 +541,14 @@ export default function App() {
       {noteItem ? (
         <NoteModal
           item={noteItem}
+          firestoreReady={firestoreReady}
           isMobilePortrait={isMobilePortrait}
           onClose={() => setNoteItem(null)}
+          onDelete={async () => {
+            const id = noteItem.id
+            setNoteItem(null)
+            await deleteItem(id)
+          }}
           onOpenDetails={() => {
             const match = items.find((item) => item.id === noteItem.id)
             setNoteItem(null)
@@ -544,6 +569,10 @@ export default function App() {
           isMobilePortrait={isMobilePortrait}
           onChange={updateDetail}
           onClose={() => setDetailItem(null)}
+          onDelete={async () => {
+            const id = detailItem.id
+            await deleteItem(id)
+          }}
         />
       ) : null}
     </main>
@@ -891,7 +920,7 @@ function SearchFeedback({ searchState }) {
   return null
 }
 
-function NoteModal({ item, isMobilePortrait, onClose, onOpenDetails }) {
+function NoteModal({ item, firestoreReady, isMobilePortrait, onClose, onDelete, onOpenDetails }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-4 backdrop-blur-sm sm:items-center sm:justify-center">
       <div className={`glass-panel w-full border border-white/60 p-6 ${isMobilePortrait ? 'rounded-[2rem] sm:max-w-md' : 'max-w-lg rounded-[2rem]'}`}>
@@ -900,9 +929,20 @@ function NoteModal({ item, isMobilePortrait, onClose, onOpenDetails }) {
             <h3 className="text-2xl font-bold text-slate-900">{item.title}</h3>
             <p className="mt-1 text-sm text-slate-600">{item.location}</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void onDelete()}
+              disabled={!firestoreReady}
+              className="rounded-full bg-rose-50 p-2 text-rose-600 disabled:bg-slate-100 disabled:text-slate-400"
+              aria-label="Delete item"
+            >
+              <Trash2 className="h-5 w-5" />
+            </button>
+            <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         <div className="mt-5 space-y-4">
@@ -940,6 +980,7 @@ function DetailModal({
   isMobilePortrait,
   onChange,
   onClose,
+  onDelete,
 }) {
   const [searchState, setSearchState] = useState({
     loading: false,
@@ -980,9 +1021,20 @@ function DetailModal({
                   : 'All changes synced'}
             </div>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void onDelete()}
+              disabled={!firestoreReady}
+              className="rounded-full bg-rose-50 p-2 text-rose-600 disabled:bg-slate-100 disabled:text-slate-400"
+              aria-label="Delete item"
+            >
+              <Trash2 className="h-5 w-5" />
+            </button>
+            <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         <div className={`mt-5 grid gap-4 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
@@ -1117,6 +1169,7 @@ function DetailModal({
             {firestoreButtonLabel(firestoreState)}
           </div>
         ) : null}
+
       </div>
     </div>
   )

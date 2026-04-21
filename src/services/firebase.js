@@ -18,6 +18,7 @@ async function loadFirebaseServices() {
     return {
       auth: null,
       db: null,
+      deleteField: null,
       doc: null,
       onSnapshot: null,
       serverTimestamp: null,
@@ -39,6 +40,7 @@ async function loadFirebaseServices() {
       return {
         auth: authModule.getAuth(app),
         db: firestoreModule.getFirestore(app),
+        deleteField: firestoreModule.deleteField,
         doc: firestoreModule.doc,
         onSnapshot: firestoreModule.onSnapshot,
         serverTimestamp: firestoreModule.serverTimestamp,
@@ -105,6 +107,30 @@ export async function upsertItemOverride(itemId, override) {
           ...override,
           updatedAt: serverTimestamp(),
         }),
+      },
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  )
+}
+
+export async function hideItemOverride(itemId) {
+  const { db, doc, serverTimestamp, setDoc } = await loadFirebaseServices()
+
+  if (!db) {
+    return
+  }
+
+  const overridesDoc = doc(db, 'trips', TRIP_ID, 'overrides', 'shared')
+
+  await setDoc(
+    overridesDoc,
+    {
+      items: {
+        [itemId]: {
+          hidden: true,
+          updatedAt: serverTimestamp(),
+        },
       },
       updatedAt: serverTimestamp(),
     },
