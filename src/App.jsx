@@ -120,6 +120,10 @@ export default function App() {
   const [viewMode, setViewMode] = useState('desktop')
   const [overrides, setOverrides] = useState({})
   const [authReady, setAuthReady] = useState(false)
+  const [firestoreState, setFirestoreState] = useState({
+    status: firebaseEnabled ? 'connecting' : 'disabled',
+    error: '',
+  })
   const [weatherState, setWeatherState] = useState({ loading: true, data: null, error: '' })
   const [editingItem, setEditingItem] = useState(null)
   const [autosaveStatus, setAutosaveStatus] = useState(firebaseEnabled ? 'saved' : 'offline')
@@ -146,7 +150,7 @@ export default function App() {
   const deferredItems = useDeferredValue(filteredItems)
   const selectedWeather =
     activeDay === 'All' ? null : weatherState.data?.dailyByDate?.[activeDay] ?? null
-  const firestoreReady = firebaseEnabled && authReady
+  const firestoreReady = firebaseEnabled && authReady && firestoreState.status === 'ready'
 
   useEffect(() => {
     let active = true
@@ -154,7 +158,10 @@ export default function App() {
 
     async function bootstrap() {
       if (!firebaseEnabled) {
-        if (active) setAuthReady(true)
+        if (active) {
+          setAuthReady(true)
+          setFirestoreState({ status: 'disabled', error: 'Firebase env vars missing' })
+        }
         return
       }
 
@@ -165,10 +172,19 @@ export default function App() {
         setAuthReady(true)
         unsubscribe = await subscribeToOverrides((payload) => {
           setOverrides(payload?.items || {})
-        }, console.error)
+          setFirestoreState({ status: 'ready', error: '' })
+        }, (error) => {
+          console.error(error)
+          if (active) {
+            setFirestoreState({ status: 'error', error: error?.message || 'Snapshot failed' })
+          }
+        })
       } catch (error) {
         console.error(error)
-        if (active) setAuthReady(true)
+        if (active) {
+          setAuthReady(true)
+          setFirestoreState({ status: 'error', error: error?.message || 'Auth failed' })
+        }
       }
     }
 
@@ -368,6 +384,7 @@ export default function App() {
       activeDay={activeDay}
       filteredItems={filteredItems}
       firestoreReady={firestoreReady}
+      firestoreState={firestoreState}
       routeSegments={routeSegments}
       onDayChange={(day) => {
         startTransition(() => {
@@ -410,7 +427,19 @@ export default function App() {
           </div>
 
           <div className="grid gap-2 sm:grid-cols-2 xl:min-w-[27rem]">
-            <StatCard icon={Cloud} label="Firestore sync" value={firestoreReady ? 'Ready for save' : 'Connecting'} />
+            <StatCard
+              icon={Cloud}
+              label="Firestore sync"
+              value={
+                firestoreState.status === 'ready'
+                  ? 'Ready for save'
+                  : firestoreState.status === 'connecting'
+                    ? 'Connecting'
+                    : firestoreState.status === 'error'
+                      ? 'Connection error'
+                      : 'Not configured'
+              }
+            />
             <StatCard icon={Plane} label="Travellers" value={TRAVELLER_PROFILE.party.join(' · ')} />
           </div>
         </div>
@@ -486,6 +515,7 @@ function PlannerPanel({
   activeDay,
   filteredItems,
   firestoreReady,
+  firestoreState,
   routeSegments,
   onDayChange,
   onPointerDown,
@@ -791,10 +821,10 @@ function PlannerPanel({
           type="button"
           onClick={() => void saveNewItem()}
           disabled={!firestoreReady}
-          title={!firestoreReady ? 'Wait for Firestore connection before saving' : undefined}
+          title={!firestoreReady ? firestoreButtonLabel(firestoreState) : undefined}
           className="mt-4 w-full rounded-[1.4rem] bg-indigo-600 px-4 py-4 text-sm font-bold text-white shadow-lg shadow-indigo-100"
         >
-          {firestoreReady ? 'Save new itinerary detail' : 'Waiting for Firestore'}
+          {firestoreReady ? 'Save new itinerary detail' : firestoreButtonLabel(firestoreState)}
         </button>
       </div>
     </>
@@ -1000,6 +1030,13 @@ function MapPanel({ activeDay, filteredItems, movementPoints, routeSegments, vie
 }
 
 const MemoMapPanel = memo(MapPanel)
+
+function firestoreButtonLabel(firestoreState) {
+  if (firestoreState.status === 'ready') return 'Save new itinerary detail'
+  if (firestoreState.status === 'connecting') return 'Connecting to Firestore'
+  if (firestoreState.status === 'error') return 'Firestore error'
+  return 'Firestore not configured'
+}
 
 function StatCard({ icon, label, value }) {
   return (
