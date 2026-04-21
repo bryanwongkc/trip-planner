@@ -11,6 +11,7 @@ import {
   CalendarDays,
   CarFront,
   Check,
+  Clock3,
   CloudDrizzle,
   CloudFog,
   CloudSun,
@@ -20,11 +21,13 @@ import {
   MapPinned,
   Navigation,
   NotebookPen,
+  Monitor,
   Route,
   ShieldAlert,
   ShoppingBag,
   Snowflake,
   Sparkles,
+  Smartphone,
   SunMedium,
   Umbrella,
   WalletCards,
@@ -184,8 +187,226 @@ function StatusPill({ label, good }) {
   )
 }
 
+function SegmentButton({ active, icon, label, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+        active
+          ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/15'
+          : 'bg-white text-slate-600 hover:bg-slate-100'
+      }`}
+    >
+      {React.createElement(icon, { className: 'h-4 w-4' })}
+      {label}
+    </button>
+  )
+}
+
+function QuickStat({ label, value, tone = 'light' }) {
+  return (
+    <div
+      className={`rounded-2xl border px-3 py-3 ${
+        tone === 'dark'
+          ? 'border-slate-800 bg-slate-900 text-white'
+          : 'border-white/60 bg-white/70 text-slate-900'
+      }`}
+    >
+      <div className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${tone === 'dark' ? 'text-white/60' : 'text-slate-500'}`}>
+        {label}
+      </div>
+      <div className="mt-1 text-sm font-semibold">{value}</div>
+    </div>
+  )
+}
+
+function ItineraryCard({ item, nextRoute, isActive, onSelect, pressHandlers }) {
+  const categoryIcon =
+    item.category === 'Transit'
+      ? CarFront
+      : item.category === 'Stay'
+        ? MapPinned
+        : item.category === 'Wedding'
+          ? Umbrella
+          : NotebookPen
+
+  return (
+    <div className="space-y-3">
+      <article
+        className={`glass-panel rounded-[1.5rem] border px-4 py-4 transition sm:px-5 ${
+          isActive ? 'border-slate-900/60 ring-2 ring-slate-900/10' : 'border-white/60'
+        }`}
+        onClick={onSelect}
+        {...pressHandlers}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              {React.createElement(categoryIcon, { className: 'h-4 w-4' })}
+              {item.category}
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-slate-900 sm:text-xl">{item.title}</h3>
+              <p className="mt-1 text-sm text-slate-600">{item.venue}</p>
+            </div>
+          </div>
+          <div className="rounded-2xl bg-slate-900 px-3 py-2 text-right text-white">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-white/60">Window</div>
+            <div className="text-sm font-semibold">
+              {getTimeLabel(item.startISO)} - {getTimeLabel(item.endISO)}
+            </div>
+          </div>
+        </div>
+        <p className="mt-4 text-sm leading-7 text-slate-700">{item.description}</p>
+        <div className="mt-4 flex flex-wrap gap-2 text-xs">
+          {item.bookingRef ? (
+            <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
+              Ref: {item.bookingRef}
+            </span>
+          ) : null}
+          <span className="rounded-full bg-teal-100 px-3 py-1 font-medium text-teal-800">
+            {item.startISO.slice(0, 10)}
+          </span>
+        </div>
+      </article>
+
+      {nextRoute ? (
+        <div className="rounded-[1.3rem] border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-700">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-slate-900 p-2 text-white">
+                <Route className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="font-semibold text-slate-900">
+                  {nextRoute.route
+                    ? `${nextRoute.route.distanceKm.toFixed(1)} km · ${Math.round(nextRoute.route.durationMin)} min drive`
+                    : 'OSRM route pending'}
+                </div>
+                <div className="text-xs text-slate-500">
+                  {nextRoute.pace.label} · {Math.round(nextRoute.bufferMinutes)} min buffer
+                </div>
+              </div>
+            </div>
+            <div
+              className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${
+                nextRoute.pace.tone === 'warning'
+                  ? 'bg-rose-100 text-rose-800'
+                  : nextRoute.pace.tone === 'easy'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-amber-100 text-amber-900'
+              }`}
+            >
+              Toddler buffer
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function NavigatorMap({ selectedDayItems, routeSegments, mapPoints, setActiveItemId, routeState }) {
+  return (
+    <div className="glass-panel rounded-[1.5rem] border border-white/60 p-4">
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Navigator</p>
+          <h2 className="headline mt-2 text-3xl text-slate-900">Map</h2>
+        </div>
+        {routeState.loading ? <LoadingLine label="Refreshing drive times..." /> : null}
+      </div>
+      <div className="h-[360px] overflow-hidden rounded-[1.4rem] border border-slate-200 bg-slate-100">
+        <MapContainer center={[35.6074, 140.1065]} zoom={10} scrollWheelZoom={false}>
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          <FitSelectedBounds points={mapPoints} />
+          {selectedDayItems.map((item, index) => (
+            <CircleMarker
+              key={item.id}
+              center={[item.lat, item.lng]}
+              pathOptions={{
+                color: index === 0 ? '#0f766e' : '#1e293b',
+                fillColor: index === 0 ? '#14b8a6' : '#f59e0b',
+                fillOpacity: 0.9,
+              }}
+              radius={10}
+              eventHandlers={{ click: () => setActiveItemId(item.id) }}
+            >
+              <Tooltip direction="top" offset={[0, -8]} opacity={1}>
+                {item.title}
+              </Tooltip>
+              <Popup>
+                <div className="space-y-1">
+                  <div className="font-semibold">{item.title}</div>
+                  <div className="text-xs text-slate-600">{item.venue}</div>
+                </div>
+              </Popup>
+            </CircleMarker>
+          ))}
+          {routeSegments
+            .filter((segment) => segment.route?.geometry?.length)
+            .map((segment) => (
+              <Polyline
+                key={segment.id}
+                positions={segment.route.geometry}
+                pathOptions={{ color: '#0f172a', weight: 4, opacity: 0.72 }}
+              />
+            ))}
+        </MapContainer>
+      </div>
+    </div>
+  )
+}
+
+function EditorPanel({ activeItem, commitLocalEdit, saveState }) {
+  if (!activeItem) {
+    return null
+  }
+
+  return (
+    <div className="glass-panel rounded-[1.5rem] border border-white/60 p-4">
+      <div className="mb-4 flex items-center gap-3">
+        <div className="rounded-2xl bg-amber-100 p-3 text-amber-700">
+          <ShieldAlert className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Edit stop</p>
+          <h2 className="headline text-3xl text-slate-900">{activeItem.title}</h2>
+        </div>
+      </div>
+      <div className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <InputGroup label="Title" value={activeItem.title} onChange={(value) => commitLocalEdit(activeItem.id, { title: value })} />
+          <InputGroup label="Booking Ref" value={activeItem.bookingRef || ''} onChange={(value) => commitLocalEdit(activeItem.id, { bookingRef: value })} />
+          <InputGroup label="Start time" type="time" value={getTimeLabel(activeItem.startISO)} onChange={(value) => commitLocalEdit(activeItem.id, { startISO: replaceTimeInIso(activeItem.startISO, value) })} />
+          <InputGroup label="End time" type="time" value={getTimeLabel(activeItem.endISO)} onChange={(value) => commitLocalEdit(activeItem.id, { endISO: replaceTimeInIso(activeItem.endISO, value) })} />
+        </div>
+        <label className="block">
+          <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+            Notes / booking details
+          </span>
+          <textarea
+            value={activeItem.description}
+            onChange={(event) => commitLocalEdit(activeItem.id, { description: event.target.value })}
+            rows={5}
+            className="min-h-32 w-full rounded-[1.35rem] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-500"
+          />
+        </label>
+        <div className="rounded-[1.2rem] bg-slate-900 px-4 py-3 text-sm text-white">
+          Autosave cadence: 1000ms debounce · state: {saveState}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const [selectedDate, setSelectedDate] = useState(TRIP_DATES[0])
+  const [previewMode, setPreviewMode] = useState('desktop')
   const [overrides, setOverrides] = useState({})
   const [authState, setAuthState] = useState(firebaseEnabled ? 'connecting' : 'disabled')
   const [saveState, setSaveState] = useState(firebaseEnabled ? 'saved' : 'local-only')
@@ -210,6 +431,9 @@ function App() {
   const activeItem = itinerary.find((item) => item.id === activeItemId) || selectedDayItems[0] || null
   const weatherSnapshot = weatherState.data?.dailyByDate?.[selectedDate] ?? null
   const mapPoints = selectedDayItems.map((item) => [item.lat, item.lng])
+  const totalExpensesHkd = rateState.data
+    ? TRIP_EXPENSES.reduce((sum, expense) => sum + expense.amountJPY * rateState.data.rate, 0)
+    : null
 
   const routeSegments = useMemo(
     () =>
@@ -481,25 +705,73 @@ function App() {
 
   return (
     <main className="mx-auto min-h-screen max-w-7xl px-4 py-5 text-slate-900 sm:px-6 lg:px-8">
-      <section className="glass-panel animate-float-in overflow-hidden rounded-[2rem] border border-white/60">
-        <div className="grid gap-8 px-5 py-6 sm:px-8 lg:grid-cols-[1.15fr_0.85fr] lg:px-10 lg:py-10">
-          <div className="space-y-6">
-            <div className="inline-flex items-center gap-2 rounded-full border border-teal-900/10 bg-white/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-teal-900/70">
+      <section className="glass-panel animate-float-in rounded-[2rem] border border-white/60 px-5 py-5 sm:px-7">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-3">
+            <div className="inline-flex items-center gap-2 rounded-full border border-teal-900/10 bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-teal-900/70">
               <Sparkles className="h-3.5 w-3.5" />
-              May 9-13, 2026 - Chiba / Tokyo wedding run
+              Tokyo / Chiba family trip
             </div>
-            <div className="space-y-3">
-              <h1 className="headline max-w-3xl text-4xl leading-tight text-slate-900 sm:text-5xl lg:text-6xl">
-                Family trip planning with live weather, outlet math, and cloud override syncing.
+            <div>
+              <h1 className="headline text-3xl leading-tight text-slate-900 sm:text-5xl">
+                Simple trip control board.
               </h1>
-              <p className="max-w-2xl text-sm leading-7 text-slate-700 sm:text-base">
-                Single tap opens notes and edits. Long press for navigation actions. Every title,
-                time, and booking detail edit debounces into Firestore after 1 second.
+              <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-700 sm:text-base">
+                Pick a day, review the schedule, then toggle between a full desktop board and a mobile portrait preview.
               </p>
             </div>
+          </div>
 
-            <div className="grid gap-3 md:grid-cols-3">
-              <StatusCard icon={CalendarDays} eyebrow="Daily Weather Snapshot" title={formatDateHeading(selectedDate)}>
+          <div className="flex flex-wrap items-center gap-3">
+            <SegmentButton active={previewMode === 'desktop'} icon={Monitor} label="Desktop Board" onClick={() => setPreviewMode('desktop')} />
+            <SegmentButton active={previewMode === 'mobile'} icon={Smartphone} label="Mobile Portrait" onClick={() => setPreviewMode('mobile')} />
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-4">
+          <QuickStat label="Selected day" value={formatDateHeading(selectedDate)} />
+          <QuickStat
+            label="Weather"
+            value={
+              weatherState.loading
+                ? 'Loading...'
+                : weatherSnapshot
+                  ? `${Math.round(weatherSnapshot.tempMax)}° / rain ${weatherSnapshot.rainProbability ?? 0}%`
+                  : weatherState.error
+            }
+          />
+          <QuickStat label="Cloud sync" value={firebaseEnabled ? `${authState} · ${saveState}` : 'Local preview'} />
+          <QuickStat
+            label="Expenses"
+            value={totalExpensesHkd ? formatCurrency(totalExpensesHkd, 'HKD') : 'Waiting for rate'}
+            tone="dark"
+          />
+        </div>
+
+        <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
+          {TRIP_DATES.map((date) => (
+            <button
+              key={date}
+              type="button"
+              onClick={() => startTransition(() => setSelectedDate(date))}
+              className={`min-w-[124px] rounded-2xl border px-3 py-3 text-left transition ${
+                date === selectedDate
+                  ? 'border-slate-900 bg-slate-900 text-white'
+                  : 'border-slate-200 bg-white/75 text-slate-800 hover:border-slate-400'
+              }`}
+            >
+              <div className="text-xs uppercase tracking-[0.18em] opacity-70">Trip day</div>
+              <div className="mt-1 text-sm font-semibold">{formatDateChip(date)}</div>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {previewMode === 'desktop' ? (
+        <section className="mt-6 grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <StatusCard icon={CalendarDays} eyebrow="Weather" title={weatherSnapshot ? weatherSnapshot.label : 'Forecast'}>
                 {weatherState.loading ? (
                   <LoadingLine label="Loading corridor weather..." />
                 ) : weatherSnapshot ? (
@@ -508,15 +780,12 @@ function App() {
                       <div className="rounded-2xl bg-amber-400/15 p-3 text-amber-600">
                         <WeatherGlyph weatherKey={weatherSnapshot.weatherKey} className="h-6 w-6" />
                       </div>
-                      <div>
-                        <div className="text-lg font-semibold text-slate-900">
-                          {Math.round(weatherSnapshot.tempMax)} / {Math.round(weatherSnapshot.tempMin)} deg C
-                        </div>
-                        <div className="text-xs text-slate-600">{weatherSnapshot.label}</div>
+                      <div className="text-sm text-slate-700">
+                        {Math.round(weatherSnapshot.tempMax)}° high · {Math.round(weatherSnapshot.tempMin)}° low
                       </div>
                     </div>
-                    <div className="rounded-2xl bg-slate-900 px-3 py-2 text-xs font-medium text-white">
-                      Rain Probability: {weatherSnapshot.rainProbability ?? 0}%
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Rain probability {weatherSnapshot.rainProbability ?? 0}%
                     </div>
                   </div>
                 ) : (
@@ -524,272 +793,140 @@ function App() {
                 )}
               </StatusCard>
 
-              <StatusCard icon={WalletCards} eyebrow="Sync / Auth" title={firebaseEnabled ? 'Anonymous cloud mode' : 'Local preview mode'}>
-                <div className="space-y-2 text-sm text-slate-700">
+              <StatusCard icon={WalletCards} eyebrow="Sync" title={firebaseEnabled ? 'Firestore live' : 'Local only'}>
+                <div className="space-y-2">
                   <StatusPill label={`Auth: ${authState}`} good={authState === 'connected'} />
                   <StatusPill label={`Autosave: ${saveState}`} good={saveState === 'saved'} />
-                  <p className="text-xs leading-6 text-slate-500">
-                    Static seed data stays in code. Edits persist as Firestore cloud overrides.
-                  </p>
                 </div>
               </StatusCard>
 
-              <StatusCard icon={DollarSign} eyebrow="Outlet Math Tool" title="JPY to HKD">
+              <StatusCard icon={DollarSign} eyebrow="Outlet math" title="JPY / HKD">
                 <div className="space-y-2">
                   <InputGroup label="JPY" inputMode="decimal" value={converter.jpy} onChange={(value) => handleConverterChange('jpy', value)} />
                   <InputGroup label="HKD" inputMode="decimal" value={converter.hkd} onChange={(value) => handleConverterChange('hkd', value)} />
-                  <div className="text-[11px] font-medium uppercase tracking-[0.22em] text-slate-500">
-                    {rateState.loading
-                      ? 'Refreshing rate...'
-                      : rateState.data
-                        ? `Frankfurter ${rateState.data.date} - 1 JPY = ${rateState.data.rate.toFixed(4)} HKD`
-                        : rateState.error}
-                  </div>
                 </div>
               </StatusCard>
             </div>
-          </div>
 
-          <div className="space-y-4 rounded-[1.75rem] bg-slate-950 px-5 py-5 text-white shadow-2xl shadow-slate-900/20">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-white/60">Major trip expenses</p>
-                <h2 className="headline mt-2 text-3xl">Live HKD view</h2>
-              </div>
-              <ShoppingBag className="h-8 w-8 text-amber-300" />
-            </div>
-            <div className="space-y-3">
-              {TRIP_EXPENSES.map((expense) => (
-                <div key={expense.id} className="rounded-3xl border border-white/10 bg-white/8 px-4 py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold">{expense.label}</div>
-                      <div className="text-xs text-white/60">{expense.note}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-medium text-white/75">{formatCurrency(expense.amountJPY, 'JPY')}</div>
-                      <div className="text-lg font-bold text-amber-300">
-                        {rateState.data ? formatCurrency(expense.amountJPY * rateState.data.rate, 'HKD') : '--'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-      <section className="mt-6 grid gap-6 lg:grid-cols-[1.06fr_0.94fr]">
-        <div className="space-y-4">
-          <div className="glass-panel rounded-[1.75rem] border border-white/60 p-3 sm:p-4">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.26em] text-slate-500">Trip dates</p>
-                <h2 className="headline mt-2 text-3xl text-slate-900">Itinerary runway</h2>
-              </div>
-              <div className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white">
-                Tap / Hold
-              </div>
-            </div>
-            <div className="flex gap-2 overflow-x-auto pb-2">
-              {TRIP_DATES.map((date) => (
-                <button
-                  key={date}
-                  type="button"
-                  onClick={() => startTransition(() => setSelectedDate(date))}
-                  className={`min-w-[112px] rounded-2xl border px-3 py-3 text-left transition ${
-                    date === selectedDate
-                      ? 'border-slate-900 bg-slate-900 text-white'
-                      : 'border-slate-200 bg-white/70 text-slate-800 hover:border-slate-400'
-                  }`}
-                >
-                  <div className="text-xs uppercase tracking-[0.18em] opacity-70">Trip day</div>
-                  <div className="mt-1 text-sm font-semibold">{formatDateChip(date)}</div>
-                </button>
+            <div className="space-y-4">
+              {selectedDayItems.map((item, index) => (
+                <ItineraryCard
+                  key={item.id}
+                  item={item}
+                  nextRoute={routeSegments[index]}
+                  isActive={activeItem?.id === item.id}
+                  onSelect={() => setActiveItemId(item.id)}
+                  pressHandlers={buildPressHandlers(item)}
+                />
               ))}
             </div>
           </div>
 
           <div className="space-y-4">
-            {selectedDayItems.map((item, index) => {
-              const nextRoute = routeSegments[index]
-              const pressHandlers = buildPressHandlers(item)
-              const categoryIcon =
-                item.category === 'Transit'
-                  ? CarFront
-                  : item.category === 'Stay'
-                    ? MapPinned
-                    : item.category === 'Wedding'
-                      ? Umbrella
-                      : NotebookPen
+            <NavigatorMap
+              selectedDayItems={selectedDayItems}
+              routeSegments={routeSegments}
+              mapPoints={mapPoints}
+              setActiveItemId={setActiveItemId}
+              routeState={routeState}
+            />
+            <EditorPanel activeItem={activeItem} commitLocalEdit={commitLocalEdit} saveState={saveState} />
+          </div>
+        </section>
+      ) : (
+        <section className="mt-6 flex justify-center">
+          <div className="w-full max-w-[430px] rounded-[2.2rem] border border-slate-900/10 bg-[#171b24] p-3 shadow-[0_28px_90px_rgba(15,23,42,0.24)]">
+            <div className="rounded-[2rem] bg-[#f7f3ea] p-4">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">Mobile portrait</div>
+                  <div className="mt-1 text-lg font-bold text-slate-900">{formatDateHeading(selectedDate)}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => activeItem && openNavigatorMenu(activeItem)}
+                  className="rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white"
+                >
+                  Navigator
+                </button>
+              </div>
 
-              return (
-                <div key={item.id} className="space-y-4">
-                  <article
-                    className={`glass-panel rounded-[1.75rem] border px-4 py-4 transition sm:px-5 ${
+              <div className="grid gap-2 sm:grid-cols-2">
+                <QuickStat
+                  label="Weather"
+                  value={
+                    weatherSnapshot
+                      ? `${Math.round(weatherSnapshot.tempMax)}° · rain ${weatherSnapshot.rainProbability ?? 0}%`
+                      : weatherState.loading
+                        ? 'Loading...'
+                        : 'Unavailable'
+                  }
+                />
+                <QuickStat
+                  label="Rate"
+                  value={rateState.data ? `${rateState.data.rate.toFixed(4)} HKD` : 'Loading...'}
+                />
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {selectedDayItems.map((item, index) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setActiveItemId(item.id)}
+                    className={`w-full rounded-[1.5rem] border px-4 py-4 text-left ${
                       activeItem?.id === item.id
-                        ? 'border-slate-900/60 ring-2 ring-slate-900/10'
-                        : 'border-white/60'
+                        ? 'border-slate-900 bg-slate-900 text-white'
+                        : 'border-slate-200 bg-white text-slate-900'
                     }`}
-                    {...pressHandlers}
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          {React.createElement(categoryIcon, { className: 'h-4 w-4' })}
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${activeItem?.id === item.id ? 'text-white/65' : 'text-slate-500'}`}>
                           {item.category}
                         </div>
-                        <div>
-                          <h3 className="text-xl font-bold text-slate-900">{item.title}</h3>
-                          <p className="mt-1 text-sm text-slate-600">{item.venue}</p>
+                        <div className="mt-1 text-base font-bold">{item.title}</div>
+                        <div className={`mt-1 text-sm ${activeItem?.id === item.id ? 'text-white/80' : 'text-slate-600'}`}>
+                          {item.venue}
                         </div>
                       </div>
-                      <div className="rounded-2xl bg-slate-900 px-3 py-2 text-right text-white">
-                        <div className="text-xs uppercase tracking-[0.18em] text-white/60">Window</div>
-                        <div className="text-sm font-semibold">
-                          {getTimeLabel(item.startISO)} - {getTimeLabel(item.endISO)}
-                        </div>
+                      <div className={`inline-flex items-center gap-1 text-sm font-semibold ${activeItem?.id === item.id ? 'text-white' : 'text-slate-700'}`}>
+                        <Clock3 className="h-4 w-4" />
+                        {getTimeLabel(item.startISO)}
                       </div>
                     </div>
-                    <p className="mt-4 text-sm leading-7 text-slate-700">{item.description}</p>
-                    <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                      {item.bookingRef ? (
-                        <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
-                          Ref: {item.bookingRef}
-                        </span>
-                      ) : null}
-                      <span className="rounded-full bg-teal-100 px-3 py-1 font-medium text-teal-800">
-                        ISO: {item.startISO}
-                      </span>
-                    </div>
-                  </article>
-                  {nextRoute ? (
-                    <div className="glass-panel rounded-[1.4rem] border border-white/60 px-4 py-3">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className="rounded-2xl bg-slate-900 p-2 text-white">
-                            <Route className="h-4 w-4" />
-                          </div>
-                          <div className="text-sm text-slate-700">
-                            <div className="font-semibold text-slate-900">
-                              {nextRoute.route
-                                ? `${nextRoute.route.distanceKm.toFixed(1)} km - ${Math.round(nextRoute.route.durationMin)} min drive`
-                                : 'OSRM route pending'}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              {nextRoute.pace.label} - {Math.round(nextRoute.bufferMinutes)} min buffer
-                            </div>
-                          </div>
-                        </div>
-                        <div
-                          className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${
-                            nextRoute.pace.tone === 'warning'
-                              ? 'bg-rose-100 text-rose-800'
-                              : nextRoute.pace.tone === 'easy'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-amber-100 text-amber-900'
-                          }`}
-                        >
-                          Toddler buffer
-                        </div>
+                    {routeSegments[index] ? (
+                      <div className={`mt-3 text-xs ${activeItem?.id === item.id ? 'text-white/70' : 'text-slate-500'}`}>
+                        {routeSegments[index].route
+                          ? `${Math.round(routeSegments[index].route.durationMin)} min drive · ${Math.round(routeSegments[index].bufferMinutes)} min buffer`
+                          : 'Route loading'}
                       </div>
-                    </div>
-                  ) : null}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="glass-panel rounded-[1.75rem] border border-white/60 p-4">
-            <div className="mb-4 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Interactive navigator</p>
-                <h2 className="headline mt-2 text-3xl text-slate-900">Route surface</h2>
-              </div>
-              {routeState.loading ? <LoadingLine label="Refreshing drive times..." /> : null}
-            </div>
-            <div className="h-[380px] overflow-hidden rounded-[1.5rem] border border-slate-200 bg-slate-100">
-              <MapContainer center={[35.6074, 140.1065]} zoom={10} scrollWheelZoom={false}>
-                <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
-                <FitSelectedBounds points={mapPoints} />
-                {selectedDayItems.map((item, index) => (
-                  <CircleMarker
-                    key={item.id}
-                    center={[item.lat, item.lng]}
-                    pathOptions={{
-                      color: index === 0 ? '#0f766e' : '#1e293b',
-                      fillColor: index === 0 ? '#14b8a6' : '#f59e0b',
-                      fillOpacity: 0.9,
-                    }}
-                    radius={10}
-                    eventHandlers={{ click: () => setActiveItemId(item.id) }}
-                  >
-                    <Tooltip direction="top" offset={[0, -8]} opacity={1}>
-                      {item.title}
-                    </Tooltip>
-                    <Popup>
-                      <div className="space-y-1">
-                        <div className="font-semibold">{item.title}</div>
-                        <div className="text-xs text-slate-600">{item.venue}</div>
-                      </div>
-                    </Popup>
-                  </CircleMarker>
+                    ) : null}
+                  </button>
                 ))}
-                {routeSegments
-                  .filter((segment) => segment.route?.geometry?.length)
-                  .map((segment) => (
-                    <Polyline
-                      key={segment.id}
-                      positions={segment.route.geometry}
-                      pathOptions={{ color: '#0f172a', weight: 4, opacity: 0.72 }}
-                    />
-                  ))}
-              </MapContainer>
-            </div>
-          </div>
+              </div>
 
-          <div className="glass-panel rounded-[1.75rem] border border-white/60 p-4">
-            <div className="mb-4 flex items-center gap-3">
-              <div className="rounded-2xl bg-amber-100 p-3 text-amber-700">
-                <ShieldAlert className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Editing sheet</p>
-                <h2 className="headline text-3xl text-slate-900">{activeItem ? activeItem.title : 'Select a stop'}</h2>
-              </div>
+              {activeItem ? (
+                <div className="mt-4 rounded-[1.5rem] bg-white p-4 shadow-sm">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Focused stop</div>
+                  <div className="mt-2 text-lg font-bold text-slate-900">{activeItem.title}</div>
+                  <div className="mt-1 text-sm text-slate-600">{activeItem.description}</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                      {getTimeLabel(activeItem.startISO)} - {getTimeLabel(activeItem.endISO)}
+                    </span>
+                    {activeItem.bookingRef ? (
+                      <span className="rounded-full bg-teal-100 px-3 py-1 text-xs font-semibold text-teal-800">
+                        {activeItem.bookingRef}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
             </div>
-            {activeItem ? (
-              <div className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <InputGroup label="Title" value={activeItem.title} onChange={(value) => commitLocalEdit(activeItem.id, { title: value })} />
-                  <InputGroup label="Booking Ref" value={activeItem.bookingRef || ''} onChange={(value) => commitLocalEdit(activeItem.id, { bookingRef: value })} />
-                  <InputGroup label="Start time" type="time" value={getTimeLabel(activeItem.startISO)} onChange={(value) => commitLocalEdit(activeItem.id, { startISO: replaceTimeInIso(activeItem.startISO, value) })} />
-                  <InputGroup label="End time" type="time" value={getTimeLabel(activeItem.endISO)} onChange={(value) => commitLocalEdit(activeItem.id, { endISO: replaceTimeInIso(activeItem.endISO, value) })} />
-                </div>
-                <label className="block">
-                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Notes / booking details
-                  </span>
-                  <textarea
-                    value={activeItem.description}
-                    onChange={(event) => commitLocalEdit(activeItem.id, { description: event.target.value })}
-                    rows={5}
-                    className="min-h-32 w-full rounded-[1.35rem] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-500"
-                  />
-                </label>
-                <div className="rounded-[1.35rem] bg-slate-900 px-4 py-4 text-sm text-white">
-                  Autosave cadence: 1000ms debounce into Firestore overrides
-                </div>
-              </div>
-            ) : null}
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {navigatorItem ? (
         <div className="fixed inset-0 z-20 flex items-end bg-slate-950/45 p-4 sm:items-center sm:justify-center">
