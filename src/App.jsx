@@ -587,7 +587,7 @@ function NoteModal({ item, isMobilePortrait, onClose, onDelete, onOpenDetails })
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        className={`glass-panel w-full max-h-[78svh] overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+        className={`glass-panel browse-ui w-full max-h-[78svh] overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
           isMobilePortrait ? 'rounded-[1.45rem] sm:max-w-md' : 'max-w-lg rounded-[1.85rem]'
         }`}
       >
@@ -861,7 +861,7 @@ function PlannerPanel({
 
   return (
     <>
-      <div className="sticky top-4 z-20 space-y-3">
+      <div className="sticky top-4 z-20 space-y-3 browse-ui">
         <div className="glass-panel rounded-[1.65rem] border border-white/60 px-4 py-4 sm:px-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -877,10 +877,7 @@ function PlannerPanel({
                     formatFullDayDate(dayOptions.find((day) => day.id === activeDayId)?.date || '')}
               </div>
             </div>
-            <div className={`flex items-center gap-2 ${isMobilePortrait ? 'w-full justify-between' : ''}`}>
-                <div className="rounded-full bg-white px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Tap notes · Hold details
-              </div>
+            <div className={`flex items-center gap-2 ${isMobilePortrait ? 'w-full justify-end' : ''}`}>
               <button
                 type="button"
                 onClick={onManageDays}
@@ -940,7 +937,7 @@ function PlannerPanel({
         </div>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-2 browse-ui">
         {filteredItems.map((item, index) => {
           const meta = typeMeta(item.category)
           const nextSegment = routeSegments[index]
@@ -1004,7 +1001,7 @@ function PlannerPanel({
         })}
       </div>
 
-      <div className="glass-panel rounded-[1.6rem] border border-white/60 px-4 py-4 sm:px-5">
+      <div className="glass-panel rounded-[1.6rem] border border-white/60 px-4 py-4 sm:px-5 browse-ui">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h3 className="headline text-[1.9rem] leading-none text-slate-900">Add stop</h3>
@@ -1125,7 +1122,7 @@ function PlannerPanel({
 
 function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, mapsError, routeSegments }) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 browse-ui">
       <div className="glass-panel rounded-[1.6rem] border border-white/60 px-4 py-4 sm:px-5">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -1574,29 +1571,11 @@ export default function App() {
 
   return (
     <main className="mx-auto min-h-screen max-w-7xl overflow-x-clip px-3 py-4 pb-8 text-slate-900 sm:px-6 sm:py-5 sm:pb-10 lg:px-8">
-      <section className="glass-panel rounded-[1.8rem] border border-white/60 px-4 py-4 sm:rounded-[2rem] sm:px-7 sm:py-5">
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="headline text-3xl leading-tight sm:text-5xl">Trip planner</h1>
-          <div className="flex flex-wrap items-center gap-2">
-            {!MAPS_API_KEY ? (
-              <div className="rounded-full bg-amber-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
-                Google Maps key missing
-              </div>
-            ) : null}
-            {firestoreState.status === 'error' ? (
-              <div className="rounded-full bg-rose-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-rose-600">
-                Firestore error
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </section>
-
       <section
         className={
           isMobilePortrait
-            ? 'mx-auto mt-4 max-w-[28rem] space-y-4'
-            : 'mt-6 grid gap-6 lg:grid-cols-[1.08fr_0.92fr]'
+            ? 'mx-auto max-w-[28rem] space-y-4'
+            : 'grid gap-6 lg:grid-cols-[1.08fr_0.92fr]'
         }
       >
         <div className="space-y-4">
