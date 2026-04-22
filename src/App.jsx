@@ -18,6 +18,7 @@ import {
   ChevronDown,
   Cloud,
   CloudRain,
+  Pencil,
   Footprints,
   ExternalLink,
   Loader2,
@@ -697,6 +698,8 @@ function TripSwitcher({
   disabled,
   isMobilePortrait,
   onCreateTrip,
+  onDeleteTrip,
+  onRenameTrip,
   onSelectTrip,
   tripSummaries,
 }) {
@@ -803,6 +806,26 @@ function TripSwitcher({
               })}
             </div>
             <div className="mt-1 border-t border-slate-200/70 pt-1">
+              <div className="grid grid-cols-2 gap-1 px-1 pb-1">
+                <button
+                  type="button"
+                  onClick={() => void onRenameTrip()}
+                  disabled={disabled || !activeTrip}
+                  className="flex items-center justify-center gap-2 rounded-[0.85rem] px-3 py-2 text-[12px] font-semibold text-slate-600 transition hover:bg-white/80 disabled:text-slate-400"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void onDeleteTrip()}
+                  disabled={disabled || !activeTrip || activeTrip.id === TRIP_ID}
+                  className="flex items-center justify-center gap-2 rounded-[0.85rem] px-3 py-2 text-[12px] font-semibold text-rose-600 transition hover:bg-rose-50 disabled:text-slate-300"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => void handleCreateTrip()}
@@ -2180,6 +2203,40 @@ export default function App() {
     selectTrip(tripId)
   }
 
+  async function renameTrip() {
+    if (!firestoreReady) return
+
+    const currentTitle = activeTripSummary?.title || 'Untitled trip'
+    const nextTitle = window.prompt('Rename trip', currentTitle)?.trim()
+    if (!nextTitle || nextTitle === currentTitle) return
+
+    await upsertTripMeta(resolvedTripId, {
+      title: nextTitle,
+      startDate: tripState.days[0]?.date || activeTripSummary.startDate || '',
+      endDate: tripState.days[tripState.days.length - 1]?.date || activeTripSummary.endDate || '',
+    })
+  }
+
+  async function deleteTrip() {
+    if (!firestoreReady) return
+    if (resolvedTripId === defaultTripSummary.id) {
+      window.alert('The default trip cannot be deleted.')
+      return
+    }
+
+    const tripTitle = activeTripSummary?.title || 'this trip'
+    if (!window.confirm(`Delete ${tripTitle}? This trip will be removed from the selector.`)) return
+
+    const fallbackTrip =
+      availableTrips.find((trip) => trip.id !== resolvedTripId && !trip.hidden) || defaultTripSummary
+
+    await upsertTripMeta(resolvedTripId, {
+      hidden: true,
+    })
+
+    selectTrip(fallbackTrip.id)
+  }
+
   async function updateDay(dayId, changes) {
     if (changes.date) {
       const duplicate = visibleDays.find((day) => day.id !== dayId && day.date === changes.date)
@@ -2355,6 +2412,8 @@ export default function App() {
           disabled={!firestoreReady}
           isMobilePortrait={isMobilePortrait}
           onCreateTrip={() => void createTrip()}
+          onDeleteTrip={() => void deleteTrip()}
+          onRenameTrip={() => void renameTrip()}
           onSelectTrip={selectTrip}
           tripSummaries={availableTrips}
         />

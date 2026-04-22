@@ -16,6 +16,7 @@ service cloud.firestore {
         'title',
         'startDate',
         'endDate',
+        'hidden',
         'createdAt',
         'updatedAt'
       ]);

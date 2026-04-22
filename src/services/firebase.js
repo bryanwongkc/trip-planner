@@ -90,10 +90,12 @@ export async function subscribeToTripDirectory(onValue, onError) {
     tripsCollection,
     (snapshot) =>
       onValue(
-        snapshot.docs.map((entry) => ({
-          id: entry.id,
-          ...entry.data(),
-        })),
+        snapshot.docs
+          .map((entry) => ({
+            id: entry.id,
+            ...entry.data(),
+          }))
+          .filter((entry) => !entry.hidden),
       ),
     onError,
   )
