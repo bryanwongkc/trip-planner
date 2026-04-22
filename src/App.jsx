@@ -695,11 +695,13 @@ function TimeField({ conflict, disabled, label, onChange, value }) {
 
 function TripSwitcher({
   activeTripId,
+  deletedTrips,
   disabled,
   isMobilePortrait,
   onCreateTrip,
   onDeleteTrip,
   onRenameTrip,
+  onRestoreTrip,
   onSelectTrip,
   tripSummaries,
 }) {
@@ -826,6 +828,33 @@ function TripSwitcher({
                   Delete
                 </button>
               </div>
+              {deletedTrips.length ? (
+                <div className="border-t border-slate-200/70 px-1 pt-1.5">
+                  <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                    Recently deleted
+                  </div>
+                  <div className="space-y-1 pb-1">
+                    {deletedTrips.map((trip) => (
+                      <button
+                        key={trip.id}
+                        type="button"
+                        onClick={() => void onRestoreTrip(trip.id)}
+                        className="flex w-full items-center justify-between gap-3 rounded-[0.85rem] px-3 py-2 text-left text-slate-600 transition hover:bg-white/80"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[12px] font-semibold text-slate-700">{trip.title}</div>
+                          <div className="truncate pt-0.5 text-[10px] text-slate-500">
+                            {formatTripDateRange(trip.startDate, trip.endDate)}
+                          </div>
+                        </div>
+                        <div className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
+                          Restore
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <button
                 type="button"
                 onClick={() => void handleCreateTrip()}
@@ -1765,8 +1794,15 @@ export default function App() {
     longPressed: false,
   })
   const defaultTripSummary = useMemo(() => buildDefaultTripSummary(), [])
+  const deletedTrips = useMemo(
+    () =>
+      tripSummaries
+        .filter((trip) => trip.hidden)
+        .sort((a, b) => (a.title || '').localeCompare(b.title || '')),
+    [tripSummaries],
+  )
   const availableTrips = useMemo(() => {
-    const tripMap = new Map(tripSummaries.map((trip) => [trip.id, trip]))
+    const tripMap = new Map(tripSummaries.filter((trip) => !trip.hidden).map((trip) => [trip.id, trip]))
     if (!tripMap.has(defaultTripSummary.id)) {
       tripMap.set(defaultTripSummary.id, defaultTripSummary)
     }
@@ -2237,6 +2273,12 @@ export default function App() {
     selectTrip(fallbackTrip.id)
   }
 
+  async function restoreTrip(tripId) {
+    if (!firestoreReady || !tripId) return
+    await upsertTripMeta(tripId, { hidden: false })
+    selectTrip(tripId)
+  }
+
   async function updateDay(dayId, changes) {
     if (changes.date) {
       const duplicate = visibleDays.find((day) => day.id !== dayId && day.date === changes.date)
@@ -2409,11 +2451,13 @@ export default function App() {
       <div className={isMobilePortrait ? 'mx-auto mb-4 max-w-[28rem]' : 'mb-4 max-w-md'}>
         <TripSwitcher
           activeTripId={activeTripSummary.id}
+          deletedTrips={deletedTrips}
           disabled={!firestoreReady}
           isMobilePortrait={isMobilePortrait}
           onCreateTrip={() => void createTrip()}
           onDeleteTrip={() => void deleteTrip()}
           onRenameTrip={() => void renameTrip()}
+          onRestoreTrip={(tripId) => void restoreTrip(tripId)}
           onSelectTrip={selectTrip}
           tripSummaries={availableTrips}
         />
