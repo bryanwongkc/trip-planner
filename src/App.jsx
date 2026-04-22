@@ -24,12 +24,21 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { CATEGORY_OPTIONS, MAPS_API_KEY } from './data/seedItinerary'
 import {
+  CATEGORY_OPTIONS,
+  DEFAULT_TRIP_TITLE,
+  MAPS_API_KEY,
+  SEED_DAYS,
+  TRIP_ID,
+} from './data/seedItinerary'
+import {
+  createTripRecord,
   ensureAnonymousAuth,
   firebaseEnabled,
   mergeTripPatch,
+  subscribeToTripDirectory,
   subscribeToTripState,
+  upsertTripMeta,
 } from './services/firebase'
 import { fetchWeatherSnapshot } from './services/weather'
 import {
@@ -48,6 +57,7 @@ import {
 const SAVE_DEBOUNCE_MS = 1000
 const LONG_PRESS_MS = 600
 const MOVE_THRESHOLD = 10
+const ACTIVE_TRIP_STORAGE_KEY = 'trip-planner-active-trip'
 const TripMap = lazy(() => import('./components/TripMap'))
 
 function useResponsiveMode() {
@@ -216,6 +226,54 @@ function buildEmptyDraft(dayId = '') {
     lat: null,
     lng: null,
     placeId: '',
+  }
+}
+
+function buildDefaultTripSummary() {
+  return {
+    id: TRIP_ID,
+    title: DEFAULT_TRIP_TITLE,
+    startDate: SEED_DAYS[0]?.date || '',
+    endDate: SEED_DAYS[SEED_DAYS.length - 1]?.date || '',
+  }
+}
+
+function serializeTripState(tripState) {
+  return {
+    days: Object.fromEntries(
+      tripState.days.map((day) => [
+        day.id,
+        {
+          id: day.id,
+          date: day.date,
+          name: day.name || '',
+          order: day.order,
+        },
+      ]),
+    ),
+    items: Object.fromEntries(
+      tripState.items
+        .filter((item) => !item.generated)
+        .map((item) => [
+          item.id,
+          {
+            id: item.id,
+            dayId: item.dayId,
+            order: item.order,
+            title: item.title,
+            locationName: item.locationName,
+            address: item.address,
+            category: item.category,
+            startTime: item.startTime,
+            endTime: item.endTime,
+            description: item.description,
+            bookingRef: item.bookingRef,
+            lat: item.lat,
+            lng: item.lng,
+            placeId: item.placeId,
+          },
+        ]),
+    ),
   }
 }
 
@@ -498,6 +556,51 @@ function Field({ label, children, className = '' }) {
       </span>
       {children}
     </label>
+  )
+}
+
+function TripSwitcher({
+  activeTripId,
+  disabled,
+  isMobilePortrait,
+  onCreateTrip,
+  onSelectTrip,
+  tripSummaries,
+}) {
+  return (
+    <div className="glass-panel rounded-[1.35rem] border border-white/60 px-3.5 py-3 sm:px-4 sm:py-3.5">
+      <div className="flex items-center gap-2.5">
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            Trip
+          </div>
+          <select
+            value={activeTripId}
+            onChange={(event) => onSelectTrip(event.target.value)}
+            disabled={disabled}
+            className={`w-full rounded-[1rem] border border-slate-200 bg-white text-slate-900 ${
+              isMobilePortrait ? 'px-3 py-2.5 text-[13px]' : 'px-3.5 py-3 text-sm'
+            } disabled:bg-slate-100`}
+          >
+            {tripSummaries.map((trip) => (
+              <option key={trip.id} value={trip.id}>
+                {trip.title}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="button"
+          onClick={onCreateTrip}
+          disabled={disabled}
+          className={`shrink-0 rounded-[1rem] bg-slate-900 font-semibold text-white ${
+            isMobilePortrait ? 'px-3 py-2.5 text-[13px]' : 'px-3.5 py-3 text-sm'
+          } disabled:bg-slate-300`}
+        >
+          New trip
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -1284,7 +1387,12 @@ const MemoMapPanel = memo(MapPanel)
 export default function App() {
   const googleMapsState = useGoogleMapsApi(MAPS_API_KEY)
   const [activeDayId, setActiveDayId] = useState(DAY_VIEW_ALL)
+  const [activeTripId, setActiveTripId] = useState(() => {
+    if (typeof window === 'undefined') return TRIP_ID
+    return window.localStorage.getItem(ACTIVE_TRIP_STORAGE_KEY) || TRIP_ID
+  })
   const [overrides, setOverrides] = useState({ days: {}, items: {} })
+  const [tripSummaries, setTripSummaries] = useState([])
   const [authReady, setAuthReady] = useState(false)
   const [firestoreState, setFirestoreState] = useState({
     status: firebaseEnabled ? 'connecting' : 'disabled',
@@ -1309,8 +1417,26 @@ export default function App() {
     moved: false,
     longPressed: false,
   })
+  const defaultTripSummary = useMemo(() => buildDefaultTripSummary(), [])
+  const availableTrips = useMemo(() => {
+    const tripMap = new Map(tripSummaries.map((trip) => [trip.id, trip]))
+    if (!tripMap.has(defaultTripSummary.id)) {
+      tripMap.set(defaultTripSummary.id, defaultTripSummary)
+    }
+
+    return [...tripMap.values()].sort((a, b) => {
+      if (a.id === defaultTripSummary.id) return -1
+      if (b.id === defaultTripSummary.id) return 1
+      return (a.title || '').localeCompare(b.title || '')
+    })
+  }, [defaultTripSummary, tripSummaries])
+  const resolvedTripId = availableTrips.some((trip) => trip.id === activeTripId)
+    ? activeTripId
+    : defaultTripSummary.id
 
   const tripState = useMemo(() => deriveTripState(overrides), [overrides])
+  const activeTripSummary =
+    availableTrips.find((trip) => trip.id === resolvedTripId) || defaultTripSummary
   const visibleDays = tripState.days
   const resolvedActiveDayId =
     activeDayId === DAY_VIEW_ALL || tripState.dayMap[activeDayId]
@@ -1345,13 +1471,18 @@ export default function App() {
   }, [detailItem, tripState.dayMap])
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(ACTIVE_TRIP_STORAGE_KEY, resolvedTripId)
+  }, [resolvedTripId])
+
+  useEffect(() => {
     let active = true
-    let unsubscribe = () => {}
 
     async function bootstrap() {
       if (!firebaseEnabled) {
         if (active) {
           setAuthReady(true)
+          setTripSummaries([defaultTripSummary])
           setFirestoreState({ status: 'disabled', error: 'Firebase env vars missing' })
         }
         return
@@ -1362,21 +1493,6 @@ export default function App() {
         if (!active) return
 
         setAuthReady(true)
-        unsubscribe = await subscribeToTripState(
-          (payload) => {
-            setOverrides({
-              days: payload?.days || {},
-              items: payload?.items || {},
-            })
-            setFirestoreState({ status: 'ready', error: '' })
-          },
-          (error) => {
-            console.error(error)
-            if (active) {
-              setFirestoreState({ status: 'error', error: error?.message || 'Snapshot failed' })
-            }
-          },
-        )
       } catch (error) {
         console.error(error)
         if (active) {
@@ -1389,9 +1505,69 @@ export default function App() {
     void bootstrap()
     return () => {
       active = false
+    }
+  }, [defaultTripSummary])
+
+  useEffect(() => {
+    if (!authReady || !firebaseEnabled) return undefined
+
+    let active = true
+    let unsubscribe = () => {}
+
+    async function connectDirectory() {
+      unsubscribe = await subscribeToTripDirectory(
+        (payload) => {
+          if (!active) return
+          setTripSummaries(payload || [])
+        },
+        (error) => {
+          console.error(error)
+          if (active) {
+            setFirestoreState({ status: 'error', error: error?.message || 'Trip list failed' })
+          }
+        },
+      )
+    }
+
+    void connectDirectory()
+    return () => {
+      active = false
       unsubscribe()
     }
-  }, [])
+  }, [authReady])
+
+  useEffect(() => {
+    if (!authReady || !firebaseEnabled || !resolvedTripId) return undefined
+
+    let active = true
+    let unsubscribe = () => {}
+
+    async function connectTrip() {
+      unsubscribe = await subscribeToTripState(
+        resolvedTripId,
+        (payload) => {
+          if (!active) return
+          setOverrides({
+            days: payload?.days || {},
+            items: payload?.items || {},
+          })
+          setFirestoreState({ status: 'ready', error: '' })
+        },
+        (error) => {
+          console.error(error)
+          if (active) {
+            setFirestoreState({ status: 'error', error: error?.message || 'Snapshot failed' })
+          }
+        },
+      )
+    }
+
+    void connectTrip()
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [authReady, resolvedTripId])
 
   useEffect(() => {
     let cancelled = false
@@ -1411,6 +1587,17 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (!firestoreReady) return
+    if (tripSummaries.some((trip) => trip.id === defaultTripSummary.id)) return
+
+    void upsertTripMeta(defaultTripSummary.id, {
+      title: defaultTripSummary.title,
+      startDate: defaultTripSummary.startDate,
+      endDate: defaultTripSummary.endDate,
+    })
+  }, [defaultTripSummary, firestoreReady, tripSummaries])
+
+  useEffect(() => {
     if (!detailItem || !firestoreReady || detailScheduleError) return
 
     if (debounceRef.current) window.clearTimeout(debounceRef.current)
@@ -1418,7 +1605,7 @@ export default function App() {
     debounceRef.current = window.setTimeout(async () => {
       try {
         if (detailItem.generated) {
-          await mergeTripPatch({
+          await mergeTripPatch(resolvedTripId, {
             items: {
               [detailItem.id]: generatedItemPatch(detailItem),
             },
@@ -1430,7 +1617,7 @@ export default function App() {
           const patchItems = Object.fromEntries(
             mergeItemsForDay(sameDayItems, detailItem).map((item) => [item.id, item]),
           )
-          await mergeTripPatch({ items: patchItems })
+          await mergeTripPatch(resolvedTripId, { items: patchItems })
         }
         setAutosaveStatus('saved')
       } catch (error) {
@@ -1442,10 +1629,20 @@ export default function App() {
     return () => {
       if (debounceRef.current) window.clearTimeout(debounceRef.current)
     }
-  }, [detailItem, detailScheduleError, firestoreReady, tripState.items])
+  }, [detailItem, detailScheduleError, firestoreReady, resolvedTripId, tripState.items])
 
   const routePairs = useMemo(() => makeMovementPairs(deferredItems), [deferredItems])
   const detailAutosaveStatus = detailScheduleError ? 'conflict' : autosaveStatus
+
+  function selectTrip(tripId) {
+    setOverrides({ days: {}, items: {} })
+    setNoteItem(null)
+    setDetailItem(null)
+    setRouteMap({})
+    setActiveDayId(DAY_VIEW_ALL)
+    setAutosaveStatus(firebaseEnabled ? 'saved' : 'offline')
+    setActiveTripId(tripId)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -1527,7 +1724,38 @@ export default function App() {
     const patchItems = Object.fromEntries(
       mergeItemsForDay(manualItems, item).map((entry) => [entry.id, entry]),
     )
-    await mergeTripPatch({ items: patchItems })
+    await mergeTripPatch(resolvedTripId, { items: patchItems })
+  }
+
+  async function createTrip() {
+    if (!firestoreReady) return
+
+    const nextIndex = availableTrips.length + 1
+    const suggestedTitle = `Trip ${nextIndex}`
+    const title = window.prompt('Trip name', suggestedTitle)?.trim()
+    if (!title) return
+
+    const tripId = slugId('trip')
+    const snapshot = serializeTripState(tripState)
+    const nextSummary = {
+      id: tripId,
+      title,
+      startDate: tripState.days[0]?.date || '',
+      endDate: tripState.days[tripState.days.length - 1]?.date || '',
+    }
+
+    await createTripRecord(tripId, {
+      title: nextSummary.title,
+      startDate: nextSummary.startDate,
+      endDate: nextSummary.endDate,
+      days: snapshot.days,
+      items: snapshot.items,
+    })
+
+    setTripSummaries((current) =>
+      current.some((trip) => trip.id === tripId) ? current : [...current, nextSummary],
+    )
+    selectTrip(tripId)
   }
 
   async function updateDay(dayId, changes) {
@@ -1538,7 +1766,7 @@ export default function App() {
         return
       }
     }
-    await mergeTripPatch({ days: { [dayId]: changes } })
+    await mergeTripPatch(resolvedTripId, { days: { [dayId]: changes } })
   }
 
   async function addDay(draft) {
@@ -1549,7 +1777,7 @@ export default function App() {
     }
 
     const id = slugId('day')
-    await mergeTripPatch({
+    await mergeTripPatch(resolvedTripId, {
       days: {
         [id]: {
           id,
@@ -1570,7 +1798,7 @@ export default function App() {
     const reordered = [...visibleDays]
     const [day] = reordered.splice(index, 1)
     reordered.splice(targetIndex, 0, day)
-    await mergeTripPatch({
+    await mergeTripPatch(resolvedTripId, {
       days: Object.fromEntries(
         renumberDays(reordered).map((entry) => [entry.id, { order: entry.order }]),
       ),
@@ -1583,7 +1811,7 @@ export default function App() {
     if (!window.confirm(`Delete ${day.label}? This will delete every item under that day.`)) return
 
     const remaining = visibleDays.filter((entry) => entry.id !== dayId)
-    await mergeTripPatch({
+    await mergeTripPatch(resolvedTripId, {
       days: {
         [dayId]: { hidden: true },
         ...Object.fromEntries(
@@ -1600,7 +1828,7 @@ export default function App() {
   }
 
   async function deleteItem(itemId) {
-    await mergeTripPatch({ items: { [itemId]: { hidden: true } } })
+    await mergeTripPatch(resolvedTripId, { items: { [itemId]: { hidden: true } } })
     setNoteItem((current) => (current?.id === itemId ? null : current))
     setDetailItem((current) => (current?.id === itemId ? null : current))
   }
@@ -1677,6 +1905,16 @@ export default function App() {
 
   return (
     <main className="mx-auto min-h-screen max-w-7xl overflow-x-clip px-3 py-4 pb-8 text-slate-900 sm:px-6 sm:py-5 sm:pb-10 lg:px-8">
+      <div className={isMobilePortrait ? 'mx-auto mb-4 max-w-[28rem]' : 'mb-4 max-w-md'}>
+        <TripSwitcher
+          activeTripId={activeTripSummary.id}
+          disabled={!firestoreReady}
+          isMobilePortrait={isMobilePortrait}
+          onCreateTrip={() => void createTrip()}
+          onSelectTrip={selectTrip}
+          tripSummaries={availableTrips}
+        />
+      </div>
       <section
         className={
           isMobilePortrait

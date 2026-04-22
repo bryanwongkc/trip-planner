@@ -1,5 +1,3 @@
-import { TRIP_ID } from '../data/seedItinerary'
-
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -17,6 +15,7 @@ async function loadFirebaseServices() {
   if (!firebaseEnabled) {
     return {
       auth: null,
+      collection: null,
       db: null,
       doc: null,
       onSnapshot: null,
@@ -38,6 +37,7 @@ async function loadFirebaseServices() {
 
       return {
         auth: authModule.getAuth(app),
+        collection: firestoreModule.collection,
         db: firestoreModule.getFirestore(app),
         doc: firestoreModule.doc,
         onSnapshot: firestoreModule.onSnapshot,
@@ -79,12 +79,32 @@ export async function ensureAnonymousAuth() {
   return credential.user
 }
 
-export async function subscribeToTripState(onValue, onError) {
+export async function subscribeToTripDirectory(onValue, onError) {
+  const { collection, db, onSnapshot } = await loadFirebaseServices()
+
+  if (!db || !collection) return () => {}
+
+  const tripsCollection = collection(db, 'trips')
+
+  return onSnapshot(
+    tripsCollection,
+    (snapshot) =>
+      onValue(
+        snapshot.docs.map((entry) => ({
+          id: entry.id,
+          ...entry.data(),
+        })),
+      ),
+    onError,
+  )
+}
+
+export async function subscribeToTripState(tripId, onValue, onError) {
   const { db, doc, onSnapshot } = await loadFirebaseServices()
 
-  if (!db) return () => {}
+  if (!db || !tripId) return () => {}
 
-  const overridesDoc = doc(db, 'trips', TRIP_ID, 'overrides', 'shared')
+  const overridesDoc = doc(db, 'trips', tripId, 'overrides', 'shared')
 
   return onSnapshot(
     overridesDoc,
@@ -93,12 +113,12 @@ export async function subscribeToTripState(onValue, onError) {
   )
 }
 
-export async function mergeTripPatch(patch) {
+export async function mergeTripPatch(tripId, patch) {
   const { db, doc, serverTimestamp, setDoc } = await loadFirebaseServices()
 
-  if (!db) return
+  if (!db || !tripId) return
 
-  const overridesDoc = doc(db, 'trips', TRIP_ID, 'overrides', 'shared')
+  const overridesDoc = doc(db, 'trips', tripId, 'overrides', 'shared')
   const payload = {
     updatedAt: serverTimestamp(),
   }
@@ -112,4 +132,51 @@ export async function mergeTripPatch(patch) {
   }
 
   await setDoc(overridesDoc, payload, { merge: true })
+}
+
+export async function createTripRecord(tripId, payload) {
+  const { db, doc, serverTimestamp, setDoc } = await loadFirebaseServices()
+
+  if (!db || !tripId) return
+
+  const tripDoc = doc(db, 'trips', tripId)
+  const overridesDoc = doc(db, 'trips', tripId, 'overrides', 'shared')
+
+  await setDoc(
+    tripDoc,
+    stripUndefined({
+      title: payload.title,
+      startDate: payload.startDate,
+      endDate: payload.endDate,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }),
+    { merge: true },
+  )
+
+  await setDoc(
+    overridesDoc,
+    {
+      updatedAt: serverTimestamp(),
+      days: stampEntityMap(payload.days, serverTimestamp),
+      items: stampEntityMap(payload.items, serverTimestamp),
+    },
+    { merge: true },
+  )
+}
+
+export async function upsertTripMeta(tripId, payload) {
+  const { db, doc, serverTimestamp, setDoc } = await loadFirebaseServices()
+
+  if (!db || !tripId) return
+
+  const tripDoc = doc(db, 'trips', tripId)
+  await setDoc(
+    tripDoc,
+    stripUndefined({
+      ...payload,
+      updatedAt: serverTimestamp(),
+    }),
+    { merge: true },
+  )
 }

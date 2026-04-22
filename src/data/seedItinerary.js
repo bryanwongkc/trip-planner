@@ -1,4 +1,5 @@
 export const TRIP_ID = import.meta.env.VITE_TRIP_DOC_ID || 'tokyo-chiba-wedding-2026'
+export const DEFAULT_TRIP_TITLE = 'Tokyo / Chiba wedding 2026'
 
 export const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
 

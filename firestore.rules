@@ -6,8 +6,25 @@ service cloud.firestore {
     }
 
     function isSharedOverrideDoc() {
-      return request.resource.data.keys().hasOnly(['items', 'updatedAt']) &&
-        request.resource.data.items is map;
+      return request.resource.data.keys().hasOnly(['days', 'items', 'updatedAt']) &&
+        (!('days' in request.resource.data) || request.resource.data.days is map) &&
+        (!('items' in request.resource.data) || request.resource.data.items is map);
+    }
+
+    function isTripMetaDoc() {
+      return request.resource.data.keys().hasOnly([
+        'title',
+        'startDate',
+        'endDate',
+        'createdAt',
+        'updatedAt'
+      ]);
+    }
+
+    match /trips/{tripId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isTripMetaDoc();
+      allow delete: if false;
     }
 
     match /trips/{tripId}/overrides/shared {
