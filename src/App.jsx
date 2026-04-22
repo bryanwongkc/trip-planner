@@ -219,6 +219,21 @@ function mergeItemsForDay(currentItems, nextItem) {
   return assignItemOrder([...currentItems.filter((item) => item.id !== nextItem.id), nextItem])
 }
 
+function getScheduleConflict(items) {
+  const orderedItems = assignItemOrder(items)
+
+  for (let index = 0; index < orderedItems.length - 1; index += 1) {
+    const current = orderedItems[index]
+    const next = orderedItems[index + 1]
+    if (!current.endTime || !next.startTime) continue
+    if (compareTime(current.endTime, next.startTime) > 0) {
+      return `${current.title} ends after ${next.title} starts.`
+    }
+  }
+
+  return ''
+}
+
 function makeMovementPairs(items) {
   return items
     .slice(0, -1)
@@ -653,6 +668,7 @@ function DetailModal({
   onChange,
   onClose,
   onDelete,
+  scheduleError,
 }) {
   const fieldReadOnly = !firestoreReady
   const linkedLocked = isGenerated
@@ -681,6 +697,8 @@ function DetailModal({
                 ? 'Linked hotel item'
                 : autosaveStatus === 'saving'
                   ? 'Autosaving...'
+                  : autosaveStatus === 'conflict'
+                    ? 'Schedule conflict'
                   : autosaveStatus === 'error'
                     ? 'Save failed'
                     : 'All changes synced'}
@@ -707,6 +725,12 @@ function DetailModal({
         {isGenerated ? (
           <div className="mt-4 rounded-[1.2rem] bg-amber-50 px-4 py-3 text-sm text-amber-700">
             This stop stays linked to the previous day hotel for place continuity. You can still edit its time, notes, and booking reference here.
+          </div>
+        ) : null}
+
+        {scheduleError ? (
+          <div className="mt-4 rounded-[1.2rem] bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {scheduleError}
           </div>
         ) : null}
 
@@ -819,6 +843,7 @@ function DetailModal({
 function PlannerPanel({
   activeDayId,
   dayOptions,
+  dayMap,
   filteredItems,
   firestoreReady,
   isMobilePortrait,
@@ -845,9 +870,18 @@ function PlannerPanel({
         ? draft.dayId
         : dayOptions[0]?.id || ''
   const [isComposerOpen, setIsComposerOpen] = useState(activeDayId !== DAY_VIEW_ALL)
+  const draftScheduleError = useMemo(() => {
+    if (!effectiveDraftDayId) return ''
+    const existingItems = dayMap[effectiveDraftDayId]?.items || []
+    return getScheduleConflict([...existingItems, { ...draft, dayId: effectiveDraftDayId }])
+  }, [dayMap, draft, effectiveDraftDayId])
 
   async function saveNewItem() {
     if (!firestoreReady || !effectiveDraftDayId) return
+    if (draftScheduleError) {
+      window.alert(draftScheduleError)
+      return
+    }
 
     await onSaveNewItem({
       ...draft,
@@ -941,8 +975,25 @@ function PlannerPanel({
         {filteredItems.map((item, index) => {
           const meta = typeMeta(item.category)
           const nextSegment = routeSegments[index]
+          const isOverview = activeDayId === DAY_VIEW_ALL
+          const previousItem = filteredItems[index - 1]
+          const showDayDivider = isOverview && (!previousItem || previousItem.dayId !== item.dayId)
+          const dayContext = dayOptions.find((day) => day.id === item.dayId)
           return (
             <div key={item.id} className="space-y-2">
+              {showDayDivider ? (
+                <div className="flex items-center gap-3 px-1 py-3 first:pt-0">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      {dayContext?.label || 'Day'}
+                    </div>
+                    <div className="mt-1 text-sm text-slate-500">
+                      {dayContext?.name || formatFullDayDate(dayContext?.date || '')}
+                    </div>
+                  </div>
+                  <div className="h-px flex-1 bg-slate-200/80" />
+                </div>
+              ) : null}
               <article
                 className="timeline-card relative rounded-[1.45rem] px-4 py-4 transition hover:bg-white/90 active:bg-white/95 sm:px-5"
                 onClick={() => onOpenNotes(item)}
@@ -1101,10 +1152,16 @@ function PlannerPanel({
               </Field>
             </div>
 
+            {draftScheduleError ? (
+              <div className="mt-4 rounded-[1.2rem] bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {draftScheduleError}
+              </div>
+            ) : null}
+
             <button
               type="button"
               onClick={() => void saveNewItem()}
-              disabled={!firestoreReady || !effectiveDraftDayId}
+              disabled={!firestoreReady || !effectiveDraftDayId || Boolean(draftScheduleError)}
               className="mt-5 w-full rounded-[1.25rem] bg-slate-900 px-4 py-4 text-sm font-bold text-white disabled:bg-slate-300"
             >
               Save new itinerary detail
@@ -1122,7 +1179,7 @@ function PlannerPanel({
 
 function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, mapsError, routeSegments }) {
   return (
-    <div className="space-y-3 browse-ui">
+    <div className="browse-ui">
       <div className="glass-panel rounded-[1.6rem] border border-white/60 px-4 py-4 sm:px-5">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -1151,35 +1208,6 @@ function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, map
           ) : (
             <div className="flex h-full items-center justify-center bg-slate-100 px-6 text-center text-sm font-medium text-slate-500">
               {mapsError || 'Add VITE_GOOGLE_MAPS_API_KEY to enable Google Maps.'}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="glass-panel rounded-[1.6rem] border border-white/60 px-4 py-4 sm:px-5">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">Movement</h3>
-          <span className="text-xs text-slate-400">{routeSegments.length} legs</span>
-        </div>
-        <div className="mt-3 space-y-2">
-          {routeSegments.length ? (
-            routeSegments.map((segment) => (
-              <div key={segment.id} className="rounded-[1.1rem] bg-white px-4 py-3">
-                <div className="truncate text-sm font-medium text-slate-800">
-                  {segment.from.title} → {segment.to.title}
-                </div>
-                <div className="mt-1 flex gap-3 text-xs text-slate-500">
-                  <span>{routeLabel(segment.mode)}</span>
-                  <span>
-                    {segment.route ? `${Math.round(segment.route.durationMin)} min` : 'Loading route'}
-                  </span>
-                  {segment.route ? <span>{segment.route.distanceKm.toFixed(1)} km</span> : null}
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="rounded-[1.1rem] bg-white px-4 py-3 text-sm text-slate-500">
-              Add more locations to visualize movement between stops.
             </div>
           )}
         </div>
@@ -1245,6 +1273,13 @@ export default function App() {
       ? null
       : weatherState.data?.dailyByDate?.[tripState.dayMap[resolvedActiveDayId]?.date || ''] ?? null
   const firestoreReady = firebaseEnabled && authReady && firestoreState.status === 'ready'
+  const detailScheduleError = useMemo(() => {
+    if (!detailItem?.dayId) return ''
+    const existingItems = (tripState.dayMap[detailItem.dayId]?.items || []).filter(
+      (item) => item.id !== detailItem.id,
+    )
+    return getScheduleConflict([...existingItems, detailItem])
+  }, [detailItem, tripState.dayMap])
 
   useEffect(() => {
     let active = true
@@ -1313,7 +1348,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!detailItem || !firestoreReady) return
+    if (!detailItem || !firestoreReady || detailScheduleError) return
 
     if (debounceRef.current) window.clearTimeout(debounceRef.current)
 
@@ -1344,9 +1379,10 @@ export default function App() {
     return () => {
       if (debounceRef.current) window.clearTimeout(debounceRef.current)
     }
-  }, [detailItem, firestoreReady, tripState.items])
+  }, [detailItem, detailScheduleError, firestoreReady, tripState.items])
 
   const routePairs = useMemo(() => makeMovementPairs(deferredItems), [deferredItems])
+  const detailAutosaveStatus = detailScheduleError ? 'conflict' : autosaveStatus
 
   useEffect(() => {
     let cancelled = false
@@ -1415,11 +1451,18 @@ export default function App() {
   )
 
   async function saveItem(item) {
-    const sameDayItems = tripState.items.filter(
-      (existing) => existing.dayId === item.dayId && !existing.generated && existing.id !== item.id,
+    const sameDayItems = (tripState.dayMap[item.dayId]?.items || []).filter(
+      (existing) => existing.id !== item.id,
     )
+    const scheduleConflict = getScheduleConflict([...sameDayItems, item])
+    if (scheduleConflict) {
+      window.alert(scheduleConflict)
+      return
+    }
+
+    const manualItems = sameDayItems.filter((existing) => !existing.generated)
     const patchItems = Object.fromEntries(
-      mergeItemsForDay(sameDayItems, item).map((entry) => [entry.id, entry]),
+      mergeItemsForDay(manualItems, item).map((entry) => [entry.id, entry]),
     )
     await mergeTripPatch({ items: patchItems })
   }
@@ -1582,6 +1625,7 @@ export default function App() {
           <PlannerPanel
             activeDayId={resolvedActiveDayId}
             dayOptions={dayOptions}
+            dayMap={tripState.dayMap}
             filteredItems={filteredItems}
             firestoreReady={firestoreReady}
             isMobilePortrait={isMobilePortrait}
@@ -1652,7 +1696,7 @@ export default function App() {
 
       {detailItem ? (
         <DetailModal
-          autosaveStatus={autosaveStatus}
+          autosaveStatus={detailAutosaveStatus}
           dayOptions={dayOptions}
           detailItem={detailItem}
           firestoreReady={firestoreReady}
@@ -1661,6 +1705,7 @@ export default function App() {
           mapsReady={googleMapsState.ready}
           onChange={updateDetail}
           onClose={() => setDetailItem(null)}
+          scheduleError={detailScheduleError}
           onDelete={async () => {
             const id = detailItem.id
             setDetailItem(null)
