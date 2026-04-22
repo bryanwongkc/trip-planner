@@ -191,6 +191,17 @@ function buildEmptyDraft(dayId = '') {
   }
 }
 
+function generatedItemPatch(item) {
+  return {
+    id: item.id,
+    dayId: item.dayId,
+    startTime: item.startTime,
+    endTime: item.endTime,
+    description: item.description,
+    bookingRef: item.bookingRef,
+  }
+}
+
 function assignItemOrder(items) {
   return [...items]
     .sort((a, b) => {
@@ -580,7 +591,7 @@ function NoteModal({ item, isMobilePortrait, onClose, onDelete, onOpenDetails })
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Notes</div>
             <div className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
               {item.generated
-                ? 'This hotel stop is linked from the previous day. Edit the previous day hotel to change it.'
+                ? 'This hotel stop stays linked to the previous day hotel. You can still adjust time, notes, and booking details here.'
                 : item.description || 'No notes yet.'}
             </div>
           </div>
@@ -616,7 +627,8 @@ function DetailModal({
   onClose,
   onDelete,
 }) {
-  const readOnly = isGenerated || !firestoreReady
+  const fieldReadOnly = !firestoreReady
+  const linkedLocked = isGenerated
 
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-4 backdrop-blur-sm sm:items-center sm:justify-center">
@@ -663,7 +675,7 @@ function DetailModal({
 
         {isGenerated ? (
           <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            This stop is auto-generated from the previous day hotel. Edit or remove the previous day hotel to change it.
+            This stop stays linked to the previous day hotel for place continuity. You can still edit its time, notes, and booking reference here.
           </div>
         ) : null}
 
@@ -672,7 +684,7 @@ function DetailModal({
             <select
               value={detailItem.dayId}
               onChange={(event) => onChange({ dayId: event.target.value })}
-              disabled={readOnly}
+              disabled={fieldReadOnly || linkedLocked}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             >
               {dayOptions.map((day) => (
@@ -686,7 +698,7 @@ function DetailModal({
             <select
               value={detailItem.category}
               onChange={(event) => onChange({ category: event.target.value })}
-              disabled={readOnly}
+              disabled={fieldReadOnly || linkedLocked}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             >
               {CATEGORY_OPTIONS.map((option) => (
@@ -700,7 +712,7 @@ function DetailModal({
             <input
               value={detailItem.title}
               onChange={(event) => onChange({ title: event.target.value })}
-              disabled={readOnly}
+              disabled={fieldReadOnly || linkedLocked}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             />
           </Field>
@@ -709,7 +721,7 @@ function DetailModal({
               type="time"
               value={detailItem.startTime}
               onChange={(event) => onChange({ startTime: event.target.value })}
-              disabled={readOnly}
+              disabled={fieldReadOnly}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             />
           </Field>
@@ -718,7 +730,7 @@ function DetailModal({
               type="time"
               value={detailItem.endTime}
               onChange={(event) => onChange({ endTime: event.target.value })}
-              disabled={readOnly}
+              disabled={fieldReadOnly}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             />
           </Field>
@@ -727,7 +739,7 @@ function DetailModal({
         <div className="mt-4 space-y-3">
           <PlaceFields
             draft={detailItem}
-            disabled={readOnly}
+            disabled={fieldReadOnly || linkedLocked}
             mapsReady={mapsReady}
             onChange={onChange}
           />
@@ -736,7 +748,7 @@ function DetailModal({
             <input
               value={detailItem.bookingRef || ''}
               onChange={(event) => onChange({ bookingRef: event.target.value })}
-              disabled={readOnly}
+              disabled={fieldReadOnly}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             />
           </Field>
@@ -745,7 +757,7 @@ function DetailModal({
               rows={5}
               value={detailItem.description || ''}
               onChange={(event) => onChange({ description: event.target.value })}
-              disabled={readOnly}
+              disabled={fieldReadOnly}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             />
           </Field>
@@ -1269,19 +1281,27 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!detailItem || !firestoreReady || detailItem.generated) return
+    if (!detailItem || !firestoreReady) return
 
     if (debounceRef.current) window.clearTimeout(debounceRef.current)
 
     debounceRef.current = window.setTimeout(async () => {
       try {
-        const sameDayItems = tripState.items.filter(
-          (item) => item.dayId === detailItem.dayId && !item.generated && item.id !== detailItem.id,
-        )
-        const patchItems = Object.fromEntries(
-          mergeItemsForDay(sameDayItems, detailItem).map((item) => [item.id, item]),
-        )
-        await mergeTripPatch({ items: patchItems })
+        if (detailItem.generated) {
+          await mergeTripPatch({
+            items: {
+              [detailItem.id]: generatedItemPatch(detailItem),
+            },
+          })
+        } else {
+          const sameDayItems = tripState.items.filter(
+            (item) => item.dayId === detailItem.dayId && !item.generated && item.id !== detailItem.id,
+          )
+          const patchItems = Object.fromEntries(
+            mergeItemsForDay(sameDayItems, detailItem).map((item) => [item.id, item]),
+          )
+          await mergeTripPatch({ items: patchItems })
+        }
         setAutosaveStatus('saved')
       } catch (error) {
         console.error(error)
@@ -1518,7 +1538,7 @@ export default function App() {
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl px-4 py-5 text-slate-900 sm:px-6 lg:px-8">
+    <main className="mx-auto min-h-screen max-w-7xl px-4 py-5 pb-8 text-slate-900 sm:px-6 sm:pb-10 lg:px-8">
       <section className="glass-panel rounded-[2rem] border border-white/60 px-5 py-5 sm:px-7">
         <div className="flex items-center justify-between gap-4">
           <h1 className="headline text-3xl leading-tight sm:text-5xl">Trip planner</h1>

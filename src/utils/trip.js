@@ -95,8 +95,16 @@ function buildGeneratedHotelItem(sourceItem, dayId, nextStartTime) {
 
 export function deriveTripState(overrides) {
   const dayMap = Object.fromEntries(mergeEntityMap(SEED_DAYS, overrides.days).map((day) => [day.id, day]))
+  const generatedItemOverrides = Object.fromEntries(
+    Object.entries(overrides.items || {}).filter(([id]) => id.startsWith('generated-hotel:')),
+  )
   const itemMap = Object.fromEntries(
-    mergeEntityMap(SEED_ITEMS, overrides.items).map((item) => [item.id, item]),
+    mergeEntityMap(
+      SEED_ITEMS,
+      Object.fromEntries(
+        Object.entries(overrides.items || {}).filter(([id]) => !id.startsWith('generated-hotel:')),
+      ),
+    ).map((item) => [item.id, item]),
   )
 
   const days = sortDays(Object.values(dayMap))
@@ -128,7 +136,16 @@ export function deriveTripState(overrides) {
       continue
     }
 
-    generatedItems.push(buildGeneratedHotelItem(trailingHotel, nextDay.id, firstManual?.startTime))
+    const generatedItem = buildGeneratedHotelItem(trailingHotel, nextDay.id, firstManual?.startTime)
+    const override = generatedItemOverrides[generatedItem.id] || {}
+
+    generatedItems.push({
+      ...generatedItem,
+      startTime: override.startTime || generatedItem.startTime,
+      endTime: override.endTime || generatedItem.endTime,
+      description: override.description ?? generatedItem.description,
+      bookingRef: override.bookingRef ?? generatedItem.bookingRef,
+    })
   }
 
   generatedItems.forEach((item) => {
