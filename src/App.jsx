@@ -17,7 +17,6 @@ import {
   CloudRain,
   ExternalLink,
   Loader2,
-  MapPinned,
   Plus,
   Search,
   Sun,
@@ -802,6 +801,7 @@ function PlannerPanel({
       : draft.dayId && dayOptions.some((day) => day.id === draft.dayId)
         ? draft.dayId
         : dayOptions[0]?.id || ''
+  const [isComposerOpen, setIsComposerOpen] = useState(activeDayId !== DAY_VIEW_ALL)
 
   async function saveNewItem() {
     if (!firestoreReady || !effectiveDraftDayId) return
@@ -813,92 +813,94 @@ function PlannerPanel({
     })
 
     setDraft(buildEmptyDraft(activeDayId !== DAY_VIEW_ALL ? activeDayId : dayOptions[0]?.id || ''))
+    setIsComposerOpen(false)
   }
 
   return (
     <>
-      <div className="glass-panel rounded-[1.75rem] border border-white/60 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="headline text-3xl text-slate-900">
-              {activeDayId === DAY_VIEW_ALL
-                ? 'Full itinerary'
-                : dayOptions.find((day) => day.id === activeDayId)?.label || 'Day view'}
-            </h2>
-            {activeDayId !== DAY_VIEW_ALL ? (
+      <div className="sticky top-4 z-20 space-y-3">
+        <div className="glass-panel rounded-[1.65rem] border border-white/60 px-4 py-4 sm:px-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="headline text-[2rem] leading-none text-slate-900">
+                {activeDayId === DAY_VIEW_ALL
+                  ? 'Full itinerary'
+                  : dayOptions.find((day) => day.id === activeDayId)?.label || 'Day view'}
+              </h2>
               <div className="mt-1 text-sm text-slate-500">
-                {dayOptions.find((day) => day.id === activeDayId)?.name ||
-                  formatFullDayDate(dayOptions.find((day) => day.id === activeDayId)?.date || '')}
+                {activeDayId === DAY_VIEW_ALL
+                  ? `${filteredItems.length} stops across ${dayOptions.length} days`
+                  : dayOptions.find((day) => day.id === activeDayId)?.name ||
+                    formatFullDayDate(dayOptions.find((day) => day.id === activeDayId)?.date || '')}
               </div>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="rounded-full bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Tap notes · Hold details
             </div>
-            <button
-              type="button"
-              onClick={onManageDays}
-              className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
-            >
-              Manage days
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="rounded-full bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Tap notes · Hold details
+              </div>
+              <button
+                type="button"
+                onClick={onManageDays}
+                className="rounded-[1.2rem] bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
+              >
+                Manage days
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
-          <button
-            type="button"
-            onClick={() => onDayChange(DAY_VIEW_ALL)}
-            className={`min-w-[112px] rounded-2xl px-4 py-3 text-left text-sm font-semibold transition ${
-              activeDayId === DAY_VIEW_ALL ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'
-            }`}
-          >
-            Overview
-          </button>
-          {dayOptions.map((day) => (
+          <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
             <button
-              key={day.id}
               type="button"
-              onClick={() => onDayChange(day.id)}
-              className={`min-w-[176px] rounded-2xl px-4 py-3 text-left text-sm font-semibold transition ${
-                activeDayId === day.id ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'
+              onClick={() => onDayChange(DAY_VIEW_ALL)}
+              className={`min-w-[108px] rounded-[1.1rem] px-4 py-3 text-left transition ${
+                activeDayId === DAY_VIEW_ALL ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'
               }`}
             >
-              <div>{day.label}</div>
-              {day.name ? (
-                <div className={`mt-1 text-xs ${activeDayId === day.id ? 'text-white/70' : 'text-slate-400'}`}>
-                  {day.name}
-                </div>
-              ) : null}
+              <div className="text-sm font-semibold">Overview</div>
+              <div className={`mt-1 text-[11px] ${activeDayId === DAY_VIEW_ALL ? 'text-white/65' : 'text-slate-400'}`}>
+                Whole trip
+              </div>
             </button>
-          ))}
-        </div>
+            {dayOptions.map((day, index) => (
+              <button
+                key={day.id}
+                type="button"
+                onClick={() => onDayChange(day.id)}
+                className={`min-w-[150px] rounded-[1.1rem] px-4 py-3 text-left transition ${
+                  activeDayId === day.id ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'
+                }`}
+              >
+                <div className="text-sm font-semibold">Day {index + 1}</div>
+                <div className={`mt-1 text-[11px] ${activeDayId === day.id ? 'text-white/65' : 'text-slate-400'}`}>
+                  {day.date.slice(5).replace('-', '/')}
+                </div>
+              </button>
+            ))}
+          </div>
 
-        {weatherDisplay ? (
-          <div className="mt-4 rounded-[1.4rem] bg-white px-4 py-4 shadow-sm">
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Weather snapshot</p>
-            <div className="mt-3 flex items-center justify-between gap-3">
+          {weatherDisplay ? (
+            <div className="mt-4 flex items-center justify-between gap-4 rounded-[1.2rem] bg-white px-4 py-3">
               <div>
-                <div className="text-lg font-bold text-slate-900">{weatherDisplay.headline}</div>
-                <div className="mt-1 text-sm text-slate-600">{weatherDisplay.detail}</div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Weather</p>
+                <div className="mt-1 text-base font-semibold text-slate-900">{weatherDisplay.headline}</div>
+                <div className="mt-1 text-sm text-slate-500">{weatherDisplay.detail}</div>
               </div>
               <div className="rounded-2xl bg-slate-100 p-3 text-slate-700">
                 <weatherDisplay.icon className="h-5 w-5" />
               </div>
             </div>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-2">
         {filteredItems.map((item, index) => {
           const meta = typeMeta(item.category)
           const nextSegment = routeSegments[index]
           return (
-            <div key={item.id} className="space-y-3">
+            <div key={item.id} className="space-y-2">
               <article
-                className="glass-panel rounded-[1.6rem] border border-white/60 p-4 transition hover:bg-white/85 active:bg-white/90"
+                className="timeline-card relative rounded-[1.45rem] px-4 py-4 transition hover:bg-white/90 active:bg-white/95 sm:px-5"
                 onClick={() => onOpenNotes(item)}
                 onContextMenu={(event) => event.preventDefault()}
                 onPointerDown={(event) => onOpenDetails.startPress(event, item)}
@@ -907,42 +909,47 @@ function PlannerPanel({
                 onPointerCancel={onOpenDetails.cancelPress}
                 onPointerLeave={onOpenDetails.cancelPress}
               >
-                <div className="flex items-start gap-4">
-                  <div className={`rounded-2xl p-3 ${meta.tone}`}>
-                    <MapPinned className="h-5 w-5" />
+                <div className="flex gap-4 sm:gap-5">
+                  <div className="w-16 shrink-0 pt-0.5 text-right">
+                    <div className="text-sm font-semibold text-slate-900">{item.startTime}</div>
+                    {item.endTime ? <div className="mt-1 text-[11px] text-slate-400">{item.endTime}</div> : null}
+                  </div>
+                  <div className="timeline-rail shrink-0">
+                    <span className={`timeline-dot ${meta.tone}`} />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <span className="text-[11px] font-black uppercase tracking-[0.18em] text-indigo-600">
-                          {item.startTime}
-                        </span>
-                        <h3 className="mt-1 text-lg font-bold text-slate-900">{item.title}</h3>
+                      <div className="min-w-0">
+                        <h3 className="text-[1.02rem] font-semibold leading-6 text-slate-900">{item.title}</h3>
+                        <p className="mt-1 truncate text-sm text-slate-500">{item.locationName || item.address}</p>
                       </div>
                       {item.generated ? (
-                        <div className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
-                          Linked hotel
+                        <div className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                          Linked
                         </div>
                       ) : null}
                     </div>
-                    <p className="mt-1 text-sm text-slate-600">{item.locationName || item.address}</p>
                     {item.address && item.address !== item.locationName ? (
-                      <p className="mt-1 text-xs text-slate-400">{item.address}</p>
+                      <p className="mt-1 truncate text-xs text-slate-400">{item.address}</p>
                     ) : null}
-                    <p className="mt-3 rounded-2xl bg-slate-50 px-3 py-2 text-sm text-slate-500">
-                      {item.generated
-                        ? 'Auto-carried from the previous day hotel stay.'
-                        : item.description || 'Tap to open notes.'}
-                    </p>
+                    {(item.description || item.generated) ? (
+                      <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-500">
+                        {item.generated ? 'Auto-carried from the previous day hotel stay.' : item.description}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </article>
 
               {nextSegment ? (
-                <div className="rounded-[1.25rem] bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
-                  {nextSegment.route
-                    ? `${routeLabel(nextSegment.mode)} ${Math.round(nextSegment.route.durationMin)} min · ${nextSegment.route.distanceKm.toFixed(1)} km`
-                    : `Fetching route to ${nextSegment.to.title}`}
+                <div className="ml-20 flex items-center gap-3 rounded-[1rem] px-4 py-2 text-xs text-slate-500 sm:ml-[6.1rem]">
+                  <span className="font-medium text-slate-700">{routeLabel(nextSegment.mode)}</span>
+                  <span>
+                    {nextSegment.route
+                      ? `${Math.round(nextSegment.route.durationMin)} min`
+                      : 'Loading route'}
+                  </span>
+                  {nextSegment.route ? <span>{nextSegment.route.distanceKm.toFixed(1)} km</span> : null}
                 </div>
               ) : null}
             </div>
@@ -950,103 +957,120 @@ function PlannerPanel({
         })}
       </div>
 
-      <div className="glass-panel rounded-[1.75rem] border border-white/60 p-4">
-        <div className="flex items-center justify-between">
-          <h3 className="headline text-2xl text-slate-900">New stop</h3>
-          <div className="rounded-2xl bg-slate-900 p-3 text-white">
-            <Plus className="h-5 w-5" />
+      <div className="glass-panel rounded-[1.6rem] border border-white/60 px-4 py-4 sm:px-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="headline text-[1.9rem] leading-none text-slate-900">Add stop</h3>
+            <p className="mt-1 text-sm text-slate-500">Keep this tucked away until you need it.</p>
           </div>
+          <button
+            type="button"
+            onClick={() => setIsComposerOpen((open) => !open)}
+            className={`rounded-[1.15rem] px-4 py-3 text-sm font-semibold transition ${
+              isComposerOpen ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'
+            }`}
+          >
+            {isComposerOpen ? 'Hide form' : 'New stop'}
+          </button>
         </div>
 
-        <div className={`mt-4 grid gap-4 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
-          <Field label="Day">
-            <select
-              value={effectiveDraftDayId}
-              onChange={(event) => setDraft((current) => ({ ...current, dayId: event.target.value }))}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+        {isComposerOpen ? (
+          <>
+            <div className={`mt-5 grid gap-4 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
+              <Field label="Day">
+                <select
+                  value={effectiveDraftDayId}
+                  onChange={(event) => setDraft((current) => ({ ...current, dayId: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                >
+                  {dayOptions.map((day) => (
+                    <option key={day.id} value={day.id}>
+                      {day.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Category">
+                <select
+                  value={draft.category}
+                  onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                >
+                  {CATEGORY_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Title">
+                <input
+                  value={draft.title}
+                  onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                />
+              </Field>
+              <Field label="Start time">
+                <input
+                  type="time"
+                  value={draft.startTime}
+                  onChange={(event) => setDraft((current) => ({ ...current, startTime: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                />
+              </Field>
+              <Field label="End time">
+                <input
+                  type="time"
+                  value={draft.endTime}
+                  onChange={(event) => setDraft((current) => ({ ...current, endTime: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                />
+              </Field>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <PlaceFields
+                draft={draft}
+                disabled={!firestoreReady}
+                mapsReady={mapsReady}
+                onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
+              />
+
+              <Field label="Notes">
+                <textarea
+                  rows={3}
+                  value={draft.description}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, description: event.target.value }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                />
+              </Field>
+              <Field label="Booking ref">
+                <input
+                  value={draft.bookingRef}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, bookingRef: event.target.value }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                />
+              </Field>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void saveNewItem()}
+              disabled={!firestoreReady || !effectiveDraftDayId}
+              className="mt-5 w-full rounded-[1.25rem] bg-slate-900 px-4 py-4 text-sm font-bold text-white disabled:bg-slate-300"
             >
-              {dayOptions.map((day) => (
-                <option key={day.id} value={day.id}>
-                  {day.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Category">
-            <select
-              value={draft.category}
-              onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value }))}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
-            >
-              {CATEGORY_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Title">
-            <input
-              value={draft.title}
-              onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
-            />
-          </Field>
-          <Field label="Start time">
-            <input
-              type="time"
-              value={draft.startTime}
-              onChange={(event) => setDraft((current) => ({ ...current, startTime: event.target.value }))}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
-            />
-          </Field>
-          <Field label="End time">
-            <input
-              type="time"
-              value={draft.endTime}
-              onChange={(event) => setDraft((current) => ({ ...current, endTime: event.target.value }))}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
-            />
-          </Field>
-        </div>
-
-        <div className="mt-4 space-y-3">
-          <PlaceFields
-            draft={draft}
-            disabled={!firestoreReady}
-            mapsReady={mapsReady}
-            onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
-          />
-
-          <Field label="Notes">
-            <textarea
-              rows={4}
-              value={draft.description}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, description: event.target.value }))
-              }
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
-            />
-          </Field>
-          <Field label="Booking ref">
-            <input
-              value={draft.bookingRef}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, bookingRef: event.target.value }))
-              }
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
-            />
-          </Field>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => void saveNewItem()}
-          disabled={!firestoreReady || !effectiveDraftDayId}
-          className="mt-4 w-full rounded-[1.4rem] bg-indigo-600 px-4 py-4 text-sm font-bold text-white shadow-lg shadow-indigo-100 disabled:bg-slate-300"
-        >
-          Save new itinerary detail
-        </button>
+              Save new itinerary detail
+            </button>
+          </>
+        ) : (
+          <div className="mt-4 rounded-[1.1rem] bg-white px-4 py-3 text-sm text-slate-500">
+            Open the composer only when you need to add a new stop.
+          </div>
+        )}
       </div>
     </>
   )
@@ -1054,24 +1078,26 @@ function PlannerPanel({
 
 function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, mapsError, routeSegments }) {
   return (
-    <>
-      <div className="glass-panel rounded-[1.75rem] border border-white/60 p-4">
+    <div className="space-y-3">
+      <div className="glass-panel rounded-[1.6rem] border border-white/60 px-4 py-4 sm:px-5">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="headline text-3xl text-slate-900">Map</h2>
-          <div className="rounded-2xl bg-slate-900 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white">
-            {activeDayId === DAY_VIEW_ALL ? 'Whole trip' : 'Current day'}
+          <div>
+            <h2 className="headline text-[1.9rem] leading-none text-slate-900">Map</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {activeDayId === DAY_VIEW_ALL ? 'Whole trip view' : 'Selected day route'}
+            </p>
           </div>
         </div>
 
         <div
-          className={`mt-4 overflow-hidden rounded-[1.5rem] border border-slate-200 bg-slate-100 ${
-            isMobilePortrait ? 'h-[320px]' : 'h-[420px]'
+          className={`mt-4 overflow-hidden rounded-[1.35rem] border border-slate-200/80 bg-slate-100 ${
+            isMobilePortrait ? 'h-[260px]' : 'h-[320px]'
           }`}
         >
           {mapsReady ? (
             <Suspense
               fallback={
-                <div className="flex h-full items-center justify-center bg-slate-100 text-sm font-semibold text-slate-500">
+                <div className="flex h-full items-center justify-center bg-slate-100 text-sm font-medium text-slate-500">
                   Loading map...
                 </div>
               }
@@ -1079,37 +1105,42 @@ function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, map
               <TripMap filteredItems={filteredItems} routeSegments={routeSegments} />
             </Suspense>
           ) : (
-            <div className="flex h-full items-center justify-center bg-slate-100 px-6 text-center text-sm font-semibold text-slate-500">
+            <div className="flex h-full items-center justify-center bg-slate-100 px-6 text-center text-sm font-medium text-slate-500">
               {mapsError || 'Add VITE_GOOGLE_MAPS_API_KEY to enable Google Maps.'}
             </div>
           )}
         </div>
       </div>
 
-      <div className="glass-panel rounded-[1.75rem] border border-white/60 p-4">
-        <h3 className="headline text-2xl text-slate-900">Movement</h3>
-        <div className="mt-4 space-y-3">
+      <div className="glass-panel rounded-[1.6rem] border border-white/60 px-4 py-4 sm:px-5">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">Movement</h3>
+          <span className="text-xs text-slate-400">{routeSegments.length} legs</span>
+        </div>
+        <div className="mt-3 space-y-2">
           {routeSegments.length ? (
             routeSegments.map((segment) => (
-              <div key={segment.id} className="rounded-2xl bg-white p-4 shadow-sm">
-                <div className="text-sm font-semibold text-slate-900">
+              <div key={segment.id} className="rounded-[1.1rem] bg-white px-4 py-3">
+                <div className="truncate text-sm font-medium text-slate-800">
                   {segment.from.title} → {segment.to.title}
                 </div>
-                <div className="mt-1 text-sm text-slate-600">
-                  {segment.route
-                    ? `${routeLabel(segment.mode)} ${Math.round(segment.route.durationMin)} min · ${segment.route.distanceKm.toFixed(1)} km`
-                    : 'Route loading'}
+                <div className="mt-1 flex gap-3 text-xs text-slate-500">
+                  <span>{routeLabel(segment.mode)}</span>
+                  <span>
+                    {segment.route ? `${Math.round(segment.route.durationMin)} min` : 'Loading route'}
+                  </span>
+                  {segment.route ? <span>{segment.route.distanceKm.toFixed(1)} km</span> : null}
                 </div>
               </div>
             ))
           ) : (
-            <div className="rounded-2xl bg-white p-4 text-sm text-slate-600 shadow-sm">
+            <div className="rounded-[1.1rem] bg-white px-4 py-3 text-sm text-slate-500">
               Add more locations to visualize movement between stops.
             </div>
           )}
         </div>
       </div>
-    </>
+    </div>
   )
 }
 
@@ -1490,12 +1521,7 @@ export default function App() {
     <main className="mx-auto min-h-screen max-w-7xl px-4 py-5 text-slate-900 sm:px-6 lg:px-8">
       <section className="glass-panel rounded-[2rem] border border-white/60 px-5 py-5 sm:px-7">
         <div className="flex items-center justify-between gap-4">
-          <div>
-            <h1 className="headline text-3xl leading-tight sm:text-5xl">Trip planner</h1>
-            <p className="mt-2 text-sm text-slate-500">
-              Manage days, stops, and movement for the family trip.
-            </p>
-          </div>
+          <h1 className="headline text-3xl leading-tight sm:text-5xl">Trip planner</h1>
           <div className="flex flex-wrap items-center gap-2">
             {!MAPS_API_KEY ? (
               <div className="rounded-full bg-amber-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
@@ -1546,7 +1572,7 @@ export default function App() {
           />
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
           <MemoMapPanel
             activeDayId={resolvedActiveDayId}
             filteredItems={deferredItems}

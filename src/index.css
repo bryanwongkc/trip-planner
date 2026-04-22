@@ -4,9 +4,9 @@
 :root {
   color: #17252f;
   background:
-    radial-gradient(circle at top left, rgba(245, 182, 66, 0.24), transparent 32%),
-    radial-gradient(circle at top right, rgba(66, 145, 245, 0.22), transparent 30%),
-    linear-gradient(180deg, #f8f4eb 0%, #f1efe7 42%, #eef3f1 100%);
+    radial-gradient(circle at top left, rgba(196, 167, 118, 0.14), transparent 32%),
+    radial-gradient(circle at top right, rgba(120, 151, 181, 0.12), transparent 30%),
+    linear-gradient(180deg, #f6f4ef 0%, #f1efe8 40%, #ecefeb 100%);
   font-family: 'Manrope', 'Segoe UI Variable Text', sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -33,31 +33,24 @@ body::before {
     linear-gradient(90deg, rgba(255, 255, 255, 0.18) 1px, transparent 1px);
   background-size: 36px 36px;
   mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5), transparent 85%);
-  opacity: 0.55;
+  opacity: 0.28;
 }
 
 #root {
   min-height: 100svh;
 }
 
-.leaflet-container {
-  height: 100%;
-  width: 100%;
-  border-radius: 1.5rem;
-  font-family: 'Manrope', sans-serif;
-}
-
 .glass-panel {
-  background: rgba(255, 252, 246, 0.92);
+  background: rgba(255, 253, 249, 0.9);
   box-shadow:
-    0 12px 36px rgba(35, 56, 64, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+    0 10px 28px rgba(35, 56, 64, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.58);
 }
 
 @supports (backdrop-filter: blur(12px)) {
   .glass-panel {
-    background: rgba(255, 252, 246, 0.8);
-    backdrop-filter: blur(10px);
+    background: rgba(255, 253, 249, 0.72);
+    backdrop-filter: blur(12px);
   }
 }
 
@@ -73,6 +66,40 @@ body::before {
 
 .headline {
   font-family: 'Fraunces', Georgia, serif;
+}
+
+.timeline-card {
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow:
+    0 6px 18px rgba(32, 46, 55, 0.035),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.timeline-rail {
+  position: relative;
+  width: 18px;
+  min-height: 100%;
+}
+
+.timeline-rail::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 2px;
+  bottom: 2px;
+  width: 1px;
+  background: rgba(148, 163, 184, 0.24);
+}
+
+.timeline-dot {
+  position: absolute;
+  left: 1px;
+  top: 6px;
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 2px solid rgba(15, 23, 42, 0.85);
 }
 
 @keyframes float-in {
