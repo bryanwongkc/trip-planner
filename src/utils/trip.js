@@ -66,10 +66,46 @@ export function sortItems(items) {
       if ((a.generated ? 0 : 1) !== (b.generated ? 0 : 1)) {
         return (a.generated ? 0 : 1) - (b.generated ? 0 : 1)
       }
+      if (typeof a.order === 'number' && typeof b.order === 'number' && a.order !== b.order) {
+        return a.order - b.order
+      }
       const timeCompare = compareTime(a.startTime, b.startTime)
       if (timeCompare !== 0) return timeCompare
       return (a.order ?? 0) - (b.order ?? 0)
     })
+}
+
+export function reorderTripItems(tripState, itemId, targetDayId, targetIndex) {
+  const movingItem = tripState.items.find((item) => item.id === itemId && !item.generated)
+  if (!movingItem || !tripState.dayMap[targetDayId]) return []
+
+  const sourceDayId = movingItem.dayId
+  const sourceItems = (tripState.dayMap[sourceDayId]?.items || []).filter(
+    (item) => !item.generated && item.id !== itemId,
+  )
+  const targetBaseItems =
+    sourceDayId === targetDayId
+      ? sourceItems
+      : (tripState.dayMap[targetDayId]?.items || []).filter(
+          (item) => !item.generated && item.id !== itemId,
+        )
+
+  const insertAt = Math.max(0, Math.min(targetIndex, targetBaseItems.length))
+  const targetItems = [...targetBaseItems]
+  targetItems.splice(insertAt, 0, { ...movingItem, dayId: targetDayId })
+
+  const normalizeItems = (items, dayId) =>
+    items.map((item, index) => ({
+      ...item,
+      dayId,
+      order: index,
+    }))
+
+  if (sourceDayId === targetDayId) {
+    return normalizeItems(targetItems, targetDayId)
+  }
+
+  return [...normalizeItems(sourceItems, sourceDayId), ...normalizeItems(targetItems, targetDayId)]
 }
 
 function buildGeneratedHotelItem(sourceItem, dayId, nextStartTime) {
@@ -85,6 +121,7 @@ function buildGeneratedHotelItem(sourceItem, dayId, nextStartTime) {
     endTime: nextStartTime || '09:00',
     description: 'Auto-linked from the previous day hotel stay.',
     bookingRef: sourceItem.bookingRef || '',
+    travelModeToNext: sourceItem.travelModeToNext || '',
     lat: sourceItem.lat,
     lng: sourceItem.lng,
     placeId: sourceItem.placeId || '',
@@ -145,6 +182,7 @@ export function deriveTripState(overrides) {
       endTime: override.endTime || generatedItem.endTime,
       description: override.description ?? generatedItem.description,
       bookingRef: override.bookingRef ?? generatedItem.bookingRef,
+      travelModeToNext: override.travelModeToNext ?? generatedItem.travelModeToNext,
     })
   }
 

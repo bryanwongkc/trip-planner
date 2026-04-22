@@ -12,10 +12,13 @@ import React, {
 import {
   ArrowDown,
   ArrowUp,
+  AlertTriangle,
   CalendarDays,
   Check,
+  ChevronDown,
   Cloud,
   CloudRain,
+  Footprints,
   ExternalLink,
   Loader2,
   Plus,
@@ -23,6 +26,9 @@ import {
   Sun,
   Trash2,
   X,
+  CarFront,
+  GripVertical,
+  TrainFront,
 } from 'lucide-react'
 import {
   CATEGORY_OPTIONS,
@@ -50,6 +56,7 @@ import {
   formatFullDayDate,
   movementItemsForDay,
   nextDayDate,
+  reorderTripItems,
   renumberDays,
   slugId,
 } from './utils/trip'
@@ -57,8 +64,18 @@ import {
 const SAVE_DEBOUNCE_MS = 1000
 const LONG_PRESS_MS = 600
 const MOVE_THRESHOLD = 10
+const DROP_DAY_SWITCH_MS = 240
 const ACTIVE_TRIP_STORAGE_KEY = 'trip-planner-active-trip'
 const TripMap = lazy(() => import('./components/TripMap'))
+const TRAVEL_MODE_OPTIONS = [
+  { value: 'driving', label: 'Car' },
+  { value: 'transit', label: 'Public transport' },
+  { value: 'walking', label: 'Walking' },
+]
+const ROUTE_MODE_OPTIONS = [
+  { value: '', label: 'Auto' },
+  ...TRAVEL_MODE_OPTIONS,
+]
 
 function useResponsiveMode() {
   const [isMobilePortrait, setIsMobilePortrait] = useState(() =>
@@ -141,7 +158,30 @@ function typeMeta(category) {
 }
 
 function routeLabel(mode) {
+  if (mode === 'transit') return 'Transit'
   return mode === 'walking' ? 'Walk' : 'Drive'
+}
+
+function RouteModeControl({ currentMode, onSelect }) {
+  return (
+    <div className="flex items-center gap-1 rounded-full bg-white/80 p-1">
+      {ROUTE_MODE_OPTIONS.map((option) => {
+        const active = (currentMode || '') === option.value
+        return (
+          <button
+            key={option.value || 'auto'}
+            type="button"
+            onClick={() => onSelect(option.value)}
+            className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition ${
+              active ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100'
+            }`}
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 const SEASONAL_WEATHER_HINTS = {
@@ -223,6 +263,7 @@ function buildEmptyDraft(dayId = '') {
     endTime: '11:00',
     description: '',
     bookingRef: '',
+    travelModeToNext: '',
     lat: null,
     lng: null,
     placeId: '',
@@ -236,6 +277,14 @@ function buildDefaultTripSummary() {
     startDate: SEED_DAYS[0]?.date || '',
     endDate: SEED_DAYS[SEED_DAYS.length - 1]?.date || '',
   }
+}
+
+function formatTripDateRange(startDate, endDate) {
+  if (!startDate && !endDate) return 'No dates'
+  if (startDate && endDate && startDate !== endDate) {
+    return `${formatDayDate(startDate)} to ${formatDayDate(endDate)}`
+  }
+  return formatDayDate(startDate || endDate)
 }
 
 function serializeTripState(tripState) {
@@ -268,6 +317,7 @@ function serializeTripState(tripState) {
             endTime: item.endTime,
             description: item.description,
             bookingRef: item.bookingRef,
+            travelModeToNext: item.travelModeToNext || '',
             lat: item.lat,
             lng: item.lng,
             placeId: item.placeId,
@@ -285,12 +335,16 @@ function generatedItemPatch(item) {
     endTime: item.endTime,
     description: item.description,
     bookingRef: item.bookingRef,
+    travelModeToNext: item.travelModeToNext || '',
   }
 }
 
 function assignItemOrder(items) {
   return [...items]
     .sort((a, b) => {
+      if (typeof a.order === 'number' && typeof b.order === 'number' && a.order !== b.order) {
+        return a.order - b.order
+      }
       const timeCompare = compareTime(a.startTime, b.startTime)
       if (timeCompare !== 0) return timeCompare
       return (a.order ?? 0) - (b.order ?? 0)
@@ -305,7 +359,7 @@ function mergeItemsForDay(currentItems, nextItem) {
   return assignItemOrder([...currentItems.filter((item) => item.id !== nextItem.id), nextItem])
 }
 
-function getScheduleConflict(items) {
+function getScheduleConflictMeta(items) {
   const orderedItems = assignItemOrder(items)
 
   for (let index = 0; index < orderedItems.length - 1; index += 1) {
@@ -313,11 +367,15 @@ function getScheduleConflict(items) {
     const next = orderedItems[index + 1]
     if (!current.endTime || !next.startTime) continue
     if (compareTime(current.endTime, next.startTime) > 0) {
-      return `${current.title} ends after ${next.title} starts.`
+      return {
+        currentId: current.id,
+        nextId: next.id,
+        message: `${current.title} ends after ${next.title} starts.`,
+      }
     }
   }
 
-  return ''
+  return null
 }
 
 function makeMovementPairs(items) {
@@ -328,10 +386,17 @@ function makeMovementPairs(items) {
 }
 
 function getRouteMode(from, to) {
+  if (from.travelModeToNext) return from.travelModeToNext
   const latDiff = (to.lat - from.lat) * 111
   const lngDiff = (to.lng - from.lng) * 91
   const km = Math.sqrt(latDiff ** 2 + lngDiff ** 2)
   return km <= 1.5 ? 'walking' : 'driving'
+}
+
+function estimateDistanceKm(from, to) {
+  const latDiff = (to.lat - from.lat) * 111
+  const lngDiff = (to.lng - from.lng) * 91
+  return Math.sqrt(latDiff ** 2 + lngDiff ** 2)
 }
 
 function toRouteSummary(result, mode) {
@@ -345,6 +410,48 @@ function toRouteSummary(result, mode) {
     durationMin: (leg.duration?.value || 0) / 60,
     path: route.overview_path?.map((point) => ({ lat: point.lat(), lng: point.lng() })) || [],
   }
+}
+
+function buildFallbackRouteSummary(from, to, mode) {
+  const distanceKm = estimateDistanceKm(from, to)
+  const speedKmPerHour = mode === 'walking' ? 4.5 : mode === 'transit' ? 22 : 32
+
+  return {
+    mode,
+    distanceKm,
+    durationMin: (distanceKm / speedKmPerHour) * 60,
+    path: [
+      { lat: from.lat, lng: from.lng },
+      { lat: to.lat, lng: to.lng },
+    ],
+    estimated: true,
+  }
+}
+
+async function requestDirectionsRoute(from, to, mode) {
+  const directionsService = new window.google.maps.DirectionsService()
+
+  return new Promise((resolve, reject) => {
+    directionsService.route(
+      {
+        origin: { lat: from.lat, lng: from.lng },
+        destination: { lat: to.lat, lng: to.lng },
+        travelMode:
+          mode === 'walking'
+            ? window.google.maps.TravelMode.WALKING
+            : mode === 'transit'
+              ? window.google.maps.TravelMode.TRANSIT
+              : window.google.maps.TravelMode.DRIVING,
+      },
+      (response, status) => {
+        if (status === 'OK' && response) {
+          resolve(response)
+          return
+        }
+        reject(new Error(`Route failed: ${status}`))
+      },
+    )
+  })
 }
 
 function GooglePlaceField({
@@ -551,10 +658,36 @@ function PlaceFields({ draft, disabled, mapsReady, onChange }) {
 function Field({ label, children, className = '' }) {
   return (
     <label className={`block ${className}`}>
-      <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+      <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
         {label}
       </span>
       {children}
+    </label>
+  )
+}
+
+function TimeField({ conflict, disabled, label, onChange, value }) {
+  return (
+    <label className="block">
+      <span
+        className={`mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${
+          conflict ? 'font-bold text-rose-600' : 'text-slate-500'
+        }`}
+      >
+        {conflict ? <AlertTriangle className="h-3.5 w-3.5" /> : null}
+        {label}
+      </span>
+      <input
+        type="time"
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        className={`w-full rounded-2xl border bg-white px-4 py-3 text-[14px] disabled:bg-slate-100 ${
+          conflict
+            ? 'border-rose-300 font-bold text-rose-700 ring-1 ring-rose-200'
+            : 'border-slate-200'
+        }`}
+      />
     </label>
   )
 }
@@ -567,39 +700,127 @@ function TripSwitcher({
   onSelectTrip,
   tripSummaries,
 }) {
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef(null)
+  const activeTrip = tripSummaries.find((trip) => trip.id === activeTripId) || tripSummaries[0]
+
+  useEffect(() => {
+    if (!open) return undefined
+
+    function handlePointerDown(event) {
+      if (!containerRef.current?.contains(event.target)) {
+        setOpen(false)
+      }
+    }
+
+    function handleEscape(event) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('keydown', handleEscape)
+    }
+  }, [open])
+
+  function handleSelectTrip(tripId) {
+    onSelectTrip(tripId)
+    setOpen(false)
+  }
+
+  async function handleCreateTrip() {
+    setOpen(false)
+    await onCreateTrip()
+  }
+
   return (
-    <div className="glass-panel rounded-[1.35rem] border border-white/60 px-3.5 py-3 sm:px-4 sm:py-3.5">
-      <div className="flex items-center gap-2.5">
-        <div className="min-w-0 flex-1">
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-            Trip
-          </div>
-          <select
-            value={activeTripId}
-            onChange={(event) => onSelectTrip(event.target.value)}
-            disabled={disabled}
-            className={`w-full rounded-[1rem] border border-slate-200 bg-white text-slate-900 ${
-              isMobilePortrait ? 'px-3 py-2.5 text-[13px]' : 'px-3.5 py-3 text-sm'
-            } disabled:bg-slate-100`}
-          >
-            {tripSummaries.map((trip) => (
-              <option key={trip.id} value={trip.id}>
-                {trip.title}
-              </option>
-            ))}
-          </select>
-        </div>
-        <button
-          type="button"
-          onClick={onCreateTrip}
-          disabled={disabled}
-          className={`shrink-0 rounded-[1rem] bg-slate-900 font-semibold text-white ${
-            isMobilePortrait ? 'px-3 py-2.5 text-[13px]' : 'px-3.5 py-3 text-sm'
-          } disabled:bg-slate-300`}
-        >
-          New trip
-        </button>
+    <div
+      ref={containerRef}
+      className="glass-panel relative rounded-[1.2rem] border border-white/60 px-3 py-2 sm:px-3.5 sm:py-2.5"
+    >
+      <div className="mb-1 flex items-center justify-between gap-3 px-1">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Trips</div>
+        <div className="text-[10px] font-medium text-slate-400">{tripSummaries.length}</div>
       </div>
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        disabled={disabled || !activeTrip}
+        aria-expanded={open}
+        className={`flex w-full items-center justify-between gap-3 rounded-[0.95rem] border border-slate-200/80 bg-white/88 text-left text-slate-900 transition hover:border-slate-300 ${
+          isMobilePortrait ? 'px-3 py-2.5' : 'px-3.5 py-2.5'
+        } disabled:bg-slate-100`}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[14px] font-semibold text-slate-900 sm:text-[15px]">
+            {activeTrip?.title || 'Select trip'}
+          </div>
+          <div className="truncate pt-0.5 text-[10px] font-medium tracking-[0.01em] text-slate-500 sm:text-[11px]">
+            {activeTrip ? formatTripDateRange(activeTrip.startDate, activeTrip.endDate) : 'No trip'}
+          </div>
+        </div>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+          <ChevronDown className={`h-4 w-4 transition ${open ? 'rotate-180' : ''}`} />
+        </div>
+      </button>
+
+      {open ? (
+        <div className="absolute inset-x-0 top-[calc(100%+0.55rem)] z-40">
+          <div className="glass-panel overflow-hidden rounded-[1.05rem] border border-white/70 p-1.5 shadow-[0_18px_44px_rgba(15,23,42,0.1)]">
+            <div className="no-scrollbar max-h-[min(24rem,56svh)] overflow-y-auto pr-0.5">
+              {tripSummaries.map((trip) => {
+                const selected = trip.id === activeTripId
+                return (
+                  <button
+                    key={trip.id}
+                    type="button"
+                    onClick={() => handleSelectTrip(trip.id)}
+                    className={`flex w-full items-center gap-3 rounded-[0.95rem] px-3 py-2.5 text-left transition ${
+                      selected ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-white/80'
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold">{trip.title}</div>
+                      <div
+                        className={`truncate pt-0.5 text-[11px] ${
+                          selected ? 'text-slate-300' : 'text-slate-500'
+                        }`}
+                      >
+                        {formatTripDateRange(trip.startDate, trip.endDate)}
+                      </div>
+                    </div>
+                    <div
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
+                        selected ? 'bg-white/12 text-white' : 'bg-slate-100 text-slate-400'
+                      }`}
+                    >
+                      {selected ? <Check className="h-4 w-4" /> : <CalendarDays className="h-3.5 w-3.5" />}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+            <div className="mt-1 border-t border-slate-200/70 pt-1">
+              <button
+                type="button"
+                onClick={() => void handleCreateTrip()}
+                disabled={disabled}
+                className="flex w-full items-center justify-between gap-3 rounded-[0.95rem] px-3 py-2.5 text-left text-slate-700 transition hover:bg-white/80 disabled:text-slate-400"
+              >
+                <div>
+                  <div className="text-sm font-semibold">New trip</div>
+                  <div className="pt-0.5 text-[11px] text-slate-500">Create a separate itinerary workspace.</div>
+                </div>
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white">
+                  <Plus className="h-4 w-4" />
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -750,8 +971,8 @@ function NoteModal({ item, isMobilePortrait, onClose, onDelete, onOpenDetails })
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-2xl font-bold text-slate-900">{item.title}</h3>
-            <p className="mt-1 text-sm text-slate-600">{item.locationName || item.address}</p>
+            <h3 className="text-[1.55rem] font-bold tracking-[-0.02em] text-slate-900">{item.title}</h3>
+            <p className="mt-1 text-[13px] text-slate-600">{item.locationName || item.address}</p>
           </div>
           <div className="flex items-center gap-2">
             {!item.generated ? (
@@ -771,18 +992,18 @@ function NoteModal({ item, isMobilePortrait, onClose, onDelete, onOpenDetails })
         </div>
 
         <div className="mt-3.5 space-y-2.5">
-          <div className="rounded-[1.25rem] bg-white px-4 py-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Notes</div>
-            <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+          <div className="rounded-[1.1rem] bg-white px-4 py-4">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Notes</div>
+            <div className="mt-2 whitespace-pre-wrap text-[14px] leading-6 text-slate-700">
               {item.generated
                 ? 'This hotel stop stays linked to the previous day hotel. You can still adjust time, notes, and booking details here.'
                 : item.description || 'No notes yet.'}
             </div>
           </div>
           {item.bookingRef ? (
-            <div className="rounded-[1.25rem] bg-white px-4 py-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Booking ref</div>
-              <div className="mt-2 text-sm font-semibold text-slate-900">{item.bookingRef}</div>
+            <div className="rounded-[1.1rem] bg-white px-4 py-4">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Booking ref</div>
+              <div className="mt-2 text-[14px] font-semibold text-slate-900">{item.bookingRef}</div>
             </div>
           ) : null}
         </div>
@@ -790,7 +1011,7 @@ function NoteModal({ item, isMobilePortrait, onClose, onDelete, onOpenDetails })
         <button
           type="button"
           onClick={onOpenDetails}
-          className="mt-3.5 w-full rounded-[1.1rem] bg-slate-900 px-4 py-3.5 text-sm font-bold text-white"
+          className="mt-3.5 w-full rounded-[1rem] bg-slate-900 px-4 py-3.5 text-sm font-bold text-white"
         >
           {item.generated ? 'View linked details' : 'Open details'}
         </button>
@@ -810,10 +1031,22 @@ function DetailModal({
   onChange,
   onClose,
   onDelete,
-  scheduleError,
+  scheduleConflict,
 }) {
   const fieldReadOnly = !firestoreReady
   const linkedLocked = isGenerated
+  const travelModeMeta = useMemo(() => {
+    if (detailItem.travelModeToNext === 'driving') {
+      return { label: 'Car to next stop', icon: CarFront }
+    }
+    if (detailItem.travelModeToNext === 'transit') {
+      return { label: 'Public transport to next stop', icon: TrainFront }
+    }
+    if (detailItem.travelModeToNext === 'walking') {
+      return { label: 'Walking to next stop', icon: Footprints }
+    }
+    return null
+  }, [detailItem.travelModeToNext])
 
   return (
     <div
@@ -828,8 +1061,8 @@ function DetailModal({
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-2xl font-bold text-slate-900">{detailItem.title}</h3>
-            <div className="mt-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <h3 className="text-[1.55rem] font-bold tracking-[-0.02em] text-slate-900">{detailItem.title}</h3>
+            <div className="mt-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
               {autosaveStatus === 'saving' ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
@@ -865,18 +1098,19 @@ function DetailModal({
         </div>
 
         {isGenerated ? (
-          <div className="mt-4 rounded-[1.2rem] bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <div className="mt-4 rounded-[1rem] bg-amber-50 px-4 py-3 text-[13px] text-amber-700">
             This stop stays linked to the previous day hotel for place continuity. You can still edit its time, notes, and booking reference here.
           </div>
         ) : null}
 
-        {scheduleError ? (
-          <div className="mt-4 rounded-[1.2rem] bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            {scheduleError}
+        {travelModeMeta ? (
+          <div className="mt-4 flex items-center gap-2 rounded-[1rem] bg-slate-100 px-4 py-3 text-[13px] text-slate-600">
+            <travelModeMeta.icon className="h-4 w-4 text-slate-500" />
+            <span>{travelModeMeta.label}</span>
           </div>
         ) : null}
 
-        <div className={`mt-3.5 grid gap-3.5 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
+        <div className={`mt-3.5 grid gap-3 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
           <Field label="Day">
             <select
               value={detailItem.dayId}
@@ -913,24 +1147,20 @@ function DetailModal({
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             />
           </Field>
-          <Field label="Start time">
-            <input
-              type="time"
-              value={detailItem.startTime}
-              onChange={(event) => onChange({ startTime: event.target.value })}
-              disabled={fieldReadOnly}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
-            />
-          </Field>
-          <Field label="End time">
-            <input
-              type="time"
-              value={detailItem.endTime}
-              onChange={(event) => onChange({ endTime: event.target.value })}
-              disabled={fieldReadOnly}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
-            />
-          </Field>
+          <TimeField
+            label="Start time"
+            value={detailItem.startTime}
+            onChange={(event) => onChange({ startTime: event.target.value })}
+            disabled={fieldReadOnly}
+            conflict={Boolean(scheduleConflict?.nextId === detailItem.id)}
+          />
+          <TimeField
+            label="End time"
+            value={detailItem.endTime}
+            onChange={(event) => onChange({ endTime: event.target.value })}
+            disabled={fieldReadOnly}
+            conflict={Boolean(scheduleConflict?.currentId === detailItem.id)}
+          />
         </div>
 
         <div className="mt-3.5 space-y-3">
@@ -986,15 +1216,18 @@ function PlannerPanel({
   activeDayId,
   dayOptions,
   dayMap,
+  dragState,
   filteredItems,
   firestoreReady,
   isMobilePortrait,
   mapsReady,
   onDayChange,
+  onDragStart,
   onManageDays,
   onOpenDetails,
   onOpenNotes,
   onSaveNewItem,
+  onUpdateTravelMode,
   routeSegments,
   selectedWeather,
   weatherState,
@@ -1005,6 +1238,7 @@ function PlannerPanel({
       ? activeDayId
       : dayOptions[0]?.id || ''
   const [draft, setDraft] = useState(() => buildEmptyDraft(defaultDayId))
+  const draftConflictId = '__draft__'
   const effectiveDraftDayId =
     activeDayId !== DAY_VIEW_ALL && dayOptions.some((day) => day.id === activeDayId)
       ? activeDayId
@@ -1012,18 +1246,35 @@ function PlannerPanel({
         ? draft.dayId
         : dayOptions[0]?.id || ''
   const [isComposerOpen, setIsComposerOpen] = useState(activeDayId !== DAY_VIEW_ALL)
-  const draftScheduleError = useMemo(() => {
-    if (!effectiveDraftDayId) return ''
+  const manualOrderLookup = useMemo(() => {
+    const lookup = {}
+    const counts = {}
+
+    filteredItems.forEach((item) => {
+      if (item.generated) return
+      if (!counts[item.dayId]) counts[item.dayId] = 0
+      lookup[item.id] = counts[item.dayId]
+      counts[item.dayId] += 1
+    })
+
+    return {
+      positions: lookup,
+      counts,
+    }
+  }, [filteredItems])
+  const visibleManualCount =
+    activeDayId === DAY_VIEW_ALL ? 0 : manualOrderLookup.counts[activeDayId] || 0
+  const draftScheduleConflict = useMemo(() => {
+    if (!effectiveDraftDayId) return null
     const existingItems = dayMap[effectiveDraftDayId]?.items || []
-    return getScheduleConflict([...existingItems, { ...draft, dayId: effectiveDraftDayId }])
+    return getScheduleConflictMeta([
+      ...existingItems,
+      { ...draft, id: draftConflictId, dayId: effectiveDraftDayId },
+    ])
   }, [dayMap, draft, effectiveDraftDayId])
 
   async function saveNewItem() {
     if (!firestoreReady || !effectiveDraftDayId) return
-    if (draftScheduleError) {
-      window.alert(draftScheduleError)
-      return
-    }
 
     await onSaveNewItem({
       ...draft,
@@ -1037,16 +1288,16 @@ function PlannerPanel({
 
   return (
     <>
-      <div className="sticky top-4 z-20 space-y-3 browse-ui">
-        <div className="glass-panel rounded-[1.45rem] border border-white/60 px-3.5 py-3 sm:rounded-[1.65rem] sm:px-5 sm:py-4">
+      <div className="sticky top-4 z-20 space-y-2.5 browse-ui">
+        <div className="glass-panel rounded-[1.35rem] border border-white/60 px-3.5 py-3 sm:rounded-[1.55rem] sm:px-5 sm:py-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className={`headline leading-none text-slate-900 ${isMobilePortrait ? 'text-[1.6rem]' : 'text-[2rem]'}`}>
+              <h2 className={`headline leading-none tracking-[-0.02em] text-slate-900 ${isMobilePortrait ? 'text-[1.48rem]' : 'text-[1.9rem]'}`}>
                 {activeDayId === DAY_VIEW_ALL
                   ? 'Full itinerary'
                   : dayOptions.find((day) => day.id === activeDayId)?.label || 'Day view'}
               </h2>
-              <div className={`mt-1 text-slate-500 ${isMobilePortrait ? 'text-[13px]' : 'text-sm'}`}>
+              <div className={`mt-1 text-slate-500 ${isMobilePortrait ? 'text-[12px]' : 'text-[13px]'}`}>
                 {activeDayId === DAY_VIEW_ALL
                   ? `${filteredItems.length} stops across ${dayOptions.length} days`
                   : dayOptions.find((day) => day.id === activeDayId)?.name ||
@@ -1056,7 +1307,7 @@ function PlannerPanel({
             <button
               type="button"
               onClick={onManageDays}
-              className={`shrink-0 rounded-full border border-slate-200 bg-white text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 ${
+              className={`shrink-0 rounded-full border border-slate-200/90 bg-white text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 ${
                 isMobilePortrait ? 'p-2.5' : 'flex items-center gap-2 px-3 py-2'
               }`}
               aria-label="Manage days"
@@ -1067,7 +1318,7 @@ function PlannerPanel({
           </div>
 
           <div className="mt-3 flex items-center gap-2">
-            <div className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            <div className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
               Days
             </div>
             <div className="min-w-0 flex-1">
@@ -1076,23 +1327,28 @@ function PlannerPanel({
                   type="button"
                   onClick={() => onDayChange(DAY_VIEW_ALL)}
                   className={`shrink-0 rounded-full px-3 py-2 text-left transition ${
-                    activeDayId === DAY_VIEW_ALL ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'
+                    activeDayId === DAY_VIEW_ALL ? 'bg-slate-900 text-white shadow-[0_6px_18px_rgba(15,23,42,0.12)]' : 'bg-white text-slate-600'
                   }`}
                 >
-                  <div className="text-[12px] font-semibold">Overview</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em]">Overview</div>
                 </button>
                 {dayOptions.map((day, index) => (
                   <button
                     key={day.id}
                     type="button"
+                    data-day-drop-id={day.id}
                     onClick={() => onDayChange(day.id)}
                     className={`shrink-0 rounded-full px-3 py-2 text-left transition ${
-                      activeDayId === day.id ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'
+                      dragState?.overDayId === day.id
+                        ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200'
+                        : activeDayId === day.id
+                          ? 'bg-slate-900 text-white shadow-[0_6px_18px_rgba(15,23,42,0.12)]'
+                          : 'bg-white text-slate-600'
                     }`}
                   >
-                    <div className="text-[12px] font-semibold">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.06em]">
                       Day {index + 1}
-                      <span className={`ml-1.5 font-medium ${activeDayId === day.id ? 'text-white/70' : 'text-slate-400'}`}>
+                      <span className={`ml-1.5 font-medium normal-case tracking-normal ${activeDayId === day.id ? 'text-white/72' : 'text-slate-400'}`}>
                         {formatDayDate(day.date)}
                       </span>
                     </div>
@@ -1104,27 +1360,27 @@ function PlannerPanel({
 
           {weatherDisplay ? (
             isMobilePortrait ? (
-              <div className="mt-3 flex items-center gap-3 rounded-[1rem] bg-white px-3 py-2.5">
+              <div className="mt-3 flex items-center gap-3 rounded-[0.95rem] bg-white px-3 py-2.5">
                 <div className="rounded-xl bg-slate-100 p-2 text-slate-700">
                   <weatherDisplay.icon className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-semibold text-slate-900">
+                  <div className="truncate text-[12px] font-semibold text-slate-900">
                     {weatherDisplay.compact || weatherDisplay.headline}
                   </div>
-                  <div className="mt-0.5 truncate text-[11px] text-slate-500">
+                  <div className="mt-0.5 truncate text-[10px] text-slate-500">
                     {weatherDisplay.seasonal ? 'Seasonal outlook for this date' : weatherDisplay.detail}
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="mt-4 flex items-center justify-between gap-4 rounded-[1.2rem] bg-white px-4 py-3">
+              <div className="mt-4 flex items-center justify-between gap-4 rounded-[1.1rem] bg-white px-4 py-3">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                     {weatherDisplay.seasonal ? 'Seasonal weather' : 'Weather'}
                   </p>
-                  <div className="mt-1 text-base font-semibold text-slate-900">{weatherDisplay.headline}</div>
-                  <div className="mt-1 text-sm text-slate-500">
+                  <div className="mt-1 text-[15px] font-semibold text-slate-900">{weatherDisplay.headline}</div>
+                  <div className="mt-1 text-[13px] text-slate-500">
                     {weatherDisplay.seasonal ? weatherDisplay.eyebrow : weatherDisplay.detail}
                   </div>
                 </div>
@@ -1137,31 +1393,54 @@ function PlannerPanel({
         </div>
       </div>
 
-      <div className="space-y-2 browse-ui">
+      <div className="space-y-2.5 browse-ui">
         {filteredItems.map((item, index) => {
           const meta = typeMeta(item.category)
           const nextSegment = routeSegments[index]
           const isOverview = activeDayId === DAY_VIEW_ALL
           const previousItem = filteredItems[index - 1]
+          const nextItem = filteredItems[index + 1]
           const showDayDivider = isOverview && (!previousItem || previousItem.dayId !== item.dayId)
           const dayContext = dayOptions.find((day) => day.id === item.dayId)
+          const manualIndex = manualOrderLookup.positions[item.id]
+          const isManual = !item.generated
+          const showBeforeSlot = Boolean(dragState && isManual)
+          const showAfterSlot =
+            Boolean(dragState && isManual) &&
+            (!nextItem || nextItem.dayId !== item.dayId || nextItem.generated)
+          const isDraggingItem = dragState?.itemId === item.id
           return (
             <div key={item.id} className="space-y-2">
               {showDayDivider ? (
-                <div className="flex items-center gap-3 px-1 py-3 first:pt-0">
+                <div className="flex items-center gap-3 px-1 py-4 first:pt-0">
                   <div className="min-w-0">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                       {dayContext?.label || 'Day'}
                     </div>
-                    <div className="mt-1 text-sm text-slate-500">
+                    <div className="mt-1 text-[13px] text-slate-500">
                       {dayContext?.name || formatFullDayDate(dayContext?.date || '')}
                     </div>
                   </div>
-                  <div className="h-px flex-1 bg-slate-200/80" />
+                  <div className="quiet-divider h-px flex-1" />
                 </div>
               ) : null}
+              {showBeforeSlot ? (
+                <button
+                  type="button"
+                  data-drop-slot-day-id={item.dayId}
+                  data-drop-slot-index={manualIndex}
+                  className={`block h-4 w-full rounded-full border border-dashed transition ${
+                    dragState?.slot?.dayId === item.dayId && dragState?.slot?.index === manualIndex
+                      ? 'border-indigo-400 bg-indigo-100/70'
+                      : 'border-slate-300/80 bg-transparent'
+                  }`}
+                  aria-label={`Move before ${item.title}`}
+                />
+              ) : null}
               <article
-                className="timeline-card relative rounded-[1.45rem] px-4 py-4 transition hover:bg-white/90 active:bg-white/95 sm:px-5"
+                className={`timeline-card relative rounded-[1.35rem] px-4 py-4 transition hover:bg-white/90 active:bg-white/95 sm:px-5 ${
+                  isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
+                }`}
                 onClick={() => onOpenNotes(item)}
                 onContextMenu={(event) => event.preventDefault()}
                 onPointerDown={(event) => onOpenDetails.startPress(event, item)}
@@ -1171,9 +1450,9 @@ function PlannerPanel({
                 onPointerLeave={onOpenDetails.cancelPress}
               >
                 <div className="flex gap-4 sm:gap-5">
-                  <div className="w-16 shrink-0 pt-0.5 text-right">
-                    <div className="text-sm font-semibold text-slate-900">{item.startTime}</div>
-                    {item.endTime ? <div className="mt-1 text-[11px] text-slate-400">{item.endTime}</div> : null}
+                  <div className="w-[3.65rem] shrink-0 pt-0.5 text-right">
+                    <div className="text-[13px] font-semibold tracking-[-0.01em] text-slate-900">{item.startTime}</div>
+                    {item.endTime ? <div className="mt-1 text-[10px] font-medium text-slate-400">{item.endTime}</div> : null}
                   </div>
                   <div className="timeline-rail shrink-0">
                     <span className={`timeline-dot ${meta.tone}`} />
@@ -1181,20 +1460,32 @@ function PlannerPanel({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <h3 className="text-[1.02rem] font-semibold leading-6 text-slate-900">{item.title}</h3>
-                        <p className="mt-1 truncate text-sm text-slate-500">{item.locationName || item.address}</p>
+                        <h3 className="text-[0.99rem] font-semibold leading-6 tracking-[-0.01em] text-slate-900">{item.title}</h3>
+                        <p className="mt-1 truncate text-[13px] text-slate-500">{item.locationName || item.address}</p>
                       </div>
-                      {item.generated ? (
-                        <div className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-700">
-                          Linked
-                        </div>
-                      ) : null}
+                      <div className="flex items-center gap-2">
+                        {item.generated ? (
+                          <div className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                            Linked
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onPointerDown={(event) => onDragStart(event, item)}
+                            onClick={(event) => event.stopPropagation()}
+                            className="rounded-full bg-slate-100 p-2 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700"
+                            aria-label={`Drag ${item.title}`}
+                          >
+                            <GripVertical className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     {item.address && item.address !== item.locationName ? (
-                      <p className="mt-1 truncate text-xs text-slate-400">{item.address}</p>
+                      <p className="mt-1 truncate text-[11px] text-slate-400">{item.address}</p>
                     ) : null}
                     {(item.description || item.generated) ? (
-                      <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-500">
+                      <p className="mt-2 line-clamp-2 text-[13px] leading-6 text-slate-500">
                         {item.generated ? 'Auto-carried from the previous day hotel stay.' : item.description}
                       </p>
                     ) : null}
@@ -1203,31 +1494,71 @@ function PlannerPanel({
               </article>
 
               {nextSegment ? (
-                <div className="ml-20 flex items-center gap-3 rounded-[1rem] px-4 py-2 text-xs text-slate-500 sm:ml-[6.1rem]">
-                  <span className="font-medium text-slate-700">{routeLabel(nextSegment.mode)}</span>
-                  <span>
-                    {nextSegment.route
-                      ? `${Math.round(nextSegment.route.durationMin)} min`
-                      : 'Loading route'}
-                  </span>
-                  {nextSegment.route ? <span>{nextSegment.route.distanceKm.toFixed(1)} km</span> : null}
+                <div
+                  className={`ml-[4.9rem] rounded-[0.95rem] px-4 py-2 text-[11px] text-slate-500 sm:ml-[6rem] ${
+                    isMobilePortrait ? 'space-y-2.5' : 'flex items-center justify-between gap-4'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="font-semibold text-slate-700">{routeLabel(nextSegment.mode)}</span>
+                    <span>
+                      {nextSegment.route
+                        ? `${nextSegment.route.estimated ? '~' : ''}${Math.round(nextSegment.route.durationMin)} min`
+                        : 'Loading route'}
+                    </span>
+                    {nextSegment.route ? (
+                      <span>{nextSegment.route.estimated ? '~' : ''}{nextSegment.route.distanceKm.toFixed(1)} km</span>
+                    ) : null}
+                  </div>
+                  <RouteModeControl
+                    currentMode={nextSegment.from.travelModeToNext || ''}
+                    onSelect={(mode) => onUpdateTravelMode(nextSegment.from.id, mode)}
+                  />
                 </div>
+              ) : null}
+              {showAfterSlot ? (
+                <button
+                  type="button"
+                  data-drop-slot-day-id={item.dayId}
+                  data-drop-slot-index={(manualOrderLookup.counts[item.dayId] || 0)}
+                  className={`block h-4 w-full rounded-full border border-dashed transition ${
+                    dragState?.slot?.dayId === item.dayId &&
+                    dragState?.slot?.index === (manualOrderLookup.counts[item.dayId] || 0)
+                      ? 'border-indigo-400 bg-indigo-100/70'
+                      : 'border-slate-300/80 bg-transparent'
+                  }`}
+                  aria-label={`Move after ${item.title}`}
+                />
               ) : null}
             </div>
           )
         })}
+        {dragState && activeDayId !== DAY_VIEW_ALL && visibleManualCount === 0 ? (
+          <button
+            type="button"
+            data-drop-slot-day-id={activeDayId}
+            data-drop-slot-index={0}
+            className={`flex h-14 w-full items-center justify-center rounded-[1.15rem] border border-dashed text-sm font-medium transition ${
+              dragState?.slot?.dayId === activeDayId && dragState?.slot?.index === 0
+                ? 'border-indigo-400 bg-indigo-100/70 text-indigo-700'
+                : 'border-slate-300/80 text-slate-500'
+            }`}
+          >
+            Drop stop into this day
+          </button>
+        ) : null}
       </div>
 
-      <div className="glass-panel rounded-[1.6rem] border border-white/60 px-4 py-4 sm:px-5 browse-ui">
+      <div className="glass-panel rounded-[1.5rem] border border-white/60 px-4 py-4 sm:px-5 browse-ui">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h3 className="headline text-[1.9rem] leading-none text-slate-900">Add stop</h3>
-            <p className="mt-1 text-sm text-slate-500">Keep this tucked away until you need it.</p>
+            <h3 className="headline text-[1.72rem] leading-none tracking-[-0.02em] text-slate-900">Add stop</h3>
+            <p className="mt-1 text-[13px] text-slate-500">Open the composer only when you need it.</p>
           </div>
           <button
             type="button"
             onClick={() => setIsComposerOpen((open) => !open)}
-            className={`rounded-[1.15rem] px-4 py-3 text-sm font-semibold transition ${
+            className={`rounded-[1rem] px-4 py-2.5 text-[13px] font-semibold transition ${
               isComposerOpen ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'
             }`}
           >
@@ -1237,7 +1568,7 @@ function PlannerPanel({
 
         {isComposerOpen ? (
           <>
-            <div className={`mt-5 grid gap-4 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
+            <div className={`mt-5 grid gap-3.5 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
               <Field label="Day">
                 <select
                   value={effectiveDraftDayId}
@@ -1271,22 +1602,18 @@ function PlannerPanel({
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                 />
               </Field>
-              <Field label="Start time">
-                <input
-                  type="time"
-                  value={draft.startTime}
-                  onChange={(event) => setDraft((current) => ({ ...current, startTime: event.target.value }))}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
-                />
-              </Field>
-              <Field label="End time">
-                <input
-                  type="time"
-                  value={draft.endTime}
-                  onChange={(event) => setDraft((current) => ({ ...current, endTime: event.target.value }))}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
-                />
-              </Field>
+              <TimeField
+                label="Start time"
+                value={draft.startTime}
+                onChange={(event) => setDraft((current) => ({ ...current, startTime: event.target.value }))}
+                conflict={Boolean(draftScheduleConflict?.nextId === draftConflictId)}
+              />
+              <TimeField
+                label="End time"
+                value={draft.endTime}
+                onChange={(event) => setDraft((current) => ({ ...current, endTime: event.target.value }))}
+                conflict={Boolean(draftScheduleConflict?.currentId === draftConflictId)}
+              />
             </div>
 
             <div className="mt-4 space-y-3">
@@ -1318,23 +1645,17 @@ function PlannerPanel({
               </Field>
             </div>
 
-            {draftScheduleError ? (
-              <div className="mt-4 rounded-[1.2rem] bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                {draftScheduleError}
-              </div>
-            ) : null}
-
             <button
               type="button"
               onClick={() => void saveNewItem()}
-              disabled={!firestoreReady || !effectiveDraftDayId || Boolean(draftScheduleError)}
+              disabled={!firestoreReady || !effectiveDraftDayId}
               className="mt-5 w-full rounded-[1.25rem] bg-slate-900 px-4 py-4 text-sm font-bold text-white disabled:bg-slate-300"
             >
               Save new itinerary detail
             </button>
           </>
         ) : (
-          <div className="mt-4 rounded-[1.1rem] bg-white px-4 py-3 text-sm leading-6 text-slate-500">
+          <div className="mt-4 rounded-[1rem] bg-white px-4 py-3 text-[13px] leading-6 text-slate-500">
             Open the composer only when you need to add a new stop.
           </div>
         )}
@@ -1346,11 +1667,11 @@ function PlannerPanel({
 function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, mapsError, routeSegments }) {
   return (
     <div className="browse-ui">
-      <div className="glass-panel rounded-[1.6rem] border border-white/60 px-4 py-4 sm:px-5">
+      <div className="glass-panel rounded-[1.5rem] border border-white/60 px-4 py-4 sm:px-5">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="headline text-[1.9rem] leading-none text-slate-900">Map</h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <h2 className="headline text-[1.72rem] leading-none tracking-[-0.02em] text-slate-900">Map</h2>
+            <p className="mt-1 text-[13px] text-slate-500">
               {activeDayId === DAY_VIEW_ALL ? 'Whole trip view' : 'Selected day route'}
             </p>
           </div>
@@ -1404,10 +1725,13 @@ export default function App() {
   const [autosaveStatus, setAutosaveStatus] = useState(firebaseEnabled ? 'saved' : 'offline')
   const [routeMap, setRouteMap] = useState({})
   const [showDayManager, setShowDayManager] = useState(false)
+  const [dragState, setDragState] = useState(null)
 
   const isMobilePortrait = useResponsiveMode()
   const routeCacheRef = useRef(new Map())
   const debounceRef = useRef(null)
+  const dragDaySwitchRef = useRef(null)
+  const dragStateRef = useRef(null)
   const pressStateRef = useRef({
     timer: null,
     pointerId: null,
@@ -1462,18 +1786,30 @@ export default function App() {
       ? null
       : weatherState.data?.dailyByDate?.[tripState.dayMap[resolvedActiveDayId]?.date || ''] ?? null
   const firestoreReady = firebaseEnabled && authReady && firestoreState.status === 'ready'
-  const detailScheduleError = useMemo(() => {
-    if (!detailItem?.dayId) return ''
+  const detailScheduleConflict = useMemo(() => {
+    if (!detailItem?.dayId) return null
     const existingItems = (tripState.dayMap[detailItem.dayId]?.items || []).filter(
       (item) => item.id !== detailItem.id,
     )
-    return getScheduleConflict([...existingItems, detailItem])
+    return getScheduleConflictMeta([...existingItems, detailItem])
   }, [detailItem, tripState.dayMap])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     window.localStorage.setItem(ACTIVE_TRIP_STORAGE_KEY, resolvedTripId)
   }, [resolvedTripId])
+
+  useEffect(() => {
+    dragStateRef.current = dragState
+  }, [dragState])
+
+  useEffect(() => {
+    return () => {
+      if (dragDaySwitchRef.current) {
+        window.clearTimeout(dragDaySwitchRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -1598,7 +1934,7 @@ export default function App() {
   }, [defaultTripSummary, firestoreReady, tripSummaries])
 
   useEffect(() => {
-    if (!detailItem || !firestoreReady || detailScheduleError) return
+    if (!detailItem || !firestoreReady) return
 
     if (debounceRef.current) window.clearTimeout(debounceRef.current)
 
@@ -1629,27 +1965,129 @@ export default function App() {
     return () => {
       if (debounceRef.current) window.clearTimeout(debounceRef.current)
     }
-  }, [detailItem, detailScheduleError, firestoreReady, resolvedTripId, tripState.items])
+  }, [detailItem, firestoreReady, resolvedTripId, tripState.items])
 
   const routePairs = useMemo(() => makeMovementPairs(deferredItems), [deferredItems])
-  const detailAutosaveStatus = detailScheduleError ? 'conflict' : autosaveStatus
+  const detailAutosaveStatus = detailScheduleConflict ? 'conflict' : autosaveStatus
 
   function selectTrip(tripId) {
     setOverrides({ days: {}, items: {} })
     setNoteItem(null)
     setDetailItem(null)
+    setDragState(null)
     setRouteMap({})
     setActiveDayId(DAY_VIEW_ALL)
     setAutosaveStatus(firebaseEnabled ? 'saved' : 'offline')
     setActiveTripId(tripId)
   }
 
+  function clearDragState() {
+    if (dragDaySwitchRef.current) {
+      window.clearTimeout(dragDaySwitchRef.current)
+      dragDaySwitchRef.current = null
+    }
+    dragStateRef.current = null
+    setDragState(null)
+  }
+
+  function beginItemDrag(event, item) {
+    if (!firestoreReady || item.generated) return
+    event.preventDefault()
+    event.stopPropagation()
+    clearPressState()
+    setDragState({
+      itemId: item.id,
+      overDayId: item.dayId,
+      slot: null,
+    })
+  }
+
+  useEffect(() => {
+    if (!dragState?.itemId) return undefined
+
+    function handlePointerMove(event) {
+      const currentDrag = dragStateRef.current
+      if (!currentDrag) return
+      const target = document.elementFromPoint(event.clientX, event.clientY)
+      if (!target) {
+        setDragState((current) => (current ? { ...current, overDayId: null, slot: null } : current))
+        return
+      }
+
+      const slotNode = target.closest('[data-drop-slot-day-id]')
+      if (slotNode) {
+        const dayId = slotNode.getAttribute('data-drop-slot-day-id')
+        const index = Number(slotNode.getAttribute('data-drop-slot-index'))
+        setDragState((current) =>
+          current
+            ? {
+                ...current,
+                overDayId: dayId,
+                slot: Number.isFinite(index) ? { dayId, index } : null,
+              }
+            : current,
+        )
+        return
+      }
+
+      const dayNode = target.closest('[data-day-drop-id]')
+      if (dayNode) {
+        const dayId = dayNode.getAttribute('data-day-drop-id')
+        setDragState((current) => (current ? { ...current, overDayId: dayId, slot: null } : current))
+
+        if (dayId && dayId !== resolvedActiveDayId) {
+          if (dragDaySwitchRef.current) {
+            window.clearTimeout(dragDaySwitchRef.current)
+          }
+          dragDaySwitchRef.current = window.setTimeout(() => {
+            startTransition(() => {
+              setActiveDayId(dayId)
+            })
+          }, DROP_DAY_SWITCH_MS)
+        }
+        return
+      }
+
+      if (dragDaySwitchRef.current) {
+        window.clearTimeout(dragDaySwitchRef.current)
+        dragDaySwitchRef.current = null
+      }
+      setDragState((current) => (current ? { ...current, overDayId: null, slot: null } : current))
+    }
+
+    async function handlePointerUp() {
+      const currentDrag = dragStateRef.current
+      const dropSlot = currentDrag?.slot
+      clearDragState()
+      if (!dropSlot) return
+
+      const patchItems = reorderTripItems(tripState, currentDrag.itemId, dropSlot.dayId, dropSlot.index)
+      if (!patchItems.length) return
+
+      await mergeTripPatch(
+        resolvedTripId,
+        {
+          items: Object.fromEntries(patchItems.map((item) => [item.id, item])),
+        },
+      )
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', clearDragState)
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', clearDragState)
+    }
+  }, [dragState?.itemId, resolvedActiveDayId, resolvedTripId, tripState])
+
   useEffect(() => {
     let cancelled = false
     if (!googleMapsState.ready || !window.google?.maps || !routePairs.length) return undefined
 
     async function loadRoutes() {
-      const directionsService = new window.google.maps.DirectionsService()
       const entries = await Promise.all(
         routePairs.map(async ([from, to]) => {
           const mode = getRouteMode(from, to)
@@ -1658,32 +2096,24 @@ export default function App() {
           if (cached) return [key, cached]
 
           try {
-            const result = await new Promise((resolve, reject) => {
-              directionsService.route(
-                {
-                  origin: { lat: from.lat, lng: from.lng },
-                  destination: { lat: to.lat, lng: to.lng },
-                  travelMode:
-                    mode === 'walking'
-                      ? window.google.maps.TravelMode.WALKING
-                      : window.google.maps.TravelMode.DRIVING,
-                },
-                (response, status) => {
-                  if (status === 'OK' && response) {
-                    resolve(response)
-                    return
-                  }
-                  reject(new Error(`Route failed: ${status}`))
-                },
-              )
-            })
+            const result = await requestDirectionsRoute(from, to, mode)
 
             const summary = toRouteSummary(result, mode)
             routeCacheRef.current.set(key, summary)
             return [key, summary]
           } catch (error) {
             console.error(error)
-            return [key, null]
+            try {
+              const retried = await requestDirectionsRoute(from, to, mode)
+              const summary = toRouteSummary(retried, mode)
+              routeCacheRef.current.set(key, summary)
+              return [key, summary]
+            } catch (retryError) {
+              console.error(retryError)
+              const fallback = buildFallbackRouteSummary(from, to, mode)
+              routeCacheRef.current.set(key, fallback)
+              return [key, fallback]
+            }
           }
         }),
       )
@@ -1711,15 +2141,7 @@ export default function App() {
   )
 
   async function saveItem(item) {
-    const sameDayItems = (tripState.dayMap[item.dayId]?.items || []).filter(
-      (existing) => existing.id !== item.id,
-    )
-    const scheduleConflict = getScheduleConflict([...sameDayItems, item])
-    if (scheduleConflict) {
-      window.alert(scheduleConflict)
-      return
-    }
-
+    const sameDayItems = (tripState.dayMap[item.dayId]?.items || []).filter((existing) => existing.id !== item.id)
     const manualItems = sameDayItems.filter((existing) => !existing.generated)
     const patchItems = Object.fromEntries(
       mergeItemsForDay(manualItems, item).map((entry) => [entry.id, entry]),
@@ -1833,6 +2255,28 @@ export default function App() {
     setDetailItem((current) => (current?.id === itemId ? null : current))
   }
 
+  async function updateTravelMode(itemId, travelModeToNext) {
+    const targetItem = tripState.items.find((item) => item.id === itemId)
+    if (!targetItem) return
+
+    if (targetItem.generated) {
+      await mergeTripPatch(resolvedTripId, {
+        items: {
+          [targetItem.id]: {
+            ...generatedItemPatch(targetItem),
+            travelModeToNext,
+          },
+        },
+      })
+      return
+    }
+
+    await saveItem({
+      ...targetItem,
+      travelModeToNext,
+    })
+  }
+
   function openNotes(item) {
     setNoteItem(item)
   }
@@ -1927,6 +2371,7 @@ export default function App() {
             activeDayId={resolvedActiveDayId}
             dayOptions={dayOptions}
             dayMap={tripState.dayMap}
+            dragState={dragState}
             filteredItems={filteredItems}
             firestoreReady={firestoreReady}
             isMobilePortrait={isMobilePortrait}
@@ -1936,6 +2381,7 @@ export default function App() {
                 setActiveDayId(dayId)
               })
             }}
+            onDragStart={beginItemDrag}
             onManageDays={() => setShowDayManager(true)}
             onOpenDetails={{
               startPress,
@@ -1945,6 +2391,7 @@ export default function App() {
             }}
             onOpenNotes={openNotes}
             onSaveNewItem={saveItem}
+            onUpdateTravelMode={(itemId, mode) => void updateTravelMode(itemId, mode)}
             routeSegments={routeSegments}
             selectedWeather={selectedWeather}
             weatherState={weatherState}
@@ -2006,7 +2453,7 @@ export default function App() {
           mapsReady={googleMapsState.ready}
           onChange={updateDetail}
           onClose={() => setDetailItem(null)}
-          scheduleError={detailScheduleError}
+          scheduleConflict={detailScheduleConflict}
           onDelete={async () => {
             const id = detailItem.id
             setDetailItem(null)
