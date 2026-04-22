@@ -259,6 +259,7 @@ function GooglePlaceField({
   const autocompleteRef = useRef(null)
   const placesRef = useRef(null)
   const tokenRef = useRef(null)
+  const selectedLabelRef = useRef('')
 
   useEffect(() => {
     if (!mapsReady || !window.google?.maps?.places) return
@@ -269,6 +270,12 @@ function GooglePlaceField({
 
   useEffect(() => {
     if (!mapsReady || disabled || !value.trim() || !autocompleteRef.current) {
+      setPredictions([])
+      setSearching(false)
+      return undefined
+    }
+
+    if (selectedLabelRef.current && value.trim() === selectedLabelRef.current) {
       setPredictions([])
       setSearching(false)
       return undefined
@@ -326,11 +333,15 @@ function GooglePlaceField({
           return
         }
 
+        const resolvedLabel =
+          place.name || prediction.structured_formatting?.main_text || value
         tokenRef.current = new window.google.maps.places.AutocompleteSessionToken()
+        selectedLabelRef.current = resolvedLabel.trim()
         setPredictions([])
+        setSearching(false)
         onSelect({
           placeId: place.place_id || '',
-          locationName: place.name || prediction.structured_formatting?.main_text || value,
+          locationName: resolvedLabel,
           address: place.formatted_address || prediction.description || '',
           lat: place.geometry?.location?.lat?.() ?? null,
           lng: place.geometry?.location?.lng?.() ?? null,
@@ -344,17 +355,25 @@ function GooglePlaceField({
       <div className="flex gap-2">
         <input
           value={value}
-          onChange={(event) => onValueChange(event.target.value)}
+          onChange={(event) => {
+            selectedLabelRef.current = ''
+            onValueChange(event.target.value)
+          }}
+          onBlur={() => {
+            window.setTimeout(() => {
+              setPredictions([])
+            }, 120)
+          }}
           disabled={disabled || !mapsReady}
           placeholder="Search with Google Maps"
-          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+          className="w-full min-w-0 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
         />
         <div className="flex w-12 items-center justify-center rounded-2xl bg-slate-900 text-white">
           {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
         </div>
       </div>
 
-      <div className="text-xs text-slate-500">
+      <div className="text-[11px] leading-5 text-slate-500">
         Select a Google Places suggestion to attach a reliable map pin.
       </div>
 
@@ -363,18 +382,18 @@ function GooglePlaceField({
       ) : null}
 
       {predictions.length ? (
-        <div className="space-y-2 rounded-2xl bg-slate-50 p-3">
+        <div className="space-y-2 rounded-2xl bg-slate-50 p-2.5">
           {predictions.map((prediction) => (
             <button
               key={prediction.place_id}
               type="button"
               onClick={() => selectPrediction(prediction)}
-              className="block w-full rounded-2xl bg-white px-4 py-3 text-left"
+              className="block w-full rounded-2xl bg-white px-3.5 py-3 text-left"
             >
-              <div className="text-sm font-semibold text-slate-900">
+              <div className="truncate text-sm font-semibold text-slate-900">
                 {prediction.structured_formatting?.main_text || prediction.description}
               </div>
-              <div className="mt-1 text-xs text-slate-500">
+              <div className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">
                 {prediction.structured_formatting?.secondary_text || prediction.description}
               </div>
             </button>
@@ -445,10 +464,14 @@ function DayManagerModal({
   })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-4 backdrop-blur-sm sm:items-center sm:justify-center">
+    <div
+      className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
+      onClick={onClose}
+    >
       <div
-        className={`glass-panel w-full border border-white/60 p-6 ${
-          isMobilePortrait ? 'rounded-[2rem] sm:max-w-md' : 'max-w-3xl rounded-[2rem]'
+        onClick={(event) => event.stopPropagation()}
+        className={`glass-panel w-full max-h-[82svh] overflow-y-auto border border-white/60 p-5 sm:max-h-[calc(100svh-4rem)] sm:p-6 ${
+          isMobilePortrait ? 'rounded-[1.7rem] sm:max-w-md' : 'max-w-3xl rounded-[2rem]'
         }`}
       >
         <div className="flex items-start justify-between gap-4">
@@ -558,10 +581,14 @@ function DayManagerModal({
 
 function NoteModal({ item, isMobilePortrait, onClose, onDelete, onOpenDetails }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-4 backdrop-blur-sm sm:items-center sm:justify-center">
+    <div
+      className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
+      onClick={onClose}
+    >
       <div
-        className={`glass-panel w-full border border-white/60 p-6 ${
-          isMobilePortrait ? 'rounded-[2rem] sm:max-w-md' : 'max-w-lg rounded-[2rem]'
+        onClick={(event) => event.stopPropagation()}
+        className={`glass-panel w-full max-h-[78svh] overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+          isMobilePortrait ? 'rounded-[1.45rem] sm:max-w-md' : 'max-w-lg rounded-[1.85rem]'
         }`}
       >
         <div className="flex items-start justify-between gap-4">
@@ -586,17 +613,17 @@ function NoteModal({ item, isMobilePortrait, onClose, onDelete, onOpenDetails })
           </div>
         </div>
 
-        <div className="mt-5 space-y-4">
-          <div className="rounded-2xl bg-white px-4 py-4 shadow-sm">
+        <div className="mt-3.5 space-y-2.5">
+          <div className="rounded-[1.25rem] bg-white px-4 py-4 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Notes</div>
-            <div className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
+            <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
               {item.generated
                 ? 'This hotel stop stays linked to the previous day hotel. You can still adjust time, notes, and booking details here.'
                 : item.description || 'No notes yet.'}
             </div>
           </div>
           {item.bookingRef ? (
-            <div className="rounded-2xl bg-white px-4 py-4 shadow-sm">
+            <div className="rounded-[1.25rem] bg-white px-4 py-4 shadow-sm">
               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Booking ref</div>
               <div className="mt-2 text-sm font-semibold text-slate-900">{item.bookingRef}</div>
             </div>
@@ -606,7 +633,7 @@ function NoteModal({ item, isMobilePortrait, onClose, onDelete, onOpenDetails })
         <button
           type="button"
           onClick={onOpenDetails}
-          className="mt-5 w-full rounded-[1.4rem] bg-slate-900 px-4 py-4 text-sm font-bold text-white"
+          className="mt-3.5 w-full rounded-[1.1rem] bg-slate-900 px-4 py-3.5 text-sm font-bold text-white"
         >
           {item.generated ? 'View linked details' : 'Open details'}
         </button>
@@ -631,10 +658,14 @@ function DetailModal({
   const linkedLocked = isGenerated
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-4 backdrop-blur-sm sm:items-center sm:justify-center">
+    <div
+      className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
+      onClick={onClose}
+    >
       <div
-        className={`glass-panel w-full border border-white/60 p-6 ${
-          isMobilePortrait ? 'rounded-[2rem] sm:max-w-md' : 'max-w-2xl rounded-[2rem]'
+        onClick={(event) => event.stopPropagation()}
+        className={`glass-panel w-full max-h-[78svh] overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+          isMobilePortrait ? 'rounded-[1.45rem] sm:max-w-md' : 'max-w-xl rounded-[1.85rem]'
         }`}
       >
         <div className="flex items-start justify-between gap-4">
@@ -674,12 +705,12 @@ function DetailModal({
         </div>
 
         {isGenerated ? (
-          <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <div className="mt-4 rounded-[1.2rem] bg-amber-50 px-4 py-3 text-sm text-amber-700">
             This stop stays linked to the previous day hotel for place continuity. You can still edit its time, notes, and booking reference here.
           </div>
         ) : null}
 
-        <div className={`mt-5 grid gap-4 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
+        <div className={`mt-3.5 grid gap-3.5 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
           <Field label="Day">
             <select
               value={detailItem.dayId}
@@ -736,7 +767,7 @@ function DetailModal({
           </Field>
         </div>
 
-        <div className="mt-4 space-y-3">
+        <div className="mt-3.5 space-y-3">
           <PlaceFields
             draft={detailItem}
             disabled={fieldReadOnly || linkedLocked}
@@ -771,7 +802,7 @@ function DetailModal({
           }
           target="_blank"
           rel="noreferrer"
-          className={`mt-5 flex items-center justify-between rounded-2xl px-4 py-4 text-sm font-bold ${
+          className={`mt-3.5 flex items-center justify-between rounded-[1.1rem] px-4 py-3.5 text-sm font-bold ${
             typeof detailItem.lat === 'number' && typeof detailItem.lng === 'number'
               ? 'bg-indigo-600 text-white'
               : 'pointer-events-none bg-slate-100 text-slate-400'
@@ -846,30 +877,34 @@ function PlannerPanel({
                     formatFullDayDate(dayOptions.find((day) => day.id === activeDayId)?.date || '')}
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="rounded-full bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <div className={`flex items-center gap-2 ${isMobilePortrait ? 'w-full justify-between' : ''}`}>
+                <div className="rounded-full bg-white px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Tap notes · Hold details
               </div>
               <button
                 type="button"
                 onClick={onManageDays}
-                className="rounded-[1.2rem] bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
+                className="rounded-[1rem] bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white"
               >
                 Manage days
               </button>
             </div>
           </div>
 
-          <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+          <div
+            className={`mt-4 gap-2 pb-1 ${
+              isMobilePortrait ? 'grid grid-cols-3' : 'flex overflow-x-auto'
+            }`}
+          >
             <button
               type="button"
               onClick={() => onDayChange(DAY_VIEW_ALL)}
-              className={`min-w-[108px] rounded-[1.1rem] px-4 py-3 text-left transition ${
+              className={`min-w-0 rounded-[0.95rem] px-2.5 py-2.5 text-left transition ${
                 activeDayId === DAY_VIEW_ALL ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'
               }`}
             >
-              <div className="text-sm font-semibold">Overview</div>
-              <div className={`mt-1 text-[11px] ${activeDayId === DAY_VIEW_ALL ? 'text-white/65' : 'text-slate-400'}`}>
+              <div className="truncate text-[12px] font-semibold">Overview</div>
+              <div className={`mt-1 truncate text-[10px] ${activeDayId === DAY_VIEW_ALL ? 'text-white/65' : 'text-slate-400'}`}>
                 Whole trip
               </div>
             </button>
@@ -878,12 +913,12 @@ function PlannerPanel({
                 key={day.id}
                 type="button"
                 onClick={() => onDayChange(day.id)}
-                className={`min-w-[150px] rounded-[1.1rem] px-4 py-3 text-left transition ${
+                className={`min-w-0 rounded-[0.95rem] px-2.5 py-2.5 text-left transition ${
                   activeDayId === day.id ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'
                 }`}
               >
-                <div className="text-sm font-semibold">Day {index + 1}</div>
-                <div className={`mt-1 text-[11px] ${activeDayId === day.id ? 'text-white/65' : 'text-slate-400'}`}>
+                <div className="truncate text-[12px] font-semibold">Day {index + 1}</div>
+                <div className={`mt-1 truncate text-[10px] ${activeDayId === day.id ? 'text-white/65' : 'text-slate-400'}`}>
                   {day.date.slice(5).replace('-', '/')}
                 </div>
               </button>
@@ -1079,7 +1114,7 @@ function PlannerPanel({
             </button>
           </>
         ) : (
-          <div className="mt-4 rounded-[1.1rem] bg-white px-4 py-3 text-sm text-slate-500">
+          <div className="mt-4 rounded-[1.1rem] bg-white px-4 py-3 text-sm leading-6 text-slate-500">
             Open the composer only when you need to add a new stop.
           </div>
         )}
@@ -1538,8 +1573,8 @@ export default function App() {
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl px-4 py-5 pb-8 text-slate-900 sm:px-6 sm:pb-10 lg:px-8">
-      <section className="glass-panel rounded-[2rem] border border-white/60 px-5 py-5 sm:px-7">
+    <main className="mx-auto min-h-screen max-w-7xl overflow-x-clip px-3 py-4 pb-8 text-slate-900 sm:px-6 sm:py-5 sm:pb-10 lg:px-8">
+      <section className="glass-panel rounded-[1.8rem] border border-white/60 px-4 py-4 sm:rounded-[2rem] sm:px-7 sm:py-5">
         <div className="flex items-center justify-between gap-4">
           <h1 className="headline text-3xl leading-tight sm:text-5xl">Trip planner</h1>
           <div className="flex flex-wrap items-center gap-2">
@@ -1560,7 +1595,7 @@ export default function App() {
       <section
         className={
           isMobilePortrait
-            ? 'mx-auto mt-6 max-w-md space-y-4'
+            ? 'mx-auto mt-4 max-w-[28rem] space-y-4'
             : 'mt-6 grid gap-6 lg:grid-cols-[1.08fr_0.92fr]'
         }
       >

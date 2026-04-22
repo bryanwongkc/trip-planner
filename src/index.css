@@ -21,6 +21,7 @@ html {
 body {
   margin: 0;
   min-width: 320px;
+  overflow-x: clip;
 }
 
 body::before {
@@ -38,6 +39,7 @@ body::before {
 
 #root {
   min-height: 100svh;
+  overflow-x: clip;
 }
 
 .glass-panel {
