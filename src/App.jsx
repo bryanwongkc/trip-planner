@@ -738,36 +738,36 @@ function TripSwitcher({
   return (
     <div
       ref={containerRef}
-      className="glass-panel relative rounded-[1.2rem] border border-white/60 px-3 py-2 sm:px-3.5 sm:py-2.5"
+      className="glass-panel relative z-40 isolate rounded-[1.05rem] border border-white/60 px-2.5 py-1.5 sm:px-3 sm:py-2"
     >
-      <div className="mb-1 flex items-center justify-between gap-3 px-1">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Trips</div>
-        <div className="text-[10px] font-medium text-slate-400">{tripSummaries.length}</div>
+      <div className="mb-0.5 flex items-center justify-between gap-3 px-0.5">
+        <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400">Trips</div>
+        <div className="text-[9px] font-medium text-slate-400">{tripSummaries.length}</div>
       </div>
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
         disabled={disabled || !activeTrip}
         aria-expanded={open}
-        className={`flex w-full items-center justify-between gap-3 rounded-[0.95rem] border border-slate-200/80 bg-white/88 text-left text-slate-900 transition hover:border-slate-300 ${
-          isMobilePortrait ? 'px-3 py-2.5' : 'px-3.5 py-2.5'
+        className={`flex w-full items-center justify-between gap-2.5 rounded-[0.85rem] border border-slate-200/80 bg-white/88 text-left text-slate-900 transition hover:border-slate-300 ${
+          isMobilePortrait ? 'px-2.5 py-2' : 'px-3 py-2'
         } disabled:bg-slate-100`}
       >
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[14px] font-semibold text-slate-900 sm:text-[15px]">
+          <div className="truncate text-[13px] font-semibold text-slate-900 sm:text-[14px]">
             {activeTrip?.title || 'Select trip'}
           </div>
-          <div className="truncate pt-0.5 text-[10px] font-medium tracking-[0.01em] text-slate-500 sm:text-[11px]">
+          <div className="truncate pt-0.5 text-[9px] font-medium tracking-[0.01em] text-slate-500 sm:text-[10px]">
             {activeTrip ? formatTripDateRange(activeTrip.startDate, activeTrip.endDate) : 'No trip'}
           </div>
         </div>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500">
-          <ChevronDown className={`h-4 w-4 transition ${open ? 'rotate-180' : ''}`} />
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+          <ChevronDown className={`h-3.5 w-3.5 transition ${open ? 'rotate-180' : ''}`} />
         </div>
       </button>
 
       {open ? (
-        <div className="absolute inset-x-0 top-[calc(100%+0.55rem)] z-40">
+        <div className="absolute inset-x-0 top-[calc(100%+0.55rem)] z-50">
           <div className="glass-panel overflow-hidden rounded-[1.05rem] border border-white/70 p-1.5 shadow-[0_18px_44px_rgba(15,23,42,0.1)]">
             <div className="no-scrollbar max-h-[min(24rem,56svh)] overflow-y-auto pr-0.5">
               {tripSummaries.map((trip) => {
