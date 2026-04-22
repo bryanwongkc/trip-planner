@@ -18,7 +18,6 @@ async function loadFirebaseServices() {
     return {
       auth: null,
       db: null,
-      deleteField: null,
       doc: null,
       onSnapshot: null,
       serverTimestamp: null,
@@ -40,7 +39,6 @@ async function loadFirebaseServices() {
       return {
         auth: authModule.getAuth(app),
         db: firestoreModule.getFirestore(app),
-        deleteField: firestoreModule.deleteField,
         doc: firestoreModule.doc,
         onSnapshot: firestoreModule.onSnapshot,
         serverTimestamp: firestoreModule.serverTimestamp,
@@ -59,27 +57,32 @@ function stripUndefined(value) {
   )
 }
 
+function stampEntityMap(entityMap, serverTimestamp) {
+  return Object.fromEntries(
+    Object.entries(entityMap || {}).map(([id, entity]) => [
+      id,
+      stripUndefined({
+        ...entity,
+        updatedAt: serverTimestamp(),
+      }),
+    ]),
+  )
+}
+
 export async function ensureAnonymousAuth() {
   const { auth, signInAnonymously } = await loadFirebaseServices()
 
-  if (!auth) {
-    return null
-  }
-
-  if (auth.currentUser) {
-    return auth.currentUser
-  }
+  if (!auth) return null
+  if (auth.currentUser) return auth.currentUser
 
   const credential = await signInAnonymously(auth)
   return credential.user
 }
 
-export async function subscribeToOverrides(onValue, onError) {
+export async function subscribeToTripState(onValue, onError) {
   const { db, doc, onSnapshot } = await loadFirebaseServices()
 
-  if (!db) {
-    return () => {}
-  }
+  if (!db) return () => {}
 
   const overridesDoc = doc(db, 'trips', TRIP_ID, 'overrides', 'shared')
 
@@ -90,50 +93,23 @@ export async function subscribeToOverrides(onValue, onError) {
   )
 }
 
-export async function upsertItemOverride(itemId, override) {
+export async function mergeTripPatch(patch) {
   const { db, doc, serverTimestamp, setDoc } = await loadFirebaseServices()
 
-  if (!db) {
-    return
-  }
+  if (!db) return
 
   const overridesDoc = doc(db, 'trips', TRIP_ID, 'overrides', 'shared')
-
-  await setDoc(
-    overridesDoc,
-    {
-      items: {
-        [itemId]: stripUndefined({
-          ...override,
-          updatedAt: serverTimestamp(),
-        }),
-      },
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true },
-  )
-}
-
-export async function hideItemOverride(itemId) {
-  const { db, doc, serverTimestamp, setDoc } = await loadFirebaseServices()
-
-  if (!db) {
-    return
+  const payload = {
+    updatedAt: serverTimestamp(),
   }
 
-  const overridesDoc = doc(db, 'trips', TRIP_ID, 'overrides', 'shared')
+  if (patch.days) {
+    payload.days = stampEntityMap(patch.days, serverTimestamp)
+  }
 
-  await setDoc(
-    overridesDoc,
-    {
-      items: {
-        [itemId]: {
-          hidden: true,
-          updatedAt: serverTimestamp(),
-        },
-      },
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true },
-  )
+  if (patch.items) {
+    payload.items = stampEntityMap(patch.items, serverTimestamp)
+  }
+
+  await setDoc(overridesDoc, payload, { merge: true })
 }

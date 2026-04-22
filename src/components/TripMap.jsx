@@ -1,94 +1,133 @@
-import React, { memo, useEffect } from 'react'
-import {
-  CircleMarker,
-  MapContainer,
-  Polyline,
-  Popup,
-  TileLayer,
-  Tooltip,
-  useMap,
-} from 'react-leaflet'
-import 'leaflet/dist/leaflet.css'
+import React, { memo, useEffect, useRef, useState } from 'react'
 
-function typeMeta(category) {
-  if (category === 'Flight') return { fillColor: '#0ea5e9' }
-  if (category === 'Car') return { fillColor: '#4f46e5' }
-  if (category === 'Hotel') return { fillColor: '#f59e0b' }
-  if (category === 'Wedding') return { fillColor: '#ec4899' }
-  return { fillColor: '#10b981' }
+function typeColor(category) {
+  if (category === 'Flight') return '#0ea5e9'
+  if (category === 'Car') return '#4f46e5'
+  if (category === 'Hotel') return '#f59e0b'
+  if (category === 'Wedding') return '#ec4899'
+  return '#10b981'
 }
 
-function getTimeValue(iso) {
-  return iso.slice(11, 16)
+function getTimeRange(item) {
+  if (item.generated) return 'Linked from previous day'
+  if (item.endTime) return `${item.startTime} - ${item.endTime}`
+  return item.startTime
 }
 
-function FitBounds({ points }) {
-  const map = useMap()
+function TripMap({ filteredItems, routeSegments }) {
+  const containerRef = useRef(null)
+  const mapRef = useRef(null)
+  const overlaysRef = useRef({ markers: [], polylines: [], infoWindow: null })
+  const [activeId, setActiveId] = useState('')
 
   useEffect(() => {
-    if (!points.length) return
-    if (points.length === 1) {
-      map.setView(points[0], 11)
+    if (!containerRef.current || !window.google?.maps || mapRef.current) return
+
+    mapRef.current = new window.google.maps.Map(containerRef.current, {
+      center: { lat: 35.6074, lng: 140.1065 },
+      zoom: 9,
+      disableDefaultUI: true,
+      clickableIcons: false,
+      gestureHandling: 'greedy',
+    })
+
+    overlaysRef.current.infoWindow = new window.google.maps.InfoWindow()
+  }, [])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !window.google?.maps) return
+
+    overlaysRef.current.markers.forEach((marker) => marker.setMap(null))
+    overlaysRef.current.polylines.forEach((polyline) => polyline.setMap(null))
+    overlaysRef.current.markers = []
+    overlaysRef.current.polylines = []
+
+    const points = filteredItems.filter(
+      (item) => typeof item.lat === 'number' && typeof item.lng === 'number',
+    )
+
+    if (!points.length) {
+      map.setCenter({ lat: 35.6074, lng: 140.1065 })
+      map.setZoom(9)
       return
     }
-    map.fitBounds(points, { padding: [32, 32] })
-  }, [map, points])
 
-  return null
-}
+    const bounds = new window.google.maps.LatLngBounds()
 
-function TripMap({ filteredItems, movementPoints, routeSegments }) {
-  return (
-    <MapContainer center={[35.6074, 140.1065]} zoom={9} scrollWheelZoom={false} className="h-full w-full">
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
-      <FitBounds points={movementPoints} />
-      {filteredItems
-        .filter((item) => typeof item.lat === 'number' && typeof item.lng === 'number')
-        .map((item, index) => {
-          const meta = typeMeta(item.category)
+    points.forEach((item, index) => {
+      const marker = new window.google.maps.Marker({
+        map,
+        position: { lat: item.lat, lng: item.lng },
+        label: {
+          text: String(index + 1),
+          color: '#ffffff',
+          fontWeight: '700',
+        },
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          fillColor: typeColor(item.category),
+          fillOpacity: 0.95,
+          strokeColor: '#0f172a',
+          strokeWeight: 2,
+          scale: 11,
+        },
+      })
 
-          return (
-            <CircleMarker
-              key={item.id}
-              center={[item.lat, item.lng]}
-              radius={10}
-              pathOptions={{
-                color: '#0f172a',
-                fillColor: meta.fillColor,
-                fillOpacity: 0.92,
-              }}
-            >
-              <Tooltip direction="top" offset={[0, -10]} opacity={1}>
-                {index + 1}. {item.title}
-              </Tooltip>
-              <Popup>
-                <div className="space-y-1">
-                  <div className="font-semibold">{item.title}</div>
-                  <div className="text-xs text-slate-600">{item.location || item.venue}</div>
-                  <div className="text-xs text-slate-600">{getTimeValue(item.startISO)}</div>
-                </div>
-              </Popup>
-            </CircleMarker>
-          )
-        })}
-      {routeSegments
-        .filter((segment) => segment.route?.geometry?.length)
-        .map((segment) => (
-          <Polyline
-            key={segment.id}
-            positions={segment.route.geometry}
-            pathOptions={{
-              color: segment.mode === 'foot' ? '#0f766e' : '#2563eb',
-              weight: 4,
-              opacity: 0.72,
-            }}
-          />
-        ))}
-    </MapContainer>
-  )
+      marker.addListener('click', () => setActiveId(item.id))
+      overlaysRef.current.markers.push(marker)
+      bounds.extend({ lat: item.lat, lng: item.lng })
+    })
+
+    routeSegments
+      .filter((segment) => segment.route?.path?.length)
+      .forEach((segment) => {
+        const polyline = new window.google.maps.Polyline({
+          map,
+          path: segment.route.path,
+          strokeColor: segment.mode === 'walking' ? '#0f766e' : '#2563eb',
+          strokeOpacity: 0.72,
+          strokeWeight: 4,
+        })
+        overlaysRef.current.polylines.push(polyline)
+      })
+
+    if (points.length === 1) {
+      map.setCenter(bounds.getCenter())
+      map.setZoom(11)
+    } else {
+      map.fitBounds(bounds, 48)
+    }
+  }, [filteredItems, routeSegments])
+
+  useEffect(() => {
+    const infoWindow = overlaysRef.current.infoWindow
+    if (!infoWindow) return
+
+    const activeItem = filteredItems.find((item) => item.id === activeId)
+    const activeMarker = overlaysRef.current.markers.find(
+      (marker) => marker.getPosition()?.lat() === activeItem?.lat && marker.getPosition()?.lng() === activeItem?.lng,
+    )
+
+    if (!activeItem || !activeMarker) {
+      infoWindow.close()
+      return
+    }
+
+    infoWindow.setContent(`
+      <div style="padding-right:8px">
+        <div style="font-weight:600;color:#0f172a">${activeItem.title}</div>
+        <div style="font-size:12px;color:#475569;margin-top:4px">${activeItem.locationName || activeItem.address || ''}</div>
+        <div style="font-size:12px;color:#475569;margin-top:4px">${getTimeRange(activeItem)}</div>
+      </div>
+    `)
+    infoWindow.open({
+      map: mapRef.current,
+      anchor: activeMarker,
+    })
+  }, [activeId, filteredItems])
+
+  return <div ref={containerRef} className="h-full w-full" />
 }
 
 export default memo(TripMap)
