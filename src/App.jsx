@@ -132,6 +132,14 @@ function routeLabel(mode) {
   return mode === 'walking' ? 'Walk' : 'Drive'
 }
 
+const SEASONAL_WEATHER_HINTS = {
+  5: {
+    headline: 'Typical mid-May, 23 deg / 16 deg',
+    detail: 'Usually mild with sun, cloud, and light shower risk.',
+    icon: Cloud,
+  },
+}
+
 function getWeatherDisplay(activeDayId, weatherState, selectedWeather) {
   if (activeDayId === DAY_VIEW_ALL) return null
 
@@ -140,6 +148,7 @@ function getWeatherDisplay(activeDayId, weatherState, selectedWeather) {
       headline: 'Loading weather',
       detail: 'Checking the Open-Meteo forecast for this day.',
       icon: Cloud,
+      compact: 'Loading weather',
     }
   }
 
@@ -148,6 +157,7 @@ function getWeatherDisplay(activeDayId, weatherState, selectedWeather) {
       headline: weatherState.error,
       detail: 'Live weather could not be loaded right now.',
       icon: Cloud,
+      compact: weatherState.error,
     }
   }
 
@@ -156,20 +166,36 @@ function getWeatherDisplay(activeDayId, weatherState, selectedWeather) {
       headline: `${Math.round(selectedWeather.tempMax)}° · Rain ${selectedWeather.rainProbability ?? 0}%`,
       detail: selectedWeather.label,
       icon: selectedWeather.rainProbability >= 40 ? CloudRain : Sun,
+      compact: `${Math.round(selectedWeather.tempMax)} deg, ${selectedWeather.label}`,
     }
   }
 
   const availableDates = weatherState.data?.availableDates || []
   const firstAvailable = availableDates[0]
   const lastAvailable = availableDates[availableDates.length - 1]
+  const month = Number(activeDayId.split('-')[1] || 0)
+  const seasonalHint = SEASONAL_WEATHER_HINTS[month]
+
+  if (seasonalHint) {
+    return {
+      ...seasonalHint,
+      eyebrow:
+        firstAvailable && lastAvailable
+          ? `Live forecast window: ${formatFullDayDate(firstAvailable)} to ${formatFullDayDate(lastAvailable)}.`
+          : 'Live forecast is not available for this date yet.',
+      compact: seasonalHint.headline,
+      seasonal: true,
+    }
+  }
 
   return {
     headline: 'Forecast not available yet',
     detail:
       firstAvailable && lastAvailable
-        ? `Open-Meteo currently covers ${formatFullDayDate(firstAvailable)} to ${formatFullDayDate(lastAvailable)} only.`
-        : 'Open-Meteo has not returned a usable forecast window yet.',
+        ? `Live forecast currently covers ${formatFullDayDate(firstAvailable)} to ${formatFullDayDate(lastAvailable)}.`
+        : 'Live forecast is not available for this date yet.',
     icon: Cloud,
+    compact: 'Forecast not available yet',
   }
 }
 
@@ -266,6 +292,7 @@ function GooglePlaceField({
   mapsReady,
   onSelect,
   onValueChange,
+  selectedPlaceId,
   value,
 }) {
   const [predictions, setPredictions] = useState([])
@@ -282,6 +309,15 @@ function GooglePlaceField({
     placesRef.current = new window.google.maps.places.PlacesService(document.createElement('div'))
     tokenRef.current = new window.google.maps.places.AutocompleteSessionToken()
   }, [mapsReady])
+
+  useEffect(() => {
+    if (selectedPlaceId && value.trim()) {
+      selectedLabelRef.current = value.trim()
+      return
+    }
+
+    selectedLabelRef.current = ''
+  }, [selectedPlaceId, value])
 
   useEffect(() => {
     if (!mapsReady || disabled || !value.trim() || !autocompleteRef.current) {
@@ -426,6 +462,7 @@ function PlaceFields({ draft, disabled, mapsReady, onChange }) {
         <GooglePlaceField
           disabled={disabled}
           mapsReady={mapsReady}
+          selectedPlaceId={draft.placeId}
           value={draft.locationName}
           onValueChange={(value) =>
             onChange({
@@ -896,15 +933,15 @@ function PlannerPanel({
   return (
     <>
       <div className="sticky top-4 z-20 space-y-3 browse-ui">
-        <div className="glass-panel rounded-[1.65rem] border border-white/60 px-4 py-4 sm:px-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="glass-panel rounded-[1.45rem] border border-white/60 px-3.5 py-3.5 sm:rounded-[1.65rem] sm:px-5 sm:py-4">
+          <div className="flex flex-wrap items-start justify-between gap-2.5">
             <div>
-              <h2 className="headline text-[2rem] leading-none text-slate-900">
+              <h2 className={`headline leading-none text-slate-900 ${isMobilePortrait ? 'text-[1.6rem]' : 'text-[2rem]'}`}>
                 {activeDayId === DAY_VIEW_ALL
                   ? 'Full itinerary'
                   : dayOptions.find((day) => day.id === activeDayId)?.label || 'Day view'}
               </h2>
-              <div className="mt-1 text-sm text-slate-500">
+              <div className={`mt-1 text-slate-500 ${isMobilePortrait ? 'text-[13px]' : 'text-sm'}`}>
                 {activeDayId === DAY_VIEW_ALL
                   ? `${filteredItems.length} stops across ${dayOptions.length} days`
                   : dayOptions.find((day) => day.id === activeDayId)?.name ||
@@ -915,7 +952,7 @@ function PlannerPanel({
               <button
                 type="button"
                 onClick={onManageDays}
-                className="rounded-[1rem] bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white"
+                className={`bg-slate-900 font-semibold text-white ${isMobilePortrait ? 'rounded-[0.95rem] px-3 py-2 text-[13px]' : 'rounded-[1rem] px-3 py-2.5 text-sm'}`}
               >
                 Manage days
               </button>
@@ -923,14 +960,14 @@ function PlannerPanel({
           </div>
 
           <div
-            className={`mt-4 gap-2 pb-1 ${
+            className={`mt-3 gap-1.5 pb-0.5 ${
               isMobilePortrait ? 'grid grid-cols-3' : 'flex overflow-x-auto'
             }`}
           >
             <button
               type="button"
               onClick={() => onDayChange(DAY_VIEW_ALL)}
-              className={`min-w-0 rounded-[0.95rem] px-2.5 py-2.5 text-left transition ${
+              className={`min-w-0 rounded-[0.9rem] px-2.5 py-2 text-left transition ${
                 activeDayId === DAY_VIEW_ALL ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'
               }`}
             >
@@ -944,7 +981,7 @@ function PlannerPanel({
                 key={day.id}
                 type="button"
                 onClick={() => onDayChange(day.id)}
-                className={`min-w-0 rounded-[0.95rem] px-2.5 py-2.5 text-left transition ${
+                className={`min-w-0 rounded-[0.9rem] px-2.5 py-2 text-left transition ${
                   activeDayId === day.id ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'
                 }`}
               >
@@ -957,16 +994,36 @@ function PlannerPanel({
           </div>
 
           {weatherDisplay ? (
-            <div className="mt-4 flex items-center justify-between gap-4 rounded-[1.2rem] bg-white px-4 py-3">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Weather</p>
-                <div className="mt-1 text-base font-semibold text-slate-900">{weatherDisplay.headline}</div>
-                <div className="mt-1 text-sm text-slate-500">{weatherDisplay.detail}</div>
+            isMobilePortrait ? (
+              <div className="mt-3 flex items-center gap-3 rounded-[1rem] bg-white px-3 py-2.5">
+                <div className="rounded-xl bg-slate-100 p-2 text-slate-700">
+                  <weatherDisplay.icon className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] font-semibold text-slate-900">
+                    {weatherDisplay.compact || weatherDisplay.headline}
+                  </div>
+                  <div className="mt-0.5 truncate text-[11px] text-slate-500">
+                    {weatherDisplay.seasonal ? 'Seasonal outlook for this date' : weatherDisplay.detail}
+                  </div>
+                </div>
               </div>
-              <div className="rounded-2xl bg-slate-100 p-3 text-slate-700">
-                <weatherDisplay.icon className="h-5 w-5" />
+            ) : (
+              <div className="mt-4 flex items-center justify-between gap-4 rounded-[1.2rem] bg-white px-4 py-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                    {weatherDisplay.seasonal ? 'Seasonal weather' : 'Weather'}
+                  </p>
+                  <div className="mt-1 text-base font-semibold text-slate-900">{weatherDisplay.headline}</div>
+                  <div className="mt-1 text-sm text-slate-500">
+                    {weatherDisplay.seasonal ? weatherDisplay.eyebrow : weatherDisplay.detail}
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-slate-100 p-3 text-slate-700">
+                  <weatherDisplay.icon className="h-5 w-5" />
+                </div>
               </div>
-            </div>
+            )
           ) : null}
         </div>
       </div>
