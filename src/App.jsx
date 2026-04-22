@@ -12,6 +12,7 @@ import React, {
 import {
   ArrowDown,
   ArrowUp,
+  CalendarDays,
   Check,
   Cloud,
   CloudRain,
@@ -36,6 +37,7 @@ import {
   buildDayLabel,
   compareTime,
   deriveTripState,
+  formatDayDate,
   formatFullDayDate,
   movementItemsForDay,
   nextDayDate,
@@ -933,8 +935,8 @@ function PlannerPanel({
   return (
     <>
       <div className="sticky top-4 z-20 space-y-3 browse-ui">
-        <div className="glass-panel rounded-[1.45rem] border border-white/60 px-3.5 py-3.5 sm:rounded-[1.65rem] sm:px-5 sm:py-4">
-          <div className="flex flex-wrap items-start justify-between gap-2.5">
+        <div className="glass-panel rounded-[1.45rem] border border-white/60 px-3.5 py-3 sm:rounded-[1.65rem] sm:px-5 sm:py-4">
+          <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className={`headline leading-none text-slate-900 ${isMobilePortrait ? 'text-[1.6rem]' : 'text-[2rem]'}`}>
                 {activeDayId === DAY_VIEW_ALL
@@ -948,49 +950,53 @@ function PlannerPanel({
                     formatFullDayDate(dayOptions.find((day) => day.id === activeDayId)?.date || '')}
               </div>
             </div>
-            <div className={`flex items-center gap-2 ${isMobilePortrait ? 'w-full justify-end' : ''}`}>
-              <button
-                type="button"
-                onClick={onManageDays}
-                className={`bg-slate-900 font-semibold text-white ${isMobilePortrait ? 'rounded-[0.95rem] px-3 py-2 text-[13px]' : 'rounded-[1rem] px-3 py-2.5 text-sm'}`}
-              >
-                Manage days
-              </button>
-            </div>
-          </div>
-
-          <div
-            className={`mt-3 gap-1.5 pb-0.5 ${
-              isMobilePortrait ? 'grid grid-cols-3' : 'flex overflow-x-auto'
-            }`}
-          >
             <button
               type="button"
-              onClick={() => onDayChange(DAY_VIEW_ALL)}
-              className={`min-w-0 rounded-[0.9rem] px-2.5 py-2 text-left transition ${
-                activeDayId === DAY_VIEW_ALL ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'
+              onClick={onManageDays}
+              className={`shrink-0 rounded-full border border-slate-200 bg-white text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 ${
+                isMobilePortrait ? 'p-2.5' : 'flex items-center gap-2 px-3 py-2'
               }`}
+              aria-label="Manage days"
             >
-              <div className="truncate text-[12px] font-semibold">Overview</div>
-              <div className={`mt-1 truncate text-[10px] ${activeDayId === DAY_VIEW_ALL ? 'text-white/65' : 'text-slate-400'}`}>
-                Whole trip
-              </div>
+              <CalendarDays className={`${isMobilePortrait ? 'h-4 w-4' : 'h-4 w-4'}`} />
+              {!isMobilePortrait ? <span className="text-sm font-semibold">Manage days</span> : null}
             </button>
-            {dayOptions.map((day, index) => (
-              <button
-                key={day.id}
-                type="button"
-                onClick={() => onDayChange(day.id)}
-                className={`min-w-0 rounded-[0.9rem] px-2.5 py-2 text-left transition ${
-                  activeDayId === day.id ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'
-                }`}
-              >
-                <div className="truncate text-[12px] font-semibold">Day {index + 1}</div>
-                <div className={`mt-1 truncate text-[10px] ${activeDayId === day.id ? 'text-white/65' : 'text-slate-400'}`}>
-                  {day.date.slice(5).replace('-', '/')}
-                </div>
-              </button>
-            ))}
+          </div>
+
+          <div className="mt-3 flex items-center gap-2">
+            <div className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Days
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+                <button
+                  type="button"
+                  onClick={() => onDayChange(DAY_VIEW_ALL)}
+                  className={`shrink-0 rounded-full px-3 py-2 text-left transition ${
+                    activeDayId === DAY_VIEW_ALL ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'
+                  }`}
+                >
+                  <div className="text-[12px] font-semibold">Overview</div>
+                </button>
+                {dayOptions.map((day, index) => (
+                  <button
+                    key={day.id}
+                    type="button"
+                    onClick={() => onDayChange(day.id)}
+                    className={`shrink-0 rounded-full px-3 py-2 text-left transition ${
+                      activeDayId === day.id ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'
+                    }`}
+                  >
+                    <div className="text-[12px] font-semibold">
+                      Day {index + 1}
+                      <span className={`ml-1.5 font-medium ${activeDayId === day.id ? 'text-white/70' : 'text-slate-400'}`}>
+                        {formatDayDate(day.date)}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {weatherDisplay ? (
