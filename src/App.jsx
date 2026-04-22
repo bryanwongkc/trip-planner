@@ -968,7 +968,7 @@ function PlannerPanel({
               Days
             </div>
             <div className="min-w-0 flex-1">
-              <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+              <div className="no-scrollbar flex gap-1.5 overflow-x-auto pb-0.5">
                 <button
                   type="button"
                   onClick={() => onDayChange(DAY_VIEW_ALL)}
