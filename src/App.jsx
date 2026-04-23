@@ -508,10 +508,65 @@ function getFlightAnchor(item, mode) {
   }
 }
 
-function resolveTravelPoint(item, direction) {
+function normalizeAirportText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function itemMatchesAirport(item, airportCode, airportName) {
+  if (!item || typeof item.lat !== 'number' || typeof item.lng !== 'number') return false
+
+  const haystack = normalizeAirportText(`${item.title} ${item.locationName} ${item.address}`)
+  const code = normalizeAirportText(airportCode)
+  const name = normalizeAirportText(airportName)
+
+  if (code && haystack.includes(code)) return true
+
+  if (!name) return false
+
+  const tokens = name
+    .split(' ')
+    .filter(
+      (token) =>
+        token.length > 2 &&
+        !['airport', 'international', 'terminal', 'city'].includes(token),
+    )
+
+  if (!tokens.length) return false
+
+  return tokens.every((token) => haystack.includes(token))
+}
+
+function getResolvedFlightAnchor(item, mode, adjacentItem) {
+  const info = item?.flightInfo
+  const anchor = getFlightAnchor(item, mode)
+
+  if (!info) return anchor
+
+  const airportCode = mode === 'departure' ? info.departureAirport : info.arrivalAirport
+  const airportName = mode === 'departure' ? info.departureAirportName : info.arrivalAirportName
+
+  if (itemMatchesAirport(adjacentItem, airportCode, airportName)) {
+    return {
+      lat: adjacentItem.lat,
+      lng: adjacentItem.lng,
+    }
+  }
+
+  return anchor
+}
+
+function resolveTravelPoint(item, direction, adjacentItem = null) {
   if (!item) return null
   if (item.category === 'Flight') {
-    const anchor = getFlightAnchor(item, direction === 'outbound' ? 'arrival' : 'departure')
+    const anchor = getResolvedFlightAnchor(
+      item,
+      direction === 'outbound' ? 'arrival' : 'departure',
+      adjacentItem,
+    )
     if (anchor) {
       return {
         ...item,
@@ -570,9 +625,30 @@ function getScheduleConflictMeta(items) {
 function makeMovementPairs(items) {
   return items
     .slice(0, -1)
-    .map((item, index) => [resolveTravelPoint(item, 'outbound'), resolveTravelPoint(items[index + 1], 'inbound'), item, items[index + 1]])
+    .map((item, index) => [
+      resolveTravelPoint(item, 'outbound', items[index + 1]),
+      resolveTravelPoint(items[index + 1], 'inbound', item),
+      item,
+      items[index + 1],
+    ])
     .filter(([fromPoint, toPoint]) => typeof fromPoint?.lat === 'number' && typeof toPoint?.lat === 'number')
     .map(([fromPoint, toPoint, fromItem, toItem]) => [fromPoint, toPoint, fromItem, toItem])
+}
+
+function buildMapItems(items) {
+  return items
+    .map((item, index) => {
+      const previousItem = items[index - 1] || null
+      const nextItem = items[index + 1] || null
+
+      if (item.category === 'Flight') {
+        if (nextItem) return resolveTravelPoint(item, 'outbound', nextItem)
+        if (previousItem) return resolveTravelPoint(item, 'inbound', previousItem)
+      }
+
+      return resolveTravelPoint(item, 'outbound', nextItem)
+    })
+    .filter(Boolean)
 }
 
 function getRouteMode(from, to) {
@@ -2068,6 +2144,8 @@ function PlannerPanel({
 }
 
 function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, mapsError, routeSegments }) {
+  const mapItems = useMemo(() => buildMapItems(filteredItems), [filteredItems])
+
   return (
     <div className="browse-ui">
       <div className="glass-panel rounded-[1.5rem] border border-white/60 px-4 py-4 sm:px-5">
@@ -2093,7 +2171,7 @@ function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, map
                 </div>
               }
             >
-              <TripMap filteredItems={filteredItems} routeSegments={routeSegments} />
+              <TripMap filteredItems={mapItems} routeSegments={routeSegments} />
             </Suspense>
           ) : (
             <div className="flex h-full items-center justify-center bg-slate-100 px-6 text-center text-sm font-medium text-slate-500">
