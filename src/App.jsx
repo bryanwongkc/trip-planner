@@ -1586,10 +1586,12 @@ function PlannerPanel({
               {nextSegment ? (
                 <div
                   className={`ml-[4.9rem] rounded-[0.95rem] px-4 py-1.5 text-[11px] text-slate-500 sm:ml-[6rem] ${
-                    isMobilePortrait ? 'space-y-2' : 'flex items-center justify-between gap-4'
+                    isMobilePortrait
+                      ? 'flex items-center justify-between gap-3'
+                      : 'flex items-center justify-between gap-4'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex min-w-0 items-center gap-2.5">
                     <span className="font-medium text-slate-700">{routeLabel(nextSegment.mode)}</span>
                     <span>
                       {nextSegment.route
@@ -1597,7 +1599,10 @@ function PlannerPanel({
                         : 'Loading route'}
                     </span>
                     {nextSegment.route ? (
-                      <span>{nextSegment.route.estimated ? '~' : ''}{nextSegment.route.distanceKm.toFixed(1)} km</span>
+                      <span className="truncate">
+                        {nextSegment.route.estimated ? '~' : ''}
+                        {nextSegment.route.distanceKm.toFixed(1)} km
+                      </span>
                     ) : null}
                   </div>
                   <RouteModeControl
