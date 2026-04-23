@@ -47,6 +47,11 @@ import {
   subscribeToTripState,
   upsertTripMeta,
 } from './services/firebase'
+import {
+  extractFlightNumber,
+  fetchFlightStatusByNumber,
+  inferFlightLookupFromItem,
+} from './services/aerodatabox'
 import { fetchWeatherSnapshot } from './services/weather'
 import {
   DAY_VIEW_ALL,
@@ -294,6 +299,7 @@ function buildEmptyDraft(dayId = '') {
     dayId,
     category: 'Activity',
     title: '',
+    flightCode: '',
     locationName: '',
     address: '',
     startTime: '10:00',
@@ -301,6 +307,7 @@ function buildEmptyDraft(dayId = '') {
     description: '',
     bookingRef: '',
     travelModeToNext: '',
+    flightInfo: null,
     lat: null,
     lng: null,
     placeId: '',
@@ -347,6 +354,7 @@ function serializeTripState(tripState) {
             dayId: item.dayId,
             order: item.order,
             title: item.title,
+            flightCode: item.flightCode || '',
             locationName: item.locationName,
             address: item.address,
             category: item.category,
@@ -355,6 +363,7 @@ function serializeTripState(tripState) {
             description: item.description,
             bookingRef: item.bookingRef,
             travelModeToNext: item.travelModeToNext || '',
+            flightInfo: item.flightInfo || null,
             lat: item.lat,
             lng: item.lng,
             placeId: item.placeId,
@@ -368,12 +377,176 @@ function generatedItemPatch(item) {
   return {
     id: item.id,
     dayId: item.dayId,
+    flightCode: item.flightCode || '',
     startTime: item.startTime,
     endTime: item.endTime,
     description: item.description,
     bookingRef: item.bookingRef,
     travelModeToNext: item.travelModeToNext || '',
+    flightInfo: item.flightInfo || null,
   }
+}
+
+function toTokyoDateInput(value) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(value)
+}
+
+function isTodayInTokyo(date) {
+  if (!date) return false
+  return date === toTokyoDateInput(new Date())
+}
+
+function formatLocalTimeToClock(value) {
+  if (!value) return ''
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+
+  return new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Tokyo',
+  }).format(date)
+}
+
+function buildFlightLookupKey(flightCode, date) {
+  if (!flightCode || !date) return ''
+  return `${flightCode.trim().toUpperCase()}|${date}`
+}
+
+function airportCodeLabel(code, name) {
+  if (code && name) return `${code} · ${name}`
+  return code || name || ''
+}
+
+function buildFlightTitle(record, flightCode) {
+  const departureCode = record?.departureAirport || 'DEP'
+  const arrivalCode = record?.arrivalAirport || 'ARR'
+  return `Flight ${departureCode} to ${arrivalCode} (${flightCode})`
+}
+
+function buildFlightInfoBlock(record) {
+  const lines = [
+    airportCodeLabel(record.departureAirport, record.departureAirportName)
+      ? `Departure: ${airportCodeLabel(record.departureAirport, record.departureAirportName)}`
+      : '',
+    record.departureTerminal ? `Departure terminal: ${record.departureTerminal}` : '',
+    record.departureGate ? `Departure gate: ${record.departureGate}` : '',
+    airportCodeLabel(record.arrivalAirport, record.arrivalAirportName)
+      ? `Arrival: ${airportCodeLabel(record.arrivalAirport, record.arrivalAirportName)}`
+      : '',
+    record.arrivalTerminal ? `Arrival terminal: ${record.arrivalTerminal}` : '',
+    record.arrivalGate ? `Arrival gate: ${record.arrivalGate}` : '',
+    record.aircraftModel ? `Aircraft: ${record.aircraftModel}` : '',
+  ].filter(Boolean)
+
+  if (!lines.length) return ''
+  return `\n\n[Flight details]\n${lines.join('\n')}`
+}
+
+function mergeFlightInfoIntoDescription(description, record) {
+  const base = String(description || '').replace(/\n?\n?\[Flight details\][\s\S]*$/u, '').trimEnd()
+  const block = buildFlightInfoBlock(record)
+  return block ? `${base}${block}`.trim() : base
+}
+
+function applyFlightRecordToDraft(item, record, flightCode, lookupKey) {
+  const departureLabel = airportCodeLabel(record.departureAirport, record.departureAirportName)
+  const arrivalLabel = airportCodeLabel(record.arrivalAirport, record.arrivalAirportName)
+  const departureLat =
+    typeof record.departureAirportLocation?.lat === 'number' ? record.departureAirportLocation.lat : item.lat
+  const departureLng =
+    typeof record.departureAirportLocation?.lng === 'number' ? record.departureAirportLocation.lng : item.lng
+
+  return {
+    ...item,
+    category: 'Flight',
+    flightCode,
+    title: buildFlightTitle(record, flightCode),
+    locationName: departureLabel && arrivalLabel ? `${departureLabel} → ${arrivalLabel}` : item.locationName,
+    address: [departureLabel, arrivalLabel].filter(Boolean).join(' → ') || item.address,
+    startTime: formatLocalTimeToClock(record.scheduledDeparture) || item.startTime,
+    endTime: formatLocalTimeToClock(record.scheduledArrival) || item.endTime,
+    lat: departureLat,
+    lng: departureLng,
+    description: mergeFlightInfoIntoDescription(item.description, record),
+    flightInfo: {
+      number: record.number || flightCode,
+      departureAirport: record.departureAirport || '',
+      departureAirportName: record.departureAirportName || '',
+      departureAirportLocation: record.departureAirportLocation || null,
+      departureTerminal: record.departureTerminal || '',
+      departureGate: record.departureGate || '',
+      arrivalAirport: record.arrivalAirport || '',
+      arrivalAirportName: record.arrivalAirportName || '',
+      arrivalAirportLocation: record.arrivalAirportLocation || null,
+      arrivalTerminal: record.arrivalTerminal || '',
+      arrivalGate: record.arrivalGate || '',
+      aircraftModel: record.aircraftModel || '',
+      scheduledDeparture: record.scheduledDeparture || '',
+      scheduledArrival: record.scheduledArrival || '',
+      lookupKey: lookupKey || '',
+      fetchedAt: new Date().toISOString(),
+    },
+  }
+}
+
+function hasAppliedFlightLookup(item, lookupKey) {
+  return Boolean(item?.flightInfo?.lookupKey && item.flightInfo.lookupKey === lookupKey)
+}
+
+function selectFlightRecord(records, flightCode) {
+  const normalizedCode = extractFlightNumber(flightCode)
+  if (!normalizedCode) return records?.[0] || null
+
+  return (
+    records.find((record) => extractFlightNumber(record.number || '') === normalizedCode) ||
+    records[0] ||
+    null
+  )
+}
+
+function getFlightAnchor(item, mode) {
+  const info = item?.flightInfo
+  if (!info) return null
+
+  const location =
+    mode === 'departure' ? info.departureAirportLocation : info.arrivalAirportLocation
+
+  if (typeof location?.lat !== 'number' || typeof location?.lng !== 'number') {
+    return null
+  }
+
+  return {
+    lat: location.lat,
+    lng: location.lng,
+  }
+}
+
+function resolveTravelPoint(item, direction) {
+  if (!item) return null
+  if (item.category === 'Flight') {
+    const anchor = getFlightAnchor(item, direction === 'outbound' ? 'arrival' : 'departure')
+    if (anchor) {
+      return {
+        ...item,
+        lat: anchor.lat,
+        lng: anchor.lng,
+      }
+    }
+  }
+
+  if (typeof item.lat === 'number' && typeof item.lng === 'number') {
+    return item
+  }
+
+  return null
 }
 
 function assignItemOrder(items) {
@@ -418,8 +591,9 @@ function getScheduleConflictMeta(items) {
 function makeMovementPairs(items) {
   return items
     .slice(0, -1)
-    .map((item, index) => [item, items[index + 1]])
-    .filter(([from, to]) => typeof from.lat === 'number' && typeof to.lat === 'number')
+    .map((item, index) => [resolveTravelPoint(item, 'outbound'), resolveTravelPoint(items[index + 1], 'inbound'), item, items[index + 1]])
+    .filter(([fromPoint, toPoint]) => typeof fromPoint?.lat === 'number' && typeof toPoint?.lat === 'number')
+    .map(([fromPoint, toPoint, fromItem, toItem]) => [fromPoint, toPoint, fromItem, toItem])
 }
 
 function getRouteMode(from, to) {
@@ -1123,6 +1297,7 @@ function DetailModal({
 }) {
   const fieldReadOnly = !firestoreReady
   const linkedLocked = isGenerated
+  const effectiveFlightCode = detailItem.flightCode || extractFlightNumber(detailItem.title || '')
   const travelModeMeta = useMemo(() => {
     if (detailItem.travelModeToNext === 'driving') {
       return { label: 'Car to next stop', icon: CarFront }
@@ -1227,10 +1402,17 @@ function DetailModal({
               ))}
             </select>
           </Field>
-          <Field label="Title">
+          <Field label={detailItem.category === 'Flight' ? 'Flight code' : 'Title'}>
             <input
-              value={detailItem.title}
-              onChange={(event) => onChange({ title: event.target.value })}
+              value={detailItem.category === 'Flight' ? effectiveFlightCode : detailItem.title}
+              onChange={(event) =>
+                onChange(
+                  detailItem.category === 'Flight'
+                    ? { flightCode: event.target.value.toUpperCase().replace(/\s+/g, '') }
+                    : { title: event.target.value },
+                )
+              }
+              placeholder={detailItem.category === 'Flight' ? 'CX549' : ''}
               disabled={fieldReadOnly || linkedLocked}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             />
@@ -1252,12 +1434,14 @@ function DetailModal({
         </div>
 
         <div className="mt-3.5 space-y-3">
-          <PlaceFields
-            draft={detailItem}
-            disabled={fieldReadOnly || linkedLocked}
-            mapsReady={mapsReady}
-            onChange={onChange}
-          />
+          {detailItem.category !== 'Flight' ? (
+            <PlaceFields
+              draft={detailItem}
+              disabled={fieldReadOnly || linkedLocked}
+              mapsReady={mapsReady}
+              onChange={onChange}
+            />
+          ) : null}
 
           <Field label="Booking ref">
             <input
@@ -1307,6 +1491,7 @@ function PlannerPanel({
   dragState,
   filteredItems,
   firestoreReady,
+  getFlightRecord,
   isMobilePortrait,
   mapsReady,
   onDayChange,
@@ -1334,6 +1519,15 @@ function PlannerPanel({
         ? draft.dayId
         : dayOptions[0]?.id || ''
   const [isComposerOpen, setIsComposerOpen] = useState(activeDayId !== DAY_VIEW_ALL)
+  const draftFlightCode = draft.flightCode || extractFlightNumber(draft.title || '')
+  const draftDayDate = dayMap[effectiveDraftDayId]?.date || ''
+  const draftAppliedLookupKey = draft.flightInfo?.lookupKey || ''
+  const draftFlightLookup = inferFlightLookupFromItem({
+    ...draft,
+    flightCode: draftFlightCode,
+    dayDate: draftDayDate,
+  })
+  const draftLookupKey = buildFlightLookupKey(draftFlightLookup?.flightNumber, draftFlightLookup?.date)
   const manualOrderLookup = useMemo(() => {
     const lookup = {}
     const counts = {}
@@ -1361,11 +1555,101 @@ function PlannerPanel({
     ])
   }, [dayMap, draft, effectiveDraftDayId])
 
+  useEffect(() => {
+    if (draft.category !== 'Flight' || !draftFlightLookup?.flightNumber || !draftFlightLookup.date) return undefined
+    if (!isTodayInTokyo(draftDayDate) && draftAppliedLookupKey === draftLookupKey) {
+      return undefined
+    }
+
+    let active = true
+
+    async function syncDraftFlight() {
+      try {
+        const record = await getFlightRecord({
+          date: draftFlightLookup.date,
+          flightCode: draftFlightLookup.flightNumber,
+          forceRefresh: isTodayInTokyo(draftFlightLookup.date),
+        })
+
+        if (!active || !record) return
+
+        setDraft((current) => {
+          const currentFlightCode = current.flightCode || extractFlightNumber(current.title || '')
+          const currentDayDate = dayMap[
+            current.dayId && dayOptions.some((day) => day.id === current.dayId)
+              ? current.dayId
+              : effectiveDraftDayId
+          ]?.date || ''
+          const currentLookupKey = buildFlightLookupKey(currentFlightCode, currentDayDate)
+
+          if (
+            current.category !== 'Flight' ||
+            currentFlightCode !== draftFlightLookup.flightNumber ||
+            currentLookupKey !== draftLookupKey
+          ) {
+            return current
+          }
+
+          if (!isTodayInTokyo(draftFlightLookup.date) && hasAppliedFlightLookup(current, draftLookupKey)) {
+            return current
+          }
+
+          return applyFlightRecordToDraft(current, record, draftFlightLookup.flightNumber, draftLookupKey)
+        })
+      } catch (error) {
+        console.error(error)
+      }
+    }
+
+    void syncDraftFlight()
+    return () => {
+      active = false
+    }
+  }, [
+    dayMap,
+    dayOptions,
+    draft.category,
+    draftAppliedLookupKey,
+    draft.dayId,
+    draft.title,
+    draftDayDate,
+    draftFlightLookup,
+    draftLookupKey,
+    effectiveDraftDayId,
+    getFlightRecord,
+  ])
+
   async function saveNewItem() {
     if (!firestoreReady || !effectiveDraftDayId) return
 
-    await onSaveNewItem({
+    let nextDraft = {
       ...draft,
+      dayId: effectiveDraftDayId,
+    }
+
+    if (nextDraft.category === 'Flight' && draftFlightLookup?.flightNumber && draftFlightLookup.date) {
+      try {
+        const record = await getFlightRecord({
+          date: draftFlightLookup.date,
+          flightCode: draftFlightLookup.flightNumber,
+          forceRefresh: isTodayInTokyo(draftFlightLookup.date),
+        })
+
+        if (record) {
+          nextDraft = applyFlightRecordToDraft(
+            nextDraft,
+            record,
+            draftFlightLookup.flightNumber,
+            draftLookupKey,
+          )
+        }
+      } catch (error) {
+        console.error(error)
+      }
+    }
+
+    await onSaveNewItem({
+      ...nextDraft,
       dayId: effectiveDraftDayId,
       id: slugId('item'),
     })
@@ -1691,10 +1975,17 @@ function PlannerPanel({
                   ))}
                 </select>
               </Field>
-              <Field label="Title">
+              <Field label={draft.category === 'Flight' ? 'Flight code' : 'Title'}>
                 <input
-                  value={draft.title}
-                  onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                  value={draft.category === 'Flight' ? draftFlightCode : draft.title}
+                  onChange={(event) =>
+                    setDraft((current) =>
+                      draft.category === 'Flight'
+                        ? { ...current, flightCode: event.target.value.toUpperCase().replace(/\s+/g, '') }
+                        : { ...current, title: event.target.value },
+                    )
+                  }
+                  placeholder={draft.category === 'Flight' ? 'CX549' : ''}
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                 />
               </Field>
@@ -1713,12 +2004,14 @@ function PlannerPanel({
             </div>
 
             <div className="mt-4 space-y-3">
-              <PlaceFields
-                draft={draft}
-                disabled={!firestoreReady}
-                mapsReady={mapsReady}
-                onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
-              />
+              {draft.category !== 'Flight' ? (
+                <PlaceFields
+                  draft={draft}
+                  disabled={!firestoreReady}
+                  mapsReady={mapsReady}
+                  onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
+                />
+              ) : null}
 
               <Field label="Notes">
                 <textarea
@@ -1825,6 +2118,7 @@ export default function App() {
 
   const isMobilePortrait = useResponsiveMode()
   const routeCacheRef = useRef(new Map())
+  const flightLookupCacheRef = useRef(new Map())
   const debounceRef = useRef(null)
   const dragDaySwitchRef = useRef(null)
   const dragStateRef = useRef(null)
@@ -1889,6 +2183,17 @@ export default function App() {
       ? null
       : weatherState.data?.dailyByDate?.[tripState.dayMap[resolvedActiveDayId]?.date || ''] ?? null
   const firestoreReady = firebaseEnabled && authReady && firestoreState.status === 'ready'
+  const detailItemId = detailItem?.id || ''
+  const detailCategory = detailItem?.category || ''
+  const detailAppliedLookupKey = detailItem?.flightInfo?.lookupKey || ''
+  const detailDayDate = detailItem?.dayId ? tripState.dayMap[detailItem.dayId]?.date || '' : ''
+  const detailFlightLookup = inferFlightLookupFromItem({
+    ...(detailItem || {}),
+    flightCode: detailItem?.flightCode || extractFlightNumber(detailItem?.title || ''),
+    dayDate: detailDayDate,
+  })
+  const detailFlightCode = detailFlightLookup?.flightNumber || ''
+  const detailFlightLookupKey = buildFlightLookupKey(detailFlightLookup?.flightNumber, detailFlightLookup?.date)
   const detailScheduleConflict = useMemo(() => {
     if (!detailItem?.dayId) return null
     const existingItems = (tripState.dayMap[detailItem.dayId]?.items || []).filter(
@@ -1896,6 +2201,35 @@ export default function App() {
     )
     return getScheduleConflictMeta([...existingItems, detailItem])
   }, [detailItem, tripState.dayMap])
+
+  const getFlightRecord = useMemo(
+    () =>
+      async ({ date, flightCode, forceRefresh = false }) => {
+        const normalizedCode = extractFlightNumber(flightCode)
+        const lookupKey = buildFlightLookupKey(normalizedCode, date)
+
+        if (!normalizedCode || !date || !lookupKey) return null
+
+        if (!forceRefresh) {
+          const cached = flightLookupCacheRef.current.get(lookupKey)
+          if (cached) return cached
+        }
+
+        const payload = await fetchFlightStatusByNumber({
+          date,
+          flightNumber: normalizedCode,
+          withLocation: true,
+        })
+        const record = selectFlightRecord(payload.records || [], normalizedCode)
+
+        if (record) {
+          flightLookupCacheRef.current.set(lookupKey, record)
+        }
+
+        return record
+      },
+    [],
+  )
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -2035,6 +2369,68 @@ export default function App() {
       endDate: defaultTripSummary.endDate,
     })
   }, [defaultTripSummary, firestoreReady, tripSummaries])
+
+  useEffect(() => {
+    if (!detailItemId || detailCategory !== 'Flight' || !detailFlightCode || !detailDayDate) {
+      return undefined
+    }
+    if (!isTodayInTokyo(detailDayDate) && detailAppliedLookupKey === detailFlightLookupKey) {
+      return undefined
+    }
+
+    let active = true
+
+    async function syncDetailFlight() {
+      try {
+        const record = await getFlightRecord({
+          date: detailDayDate,
+          flightCode: detailFlightCode,
+          forceRefresh: isTodayInTokyo(detailDayDate),
+        })
+
+        if (!active || !record) return
+
+        setDetailItem((current) => {
+          if (!current) return current
+
+          const currentFlightCode = current.flightCode || extractFlightNumber(current.title || '')
+          const currentDayDate = current.dayId ? tripState.dayMap[current.dayId]?.date || '' : ''
+          const currentLookupKey = buildFlightLookupKey(currentFlightCode, currentDayDate)
+
+          if (
+            current.id !== detailItemId ||
+            current.category !== 'Flight' ||
+            currentFlightCode !== detailFlightCode ||
+            currentLookupKey !== detailFlightLookupKey
+          ) {
+            return current
+          }
+
+          if (!isTodayInTokyo(detailDayDate) && hasAppliedFlightLookup(current, detailFlightLookupKey)) {
+            return current
+          }
+
+          return applyFlightRecordToDraft(current, record, detailFlightCode, detailFlightLookupKey)
+        })
+      } catch (error) {
+        console.error(error)
+      }
+    }
+
+    void syncDetailFlight()
+    return () => {
+      active = false
+    }
+  }, [
+    detailDayDate,
+    detailFlightCode,
+    detailFlightLookupKey,
+    detailAppliedLookupKey,
+    detailCategory,
+    detailItemId,
+    getFlightRecord,
+    tripState.dayMap,
+  ])
 
   useEffect(() => {
     if (!detailItem || !firestoreReady) return
@@ -2207,14 +2603,14 @@ export default function App() {
 
     async function loadRoutes() {
       const entries = await Promise.all(
-        routePairs.map(async ([from, to]) => {
-          const mode = getRouteMode(from, to)
-          const key = `${from.id}:${to.id}:${mode}`
+        routePairs.map(async ([fromPoint, toPoint, fromItem, toItem]) => {
+          const mode = getRouteMode(fromItem, toItem)
+          const key = `${fromItem.id}:${toItem.id}:${mode}:${fromPoint.lat},${fromPoint.lng}:${toPoint.lat},${toPoint.lng}`
           const cached = routeCacheRef.current.get(key)
           if (cached) return [key, cached]
 
           try {
-            const result = await requestDirectionsRoute(from, to, mode)
+            const result = await requestDirectionsRoute(fromPoint, toPoint, mode)
 
             const summary = toRouteSummary(result, mode)
             routeCacheRef.current.set(key, summary)
@@ -2222,13 +2618,13 @@ export default function App() {
           } catch (error) {
             console.error(error)
             try {
-              const retried = await requestDirectionsRoute(from, to, mode)
+              const retried = await requestDirectionsRoute(fromPoint, toPoint, mode)
               const summary = toRouteSummary(retried, mode)
               routeCacheRef.current.set(key, summary)
               return [key, summary]
             } catch (retryError) {
               console.error(retryError)
-              const fallback = buildFallbackRouteSummary(from, to, mode)
+              const fallback = buildFallbackRouteSummary(fromPoint, toPoint, mode)
               routeCacheRef.current.set(key, fallback)
               return [key, fallback]
             }
@@ -2249,13 +2645,12 @@ export default function App() {
 
   const routeSegments = useMemo(
     () =>
-      deferredItems.slice(0, -1).map((item, index) => {
-        const next = deferredItems[index + 1]
-        const mode = getRouteMode(item, next)
-        const key = `${item.id}:${next.id}:${mode}`
-        return { id: key, from: item, to: next, route: routeMap[key], mode }
+      routePairs.map(([fromPoint, toPoint, fromItem, toItem]) => {
+        const mode = getRouteMode(fromItem, toItem)
+        const key = `${fromItem.id}:${toItem.id}:${mode}:${fromPoint.lat},${fromPoint.lng}:${toPoint.lat},${toPoint.lng}`
+        return { id: key, from: fromItem, to: toItem, route: routeMap[key], mode }
       }),
-    [deferredItems, routeMap],
+    [routePairs, routeMap],
   )
 
   async function saveItem(item) {
@@ -2536,6 +2931,7 @@ export default function App() {
             dragState={dragState}
             filteredItems={filteredItems}
             firestoreReady={firestoreReady}
+            getFlightRecord={getFlightRecord}
             isMobilePortrait={isMobilePortrait}
             mapsReady={googleMapsState.ready}
             onDayChange={(dayId) => {

@@ -10,6 +10,7 @@ Mobile-first trip planner for the May 9-13, 2026 Tokyo / Chiba family wedding tr
 - Leaflet + OpenStreetMap tiles
 - Open-Meteo weather
 - Frankfurter exchange rates
+- AeroDataBox via RapidAPI (server-side)
 - Firebase Auth + Firestore overrides
 - OSRM road routing
 
@@ -19,7 +20,8 @@ Mobile-first trip planner for the May 9-13, 2026 Tokyo / Chiba family wedding tr
    `npm install`
 2. Copy `.env.example` to `.env.local`.
 3. Fill in the Firebase values.
-4. Start the app:
+4. Add the AeroDataBox RapidAPI key if you want flight status lookups.
+5. Start the app:
    `npm run dev`
 
 ## Firebase Setup
@@ -47,6 +49,8 @@ VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
 VITE_TRIP_DOC_ID=tokyo-chiba-wedding-2026
+AERODATABOX_RAPIDAPI_KEY=your_aerodatabox_rapidapi_key
+AERODATABOX_RAPIDAPI_HOST=aerodatabox.p.rapidapi.com
 ```
 
 ### Firestore Data Model
@@ -87,5 +91,7 @@ Document shape:
 ## Notes
 
 - Weather uses Open-Meteo, so there is no weather API key to manage.
+- AeroDataBox is wired server-side through `api/aerodatabox.js`, so the RapidAPI key stays off the client.
+- Frontend helpers for future flight UI live in `src/services/aerodatabox.js`.
 - Autosave is debounced to 1000ms before writing to Firestore.
 - Long press is 600ms and cancels when touch movement suggests scrolling.
