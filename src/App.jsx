@@ -193,14 +193,14 @@ function RouteModeControl({ currentMode, onSelect }) {
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="inline-flex items-center gap-1.5 rounded-full bg-white/92 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-white"
+        className="inline-flex items-center gap-1.5 rounded-full bg-white/96 px-2.5 py-1.5 text-[10px] font-semibold tracking-[-0.01em] text-slate-600 transition hover:bg-white"
       >
         <span>{activeOption.label}</span>
         <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-[calc(100%+0.45rem)] z-20 min-w-[9.5rem] rounded-[0.95rem] border border-slate-200 bg-white p-1.5 shadow-[0_14px_30px_rgba(15,23,42,0.08)]">
+        <div className="absolute right-0 top-[calc(100%+0.45rem)] z-20 min-w-[9.5rem] rounded-[0.9rem] border border-slate-200/90 bg-white/98 p-1.5 shadow-[0_14px_28px_rgba(15,23,42,0.07)]">
           {ROUTE_MODE_OPTIONS.map((option) => {
             const active = (currentMode || '') === option.value
             return (
@@ -211,7 +211,7 @@ function RouteModeControl({ currentMode, onSelect }) {
                   onSelect(option.value)
                   setOpen(false)
                 }}
-                className={`flex w-full items-center justify-between rounded-[0.75rem] px-2.5 py-2 text-left text-[11px] font-medium transition ${
+                className={`flex w-full items-center justify-between rounded-[0.75rem] px-2.5 py-2 text-left text-[11px] font-medium tracking-[-0.01em] transition ${
                   active ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
                 }`}
               >
@@ -870,9 +870,9 @@ function GooglePlaceField({
           }}
           disabled={disabled || !mapsReady}
           placeholder="Search with Google Maps"
-          className="w-full min-w-0 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+          className="w-full min-w-0 rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-[14px] text-slate-900 disabled:bg-slate-100"
         />
-        <div className="flex w-12 items-center justify-center rounded-2xl bg-slate-900 text-white">
+        <div className="flex w-11 items-center justify-center rounded-[1.1rem] bg-slate-900 text-white">
           {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
         </div>
       </div>
@@ -886,18 +886,18 @@ function GooglePlaceField({
       ) : null}
 
       {predictions.length ? (
-        <div className="space-y-2 rounded-2xl bg-slate-50 p-2.5">
+        <div className="space-y-1.5 rounded-[1.15rem] bg-slate-50/90 p-2">
           {predictions.map((prediction) => (
             <button
               key={prediction.place_id}
               type="button"
               onClick={() => selectPrediction(prediction)}
-              className="block w-full rounded-2xl bg-white px-3.5 py-3 text-left"
+              className="block w-full rounded-[1rem] bg-white px-3.5 py-3 text-left transition hover:bg-slate-50"
             >
-              <div className="truncate text-sm font-semibold text-slate-900">
+              <div className="truncate text-[13px] font-semibold tracking-[-0.01em] text-slate-900">
                 {prediction.structured_formatting?.main_text || prediction.description}
               </div>
-              <div className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">
+              <div className="mt-1 line-clamp-2 text-[11px] leading-5 text-slate-500">
                 {prediction.structured_formatting?.secondary_text || prediction.description}
               </div>
             </button>
@@ -944,7 +944,7 @@ function PlaceFields({ draft, disabled, mapsReady, onChange }) {
 function Field({ label, children, className = '' }) {
   return (
     <label className={`block ${className}`}>
-      <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+      <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
         {label}
       </span>
       {children}
@@ -956,7 +956,7 @@ function TimeField({ conflict, disabled, label, onChange, value }) {
   return (
     <label className="block">
       <span
-        className={`mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${
+        className={`mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] ${
           conflict ? 'font-bold text-rose-600' : 'text-slate-500'
         }`}
       >
@@ -968,10 +968,10 @@ function TimeField({ conflict, disabled, label, onChange, value }) {
         value={value}
         onChange={onChange}
         disabled={disabled}
-        className={`w-full rounded-2xl border bg-white px-4 py-3 text-[14px] disabled:bg-slate-100 ${
+        className={`w-full rounded-[1.15rem] border bg-white px-4 py-3 text-[14px] tracking-[-0.01em] disabled:bg-slate-100 ${
           conflict
             ? 'border-rose-300 font-bold text-rose-700 ring-1 ring-rose-200'
-            : 'border-slate-200'
+            : 'border-slate-200/90'
         }`}
       />
     </label>
@@ -1028,7 +1028,7 @@ function TripSwitcher({
   return (
     <div
       ref={containerRef}
-      className="relative z-40 isolate rounded-[1.05rem] border border-[rgba(255,255,255,0.7)] bg-[rgba(255,252,247,0.95)] px-2.5 py-1.5 shadow-[0_10px_28px_rgba(35,56,64,0.04)] sm:px-3 sm:py-2"
+      className="relative z-40 isolate rounded-[1rem] border border-white/70 bg-[rgba(255,252,247,0.96)] px-2.5 py-1.5 shadow-[0_10px_24px_rgba(35,56,64,0.03)] sm:px-3 sm:py-2"
     >
       <div className="mb-0.5 flex items-center justify-between gap-3 px-0.5">
         <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400">Trips</div>
@@ -1039,15 +1039,15 @@ function TripSwitcher({
         onClick={() => setOpen((current) => !current)}
         disabled={disabled || !activeTrip}
         aria-expanded={open}
-        className={`flex w-full items-center justify-between gap-2.5 rounded-[0.85rem] border border-slate-200/90 bg-white text-left text-slate-900 transition hover:border-slate-300 ${
-          isMobilePortrait ? 'px-2.5 py-2' : 'px-3 py-2'
+        className={`flex w-full items-center justify-between gap-2.5 rounded-[0.9rem] border border-slate-200/90 bg-white text-left text-slate-900 transition hover:border-slate-300 ${
+          isMobilePortrait ? 'px-2.5 py-2' : 'px-3 py-2.5'
         } disabled:bg-slate-100`}
       >
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-semibold text-slate-900 sm:text-[14px]">
+          <div className="truncate text-[13px] font-semibold tracking-[-0.01em] text-slate-900 sm:text-[14px]">
             {activeTrip?.title || 'Select trip'}
           </div>
-          <div className="truncate pt-0.5 text-[9px] font-medium tracking-[0.01em] text-slate-500 sm:text-[10px]">
+          <div className="truncate pt-0.5 text-[9px] font-medium text-slate-500 sm:text-[10px]">
             {activeTrip ? formatTripDateRange(activeTrip.startDate, activeTrip.endDate) : 'No trip'}
           </div>
         </div>
@@ -1058,7 +1058,7 @@ function TripSwitcher({
 
       {open ? (
         <div className="absolute inset-x-0 top-[calc(100%+0.55rem)] z-50">
-          <div className="overflow-hidden rounded-[1.05rem] border border-slate-200 bg-[rgba(255,253,250,0.98)] p-1.5 shadow-[0_18px_44px_rgba(15,23,42,0.1)] backdrop-blur-sm">
+          <div className="overflow-hidden rounded-[1rem] border border-slate-200/90 bg-[rgba(255,253,250,0.99)] p-1.5 shadow-[0_18px_38px_rgba(15,23,42,0.08)] backdrop-blur-sm">
             <div className="no-scrollbar max-h-[min(24rem,56svh)] overflow-y-auto pr-0.5">
               {tripSummaries.map((trip) => {
                 const selected = trip.id === activeTripId
@@ -1067,12 +1067,12 @@ function TripSwitcher({
                     key={trip.id}
                     type="button"
                     onClick={() => handleSelectTrip(trip.id)}
-                    className={`flex w-full items-center gap-3 rounded-[0.95rem] px-3 py-2.5 text-left transition ${
+                    className={`flex w-full items-center gap-3 rounded-[0.9rem] px-3 py-2.5 text-left transition ${
                       selected ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-white/80'
                     }`}
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-semibold">{trip.title}</div>
+                      <div className="truncate text-[13px] font-semibold tracking-[-0.01em]">{trip.title}</div>
                       <div
                         className={`truncate pt-0.5 text-[11px] ${
                           selected ? 'text-slate-300' : 'text-slate-500'
@@ -1098,7 +1098,7 @@ function TripSwitcher({
                   type="button"
                   onClick={() => void onRenameTrip()}
                   disabled={disabled || !activeTrip}
-                  className="flex items-center justify-center gap-2 rounded-[0.85rem] px-3 py-2 text-[12px] font-semibold text-slate-600 transition hover:bg-white/80 disabled:text-slate-400"
+                  className="flex items-center justify-center gap-2 rounded-[0.8rem] px-3 py-2 text-[12px] font-semibold text-slate-600 transition hover:bg-white/80 disabled:text-slate-400"
                 >
                   <Pencil className="h-3.5 w-3.5" />
                   Rename
@@ -1107,7 +1107,7 @@ function TripSwitcher({
                   type="button"
                   onClick={() => void onDeleteTrip()}
                   disabled={disabled || !activeTrip || activeTrip.id === TRIP_ID}
-                  className="flex items-center justify-center gap-2 rounded-[0.85rem] px-3 py-2 text-[12px] font-semibold text-rose-600 transition hover:bg-rose-50 disabled:text-slate-300"
+                  className="flex items-center justify-center gap-2 rounded-[0.8rem] px-3 py-2 text-[12px] font-semibold text-rose-600 transition hover:bg-rose-50 disabled:text-slate-300"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   Delete
@@ -1124,7 +1124,7 @@ function TripSwitcher({
                         key={trip.id}
                         type="button"
                         onClick={() => void onRestoreTrip(trip.id)}
-                        className="flex w-full items-center justify-between gap-3 rounded-[0.85rem] px-3 py-2 text-left text-slate-600 transition hover:bg-white/80"
+                        className="flex w-full items-center justify-between gap-3 rounded-[0.8rem] px-3 py-2 text-left text-slate-600 transition hover:bg-white/80"
                       >
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-[12px] font-semibold text-slate-700">{trip.title}</div>
@@ -1144,10 +1144,10 @@ function TripSwitcher({
                 type="button"
                 onClick={() => void handleCreateTrip()}
                 disabled={disabled}
-                className="flex w-full items-center justify-between gap-3 rounded-[0.95rem] px-3 py-2.5 text-left text-slate-700 transition hover:bg-white/80 disabled:text-slate-400"
+                className="flex w-full items-center justify-between gap-3 rounded-[0.9rem] px-3 py-2.5 text-left text-slate-700 transition hover:bg-white/80 disabled:text-slate-400"
               >
                 <div>
-                  <div className="text-sm font-semibold">New trip</div>
+                  <div className="text-[13px] font-semibold tracking-[-0.01em]">New trip</div>
                   <div className="pt-0.5 text-[11px] text-slate-500">Create a separate itinerary workspace.</div>
                 </div>
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white">
@@ -1185,14 +1185,14 @@ function DayManagerModal({
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        className={`glass-panel w-full max-h-[82svh] overflow-y-auto border border-white/60 p-5 sm:max-h-[calc(100svh-4rem)] sm:p-6 ${
-          isMobilePortrait ? 'rounded-[1.7rem] sm:max-w-md' : 'max-w-3xl rounded-[2rem]'
+        className={`glass-panel w-full max-h-[82svh] overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+          isMobilePortrait ? 'rounded-[1.55rem] sm:max-w-md' : 'max-w-3xl rounded-[1.8rem]'
         }`}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-2xl font-bold text-slate-900">Manage days</h3>
-            <p className="mt-1 text-sm text-slate-600">
+            <h3 className="text-[1.7rem] font-bold tracking-[-0.02em] text-slate-900">Manage days</h3>
+            <p className="mt-1 text-[13px] text-slate-600">
               Reorder, rename, edit dates, add, or delete trip days.
             </p>
           </div>
@@ -1201,11 +1201,11 @@ function DayManagerModal({
           </button>
         </div>
 
-        <div className="mt-5 space-y-3">
+        <div className="mt-4 space-y-2.5">
           {days.map((day, index) => (
             <div
               key={day.id}
-              className={`rounded-[1.5rem] bg-white p-4 shadow-sm ${
+              className={`rounded-[1.3rem] bg-white p-4 shadow-[0_2px_10px_rgba(15,23,42,0.03)] ${
                 day.id === activeDayId ? 'ring-2 ring-indigo-200' : ''
               }`}
             >
@@ -1255,13 +1255,13 @@ function DayManagerModal({
                   </button>
                 </div>
               </div>
-              <div className="mt-2 text-sm text-slate-500">{buildDayLabel(day, index)}</div>
+              <div className="mt-2 text-[13px] text-slate-500">{buildDayLabel(day, index)}</div>
             </div>
           ))}
         </div>
 
-        <div className="mt-6 rounded-[1.5rem] bg-slate-50 p-4">
-          <div className="text-sm font-semibold text-slate-900">Add day</div>
+        <div className="mt-5 rounded-[1.3rem] bg-slate-50/85 p-4">
+          <div className="text-[13px] font-semibold tracking-[-0.01em] text-slate-900">Add day</div>
           <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
             <Field label="Date">
               <input
@@ -1303,13 +1303,13 @@ function NoteModal({ item, isMobilePortrait, onClose, onDelete, onOpenDetails })
       <div
         onClick={(event) => event.stopPropagation()}
         className={`glass-panel browse-ui w-full max-h-[78svh] overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
-          isMobilePortrait ? 'rounded-[1.45rem] sm:max-w-md' : 'max-w-lg rounded-[1.85rem]'
+          isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-lg rounded-[1.65rem]'
         }`}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-[1.55rem] font-bold tracking-[-0.02em] text-slate-900">{item.title}</h3>
-            <p className="mt-1 text-[13px] text-slate-600">{item.locationName || item.address}</p>
+            <h3 className="text-[1.45rem] font-bold tracking-[-0.025em] text-slate-900">{item.title}</h3>
+            <p className="mt-1 text-[12px] leading-5 text-slate-600">{item.locationName || item.address}</p>
           </div>
           <div className="flex items-center gap-2">
             {!item.generated ? (
@@ -1328,19 +1328,19 @@ function NoteModal({ item, isMobilePortrait, onClose, onDelete, onOpenDetails })
           </div>
         </div>
 
-        <div className="mt-3.5 space-y-2.5">
-          <div className="rounded-[1.1rem] bg-white px-4 py-4">
+        <div className="mt-3.5 space-y-2">
+          <div className="rounded-[1rem] bg-white px-4 py-3.5">
             <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Notes</div>
-            <div className="mt-2 whitespace-pre-wrap text-[14px] leading-6 text-slate-700">
+            <div className="mt-2 whitespace-pre-wrap text-[13px] leading-6 text-slate-700">
               {item.generated
                 ? 'This hotel stop stays linked to the previous day hotel. You can still adjust time, notes, and booking details here.'
                 : item.description || 'No notes yet.'}
             </div>
           </div>
           {item.bookingRef ? (
-            <div className="rounded-[1.1rem] bg-white px-4 py-4">
+            <div className="rounded-[1rem] bg-white px-4 py-3.5">
               <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Booking ref</div>
-              <div className="mt-2 text-[14px] font-semibold text-slate-900">{item.bookingRef}</div>
+              <div className="mt-2 text-[13px] font-semibold tracking-[-0.01em] text-slate-900">{item.bookingRef}</div>
             </div>
           ) : null}
         </div>
@@ -1348,7 +1348,7 @@ function NoteModal({ item, isMobilePortrait, onClose, onDelete, onOpenDetails })
         <button
           type="button"
           onClick={onOpenDetails}
-          className="mt-3.5 w-full rounded-[1rem] bg-slate-900 px-4 py-3.5 text-sm font-bold text-white"
+          className="mt-3.5 w-full rounded-[0.95rem] bg-slate-900 px-4 py-3.5 text-sm font-bold text-white"
         >
           {item.generated ? 'View linked details' : 'Open details'}
         </button>
@@ -1394,13 +1394,13 @@ function DetailModal({
       <div
         onClick={(event) => event.stopPropagation()}
         className={`glass-panel w-full max-h-[78svh] overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
-          isMobilePortrait ? 'rounded-[1.45rem] sm:max-w-md' : 'max-w-xl rounded-[1.85rem]'
+          isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-xl rounded-[1.7rem]'
         }`}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-[1.55rem] font-bold tracking-[-0.02em] text-slate-900">{detailItem.title}</h3>
-            <div className="mt-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+            <h3 className="text-[1.45rem] font-bold tracking-[-0.025em] text-slate-900">{detailItem.title}</h3>
+            <div className="mt-1.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
               {autosaveStatus === 'saving' ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
@@ -1436,25 +1436,25 @@ function DetailModal({
         </div>
 
         {isGenerated ? (
-          <div className="mt-4 rounded-[1rem] bg-amber-50 px-4 py-3 text-[13px] text-amber-700">
+          <div className="mt-4 rounded-[0.95rem] bg-amber-50/90 px-4 py-3 text-[13px] leading-6 text-amber-700">
             This stop stays linked to the previous day hotel for place continuity. You can still edit its time, notes, and booking reference here.
           </div>
         ) : null}
 
         {travelModeMeta ? (
-          <div className="mt-4 flex items-center gap-2 rounded-[1rem] bg-slate-100 px-4 py-3 text-[13px] text-slate-600">
+          <div className="mt-4 flex items-center gap-2 rounded-[0.95rem] bg-slate-100/90 px-4 py-3 text-[13px] text-slate-600">
             <travelModeMeta.icon className="h-4 w-4 text-slate-500" />
             <span>{travelModeMeta.label}</span>
           </div>
         ) : null}
 
-        <div className={`mt-3.5 grid gap-3 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
+        <div className={`mt-3.5 grid gap-3.5 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
           <Field label="Day">
             <select
               value={detailItem.dayId}
               onChange={(event) => onChange({ dayId: event.target.value })}
               disabled={fieldReadOnly || linkedLocked}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+              className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             >
               {dayOptions.map((day) => (
                 <option key={day.id} value={day.id}>
@@ -1468,7 +1468,7 @@ function DetailModal({
               value={detailItem.category}
               onChange={(event) => onChange({ category: event.target.value })}
               disabled={fieldReadOnly || linkedLocked}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+              className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             >
               {CATEGORY_OPTIONS.map((option) => (
                 <option key={option} value={option}>
@@ -1489,7 +1489,7 @@ function DetailModal({
               }
               placeholder={detailItem.category === 'Flight' ? 'CX549' : ''}
               disabled={fieldReadOnly || linkedLocked}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+              className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             />
           </Field>
           <TimeField
@@ -1523,7 +1523,7 @@ function DetailModal({
               value={detailItem.bookingRef || ''}
               onChange={(event) => onChange({ bookingRef: event.target.value })}
               disabled={fieldReadOnly}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+              className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             />
           </Field>
           <Field label="Notes">
@@ -1532,7 +1532,7 @@ function DetailModal({
               value={detailItem.description || ''}
               onChange={(event) => onChange({ description: event.target.value })}
               disabled={fieldReadOnly}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+              className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             />
           </Field>
         </div>
@@ -1545,7 +1545,7 @@ function DetailModal({
           }
           target="_blank"
           rel="noreferrer"
-          className={`mt-3.5 flex items-center justify-between rounded-[1.1rem] px-4 py-3.5 text-sm font-bold ${
+          className={`mt-3.5 flex items-center justify-between rounded-[1rem] px-4 py-3.5 text-sm font-bold ${
             typeof detailItem.lat === 'number' && typeof detailItem.lng === 'number'
               ? 'bg-indigo-600 text-white'
               : 'pointer-events-none bg-slate-100 text-slate-400'
@@ -1736,11 +1736,11 @@ function PlannerPanel({
   return (
     <>
       <div className="sticky top-4 z-20 space-y-2.5 browse-ui">
-        <div className="glass-panel rounded-[1.35rem] border border-white/60 px-3.5 py-3 sm:rounded-[1.55rem] sm:px-5 sm:py-4">
+        <div className="glass-panel rounded-[1.25rem] border border-white/60 px-3.5 py-3 sm:rounded-[1.45rem] sm:px-5 sm:py-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               {activeDayId !== DAY_VIEW_ALL ? (
-                <h2 className={`headline leading-none tracking-[-0.02em] text-slate-900 ${isMobilePortrait ? 'text-[1.48rem]' : 'text-[1.9rem]'}`}>
+                <h2 className={`headline leading-none tracking-[-0.025em] text-slate-900 ${isMobilePortrait ? 'text-[1.44rem]' : 'text-[1.84rem]'}`}>
                   {dayOptions.find((day) => day.id === activeDayId)?.label || 'Day view'}
                 </h2>
               ) : null}
@@ -1757,7 +1757,7 @@ function PlannerPanel({
               type="button"
               onClick={onManageDays}
               className={`shrink-0 rounded-full border border-slate-200/90 bg-white text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 ${
-                isMobilePortrait ? 'p-2.5' : 'flex items-center gap-2 px-3 py-2'
+                isMobilePortrait ? 'p-2.5' : 'flex items-center gap-2 px-3.5 py-2'
               }`}
               aria-label="Manage days"
             >
@@ -1779,7 +1779,7 @@ function PlannerPanel({
                     activeDayId === DAY_VIEW_ALL ? 'bg-slate-900 text-white shadow-[0_6px_18px_rgba(15,23,42,0.12)]' : 'bg-white text-slate-600'
                   }`}
                 >
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em]">Overview</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.06em]">Overview</div>
                 </button>
                 {dayOptions.map((day, index) => (
                   <button
@@ -1795,7 +1795,7 @@ function PlannerPanel({
                           : 'bg-white text-slate-600'
                     }`}
                   >
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.06em]">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.05em]">
                       Day {index + 1}
                       <span className={`ml-1.5 font-medium normal-case tracking-normal ${activeDayId === day.id ? 'text-white/72' : 'text-slate-400'}`}>
                         {formatDayDate(day.date)}
@@ -1809,7 +1809,7 @@ function PlannerPanel({
 
           {weatherDisplay ? (
             isMobilePortrait ? (
-              <div className="mt-3 flex items-center gap-3 rounded-[0.95rem] bg-white px-3 py-2.5">
+              <div className="mt-3 flex items-center gap-3 rounded-[0.9rem] bg-white px-3 py-2.5">
                 <div className="rounded-xl bg-slate-100 p-2 text-slate-700">
                   <weatherDisplay.icon className="h-4 w-4" />
                 </div>
@@ -1821,13 +1821,13 @@ function PlannerPanel({
                 </div>
               </div>
             ) : (
-              <div className="mt-4 flex items-center justify-between gap-4 rounded-[1.1rem] bg-white px-4 py-3">
+              <div className="mt-4 flex items-center justify-between gap-4 rounded-[1rem] bg-white px-4 py-3">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Weather</p>
                   <div className="mt-1 text-[15px] font-semibold text-slate-900">{weatherDisplay.headline}</div>
                   <div className="mt-1 text-[13px] text-slate-500">{weatherDisplay.detail}</div>
                 </div>
-                <div className="rounded-2xl bg-slate-100 p-3 text-slate-700">
+                <div className="rounded-[1rem] bg-slate-100 p-3 text-slate-700">
                   <weatherDisplay.icon className="h-5 w-5" />
                 </div>
               </div>
@@ -1881,7 +1881,7 @@ function PlannerPanel({
                 />
               ) : null}
               <article
-                className={`timeline-card relative rounded-[1.35rem] px-4 py-4 transition hover:bg-white/90 active:bg-white/95 sm:px-5 ${
+                className={`timeline-card relative rounded-[1.25rem] px-4 py-4 transition hover:bg-white/90 active:bg-white/95 sm:px-5 ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
                 }`}
                 onClick={() => onOpenNotes(item)}
@@ -1893,9 +1893,9 @@ function PlannerPanel({
                 onPointerLeave={onOpenDetails.cancelPress}
               >
                 <div className="flex gap-4 sm:gap-5">
-                  <div className="w-[3.65rem] shrink-0 pt-0.5 text-right">
+                  <div className="w-[3.55rem] shrink-0 pt-0.5 text-right">
                     <div className="text-[13px] font-semibold tracking-[-0.01em] text-slate-900">{item.startTime}</div>
-                    {item.endTime ? <div className="mt-1 text-[10px] font-medium text-slate-400">{item.endTime}</div> : null}
+                    {item.endTime ? <div className="mt-1 text-[10px] font-medium tracking-[-0.01em] text-slate-400">{item.endTime}</div> : null}
                   </div>
                   <div className="timeline-rail shrink-0">
                     <span className={`timeline-dot ${meta.tone}`} />
@@ -1903,12 +1903,12 @@ function PlannerPanel({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <h3 className="text-[0.99rem] font-semibold leading-6 tracking-[-0.01em] text-slate-900">{item.title}</h3>
-                        <p className="mt-1 truncate text-[13px] text-slate-500">{item.locationName || item.address}</p>
+                        <h3 className="text-[0.98rem] font-semibold leading-6 tracking-[-0.015em] text-slate-900">{item.title}</h3>
+                        <p className="mt-1 truncate text-[12px] text-slate-500">{item.locationName || item.address}</p>
                       </div>
                       <div className="flex items-center gap-2">
                         {item.generated ? (
-                          <div className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                          <div className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-700">
                             Linked
                           </div>
                         ) : (
@@ -1929,7 +1929,7 @@ function PlannerPanel({
                       <p className="mt-1 truncate text-[11px] text-slate-400">{item.address}</p>
                     ) : null}
                     {(item.description || item.generated) ? (
-                      <p className="mt-2 line-clamp-2 text-[13px] leading-6 text-slate-500">
+                      <p className="mt-2 line-clamp-2 text-[12px] leading-6 text-slate-500">
                         {item.generated ? 'Auto-carried from the previous day hotel stay.' : item.description}
                       </p>
                     ) : null}
@@ -1939,7 +1939,7 @@ function PlannerPanel({
 
               {nextSegment ? (
                 <div
-                  className={`ml-[4.9rem] rounded-[0.95rem] px-4 py-1.5 text-[11px] text-slate-500 sm:ml-[6rem] ${
+                  className={`ml-[4.85rem] rounded-[0.9rem] px-4 py-1.5 text-[11px] text-slate-500 sm:ml-[5.9rem] ${
                     isMobilePortrait
                       ? 'flex items-center justify-between gap-3'
                       : 'flex items-center justify-between gap-4'
@@ -1998,16 +1998,16 @@ function PlannerPanel({
         ) : null}
       </div>
 
-      <div className="glass-panel rounded-[1.5rem] border border-white/60 px-4 py-4 sm:px-5 browse-ui">
+      <div className="glass-panel rounded-[1.35rem] border border-white/60 px-4 py-4 sm:px-5 browse-ui">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h3 className="headline text-[1.72rem] leading-none tracking-[-0.02em] text-slate-900">Add stop</h3>
+            <h3 className="headline text-[1.66rem] leading-none tracking-[-0.025em] text-slate-900">Add stop</h3>
             <p className="mt-1 text-[13px] text-slate-500">Open the composer only when you need it.</p>
           </div>
           <button
             type="button"
             onClick={() => setIsComposerOpen((open) => !open)}
-            className={`rounded-[1rem] px-4 py-2.5 text-[13px] font-semibold transition ${
+            className={`rounded-[0.95rem] px-4 py-2.5 text-[13px] font-semibold transition ${
               isComposerOpen ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'
             }`}
           >
@@ -2022,7 +2022,7 @@ function PlannerPanel({
                 <select
                   value={effectiveDraftDayId}
                   onChange={(event) => setDraft((current) => ({ ...current, dayId: event.target.value }))}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                  className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
                 >
                   {dayOptions.map((day) => (
                     <option key={day.id} value={day.id}>
@@ -2054,7 +2054,7 @@ function PlannerPanel({
                       }
                     })
                   }
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                  className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
                 >
                   {CATEGORY_OPTIONS.map((option) => (
                     <option key={option} value={option}>
@@ -2074,7 +2074,7 @@ function PlannerPanel({
                     )
                   }
                   placeholder={draft.category === 'Flight' ? 'CX549' : ''}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                  className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
                 />
               </Field>
               <TimeField
@@ -2110,7 +2110,7 @@ function PlannerPanel({
                   onChange={(event) =>
                     setDraft((current) => ({ ...current, description: event.target.value }))
                   }
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                  className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
                 />
               </Field>
               <Field label="Booking ref">
@@ -2119,7 +2119,7 @@ function PlannerPanel({
                   onChange={(event) =>
                     setDraft((current) => ({ ...current, bookingRef: event.target.value }))
                   }
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                  className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
                 />
               </Field>
             </div>
@@ -2128,13 +2128,13 @@ function PlannerPanel({
               type="button"
               onClick={() => void saveNewItem()}
               disabled={!firestoreReady || !effectiveDraftDayId}
-              className="mt-5 w-full rounded-[1.25rem] bg-slate-900 px-4 py-4 text-sm font-bold text-white disabled:bg-slate-300"
+              className="mt-5 w-full rounded-[1.1rem] bg-slate-900 px-4 py-4 text-sm font-bold text-white disabled:bg-slate-300"
             >
               Save new itinerary detail
             </button>
           </>
         ) : (
-          <div className="mt-4 rounded-[1rem] bg-white px-4 py-3 text-[13px] leading-6 text-slate-500">
+          <div className="mt-4 rounded-[0.95rem] bg-white px-4 py-3 text-[13px] leading-6 text-slate-500">
             Open the composer only when you need to add a new stop.
           </div>
         )}
@@ -2148,10 +2148,10 @@ function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, map
 
   return (
     <div className="browse-ui">
-      <div className="glass-panel rounded-[1.5rem] border border-white/60 px-4 py-4 sm:px-5">
+      <div className="glass-panel rounded-[1.35rem] border border-white/60 px-4 py-4 sm:px-5">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="headline text-[1.72rem] leading-none tracking-[-0.02em] text-slate-900">Map</h2>
+            <h2 className="headline text-[1.66rem] leading-none tracking-[-0.025em] text-slate-900">Map</h2>
             <p className="mt-1 text-[13px] text-slate-500">
               {activeDayId === DAY_VIEW_ALL ? 'Whole trip view' : 'Selected day route'}
             </p>
