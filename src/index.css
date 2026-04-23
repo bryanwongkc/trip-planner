@@ -137,6 +137,10 @@ body::before {
   touch-action: manipulation;
 }
 
+.browse-ui button[data-drag-handle='true'] {
+  touch-action: none;
+}
+
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;

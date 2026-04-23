@@ -1563,6 +1563,7 @@ function PlannerPanel({
                             type="button"
                             onPointerDown={(event) => onDragStart(event, item)}
                             onClick={(event) => event.stopPropagation()}
+                            data-drag-handle="true"
                             className="touch-none rounded-full bg-slate-100 p-2 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 active:scale-95"
                             aria-label={`Drag ${item.title}`}
                           >
@@ -2110,7 +2111,13 @@ export default function App() {
   useEffect(() => {
     if (!dragState?.itemId) return undefined
     const previousTouchAction = document.body.style.touchAction
+    const previousOverflow = document.body.style.overflow
     document.body.style.touchAction = 'none'
+    document.body.style.overflow = 'hidden'
+
+    function preventTouchMove(event) {
+      event.preventDefault()
+    }
 
     function handlePointerMove(event) {
       const currentDrag = dragStateRef.current
@@ -2182,12 +2189,15 @@ export default function App() {
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
     window.addEventListener('pointercancel', clearDragState)
+    window.addEventListener('touchmove', preventTouchMove, { passive: false })
 
     return () => {
       document.body.style.touchAction = previousTouchAction
+      document.body.style.overflow = previousOverflow
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
       window.removeEventListener('pointercancel', clearDragState)
+      window.removeEventListener('touchmove', preventTouchMove)
     }
   }, [dragState?.itemId, resolvedActiveDayId, resolvedTripId, tripState])
 
