@@ -1,6 +1,6 @@
 # Trip Planner
 
-Mobile-first trip planner for the May 9-13, 2026 Tokyo / Chiba family wedding trip.
+Mobile-first trip planner for multi-stop travel itineraries.
 
 ## Stack
 
@@ -48,7 +48,7 @@ VITE_FIREBASE_PROJECT_ID=your_project_id
 VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
-VITE_TRIP_DOC_ID=tokyo-chiba-wedding-2026
+VITE_TRIP_DOC_ID=default-trip
 AERODATABOX_RAPIDAPI_KEY=your_aerodatabox_rapidapi_key
 AERODATABOX_RAPIDAPI_HOST=aerodatabox.p.rapidapi.com
 ```

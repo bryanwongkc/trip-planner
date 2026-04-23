@@ -1,8 +1,3 @@
-const CHIBA_TOKYO_CORRIDOR = {
-  lat: 35.6074,
-  lng: 140.1065,
-}
-
 export const WEATHER_LABELS = {
   clear: 'Clear skies',
   cloudy: 'Cloud cover',
@@ -21,15 +16,24 @@ function classifyWeatherCode(code) {
   return 'rain'
 }
 
-export async function fetchWeatherSnapshot() {
+export async function fetchWeatherSnapshot({ lat, lng } = {}) {
+  if (typeof lat !== 'number' || typeof lng !== 'number') {
+    return {
+      current: null,
+      dailyByDate: {},
+      availableDates: [],
+      forecastDays: 0,
+    }
+  }
+
   const forecastDays = 16
   const params = new URLSearchParams({
-    latitude: String(CHIBA_TOKYO_CORRIDOR.lat),
-    longitude: String(CHIBA_TOKYO_CORRIDOR.lng),
+    latitude: String(lat),
+    longitude: String(lng),
     current: 'temperature_2m,weather_code',
     daily:
       'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
-    timezone: 'Asia/Tokyo',
+    timezone: 'auto',
     forecast_days: String(forecastDays),
   })
 
@@ -42,7 +46,7 @@ export async function fetchWeatherSnapshot() {
   const payload = await response.json()
   const dailyByDate = {}
 
-  payload.daily.time.forEach((date, index) => {
+  payload.daily?.time?.forEach((date, index) => {
     const weatherKey = classifyWeatherCode(payload.daily.weather_code[index])
     dailyByDate[date] = {
       date,
@@ -54,16 +58,21 @@ export async function fetchWeatherSnapshot() {
     }
   })
 
-  const currentWeatherKey = classifyWeatherCode(payload.current.weather_code)
+  const currentWeatherKey =
+    typeof payload.current?.weather_code === 'number'
+      ? classifyWeatherCode(payload.current.weather_code)
+      : null
 
   return {
-    current: {
-      temp: payload.current.temperature_2m,
-      weatherKey: currentWeatherKey,
-      label: WEATHER_LABELS[currentWeatherKey],
-    },
+    current: currentWeatherKey
+      ? {
+          temp: payload.current.temperature_2m,
+          weatherKey: currentWeatherKey,
+          label: WEATHER_LABELS[currentWeatherKey],
+        }
+      : null,
     dailyByDate,
-    availableDates: payload.daily.time,
+    availableDates: payload.daily?.time || [],
     forecastDays,
   }
 }

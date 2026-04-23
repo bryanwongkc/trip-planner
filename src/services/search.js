@@ -163,19 +163,6 @@ function buildVariants(query) {
 
   variants.add(normalized)
   knownAliases.forEach((alias) => variants.add(alias))
-  variants.add(`${normalized} Japan`)
-  variants.add(`${normalized} Chiba`)
-  variants.add(`${normalized} Kisarazu`)
-
-  if (/[一-龯ぁ-んァ-ン]/.test(normalized)) {
-    variants.add(`${normalized} 千葉`)
-    variants.add(`${normalized} 木更津`)
-  }
-
-  if (/[一-龯]/.test(normalized)) {
-    variants.add(`${normalized} 日本`)
-    variants.add(`${normalized} 千葉 日本`)
-  }
 
   if (normalized.includes('ホテル')) {
     variants.add(normalized.replace(/\s*ホテル\s*/g, ' '))
@@ -206,10 +193,7 @@ async function searchByText(query) {
 
   const seen = new Set()
   const results = []
-  const searchPlans = [
-    { countrycodes: 'jp' },
-    {},
-  ]
+  const searchPlans = [{}]
 
   for (const plan of searchPlans) {
     for (const variant of variants) {

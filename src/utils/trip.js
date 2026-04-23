@@ -14,8 +14,7 @@ export function formatDayDate(date) {
   return new Intl.DateTimeFormat('en-HK', {
     day: 'numeric',
     month: 'short',
-    timeZone: 'Asia/Tokyo',
-  }).format(new Date(`${date}T00:00:00+09:00`))
+  }).format(new Date(`${date}T12:00:00`))
 }
 
 export function formatFullDayDate(date) {
@@ -23,8 +22,7 @@ export function formatFullDayDate(date) {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
-    timeZone: 'Asia/Tokyo',
-  }).format(new Date(`${date}T00:00:00+09:00`))
+  }).format(new Date(`${date}T12:00:00`))
 }
 
 export function buildDayLabel(day, index) {

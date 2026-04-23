@@ -226,14 +226,6 @@ function RouteModeControl({ currentMode, onSelect }) {
   )
 }
 
-const SEASONAL_WEATHER_HINTS = {
-  5: {
-    headline: 'Typical mid-May, 23 deg / 16 deg',
-    detail: 'Usually mild with sun, cloud, and light shower risk.',
-    icon: Cloud,
-  },
-}
-
 function getWeatherDisplay(activeDayId, weatherState, selectedWeather) {
   if (activeDayId === DAY_VIEW_ALL) return null
 
@@ -267,20 +259,6 @@ function getWeatherDisplay(activeDayId, weatherState, selectedWeather) {
   const availableDates = weatherState.data?.availableDates || []
   const firstAvailable = availableDates[0]
   const lastAvailable = availableDates[availableDates.length - 1]
-  const month = Number(activeDayId.split('-')[1] || 0)
-  const seasonalHint = SEASONAL_WEATHER_HINTS[month]
-
-  if (seasonalHint) {
-    return {
-      ...seasonalHint,
-      eyebrow:
-        firstAvailable && lastAvailable
-          ? `Live forecast window: ${formatFullDayDate(firstAvailable)} to ${formatFullDayDate(lastAvailable)}.`
-          : 'Live forecast is not available for this date yet.',
-      compact: seasonalHint.headline,
-      seasonal: true,
-    }
-  }
 
   return {
     headline: 'Forecast not available yet',
@@ -387,18 +365,18 @@ function generatedItemPatch(item) {
   }
 }
 
-function toTokyoDateInput(value) {
+function toLocalDateInput(value) {
   return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tokyo',
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   }).format(value)
 }
 
-function isTodayInTokyo(date) {
+function isCurrentDate(date) {
   if (!date) return false
-  return date === toTokyoDateInput(new Date())
+  return date === toLocalDateInput(new Date())
 }
 
 function formatLocalTimeToClock(value) {
@@ -411,7 +389,6 @@ function formatLocalTimeToClock(value) {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-    timeZone: 'Asia/Tokyo',
   }).format(date)
 }
 
@@ -447,11 +424,13 @@ function buildFlightInfoBlock(record) {
   ].filter(Boolean)
 
   if (!lines.length) return ''
-  return `\n\n[Flight details]\n${lines.join('\n')}`
+  return `\n\n${lines.join('\n')}`
 }
 
 function mergeFlightInfoIntoDescription(description, record) {
-  const base = String(description || '').replace(/\n?\n?\[Flight details\][\s\S]*$/u, '').trimEnd()
+  const base = String(description || '')
+    .replace(/\n?\n?(?:\[Flight details\]\n)?Departure:[\s\S]*$/u, '')
+    .trimEnd()
   const block = buildFlightInfoBlock(record)
   return block ? `${base}${block}`.trim() : base
 }
@@ -639,6 +618,27 @@ function buildFallbackRouteSummary(from, to, mode) {
   }
 }
 
+function getWeatherTarget(items) {
+  const locatedItems = items.filter(
+    (item) => typeof item?.lat === 'number' && typeof item?.lng === 'number',
+  )
+
+  if (!locatedItems.length) return null
+
+  const total = locatedItems.reduce(
+    (sum, item) => ({
+      lat: sum.lat + item.lat,
+      lng: sum.lng + item.lng,
+    }),
+    { lat: 0, lng: 0 },
+  )
+
+  return {
+    lat: total.lat / locatedItems.length,
+    lng: total.lng / locatedItems.length,
+  }
+}
+
 async function requestDirectionsRoute(from, to, mode) {
   const directionsService = new window.google.maps.DirectionsService()
 
@@ -719,7 +719,6 @@ function GooglePlaceField({
         {
           input: value,
           sessionToken: tokenRef.current,
-          componentRestrictions: { country: 'jp' },
         },
         (results, status) => {
           if (cancelled) return
@@ -1557,7 +1556,7 @@ function PlannerPanel({
 
   useEffect(() => {
     if (draft.category !== 'Flight' || !draftFlightLookup?.flightNumber || !draftFlightLookup.date) return undefined
-    if (!isTodayInTokyo(draftDayDate) && draftAppliedLookupKey === draftLookupKey) {
+    if (!isCurrentDate(draftDayDate) && draftAppliedLookupKey === draftLookupKey) {
       return undefined
     }
 
@@ -1568,7 +1567,7 @@ function PlannerPanel({
         const record = await getFlightRecord({
           date: draftFlightLookup.date,
           flightCode: draftFlightLookup.flightNumber,
-          forceRefresh: isTodayInTokyo(draftFlightLookup.date),
+          forceRefresh: isCurrentDate(draftFlightLookup.date),
         })
 
         if (!active || !record) return
@@ -1590,7 +1589,7 @@ function PlannerPanel({
             return current
           }
 
-          if (!isTodayInTokyo(draftFlightLookup.date) && hasAppliedFlightLookup(current, draftLookupKey)) {
+          if (!isCurrentDate(draftFlightLookup.date) && hasAppliedFlightLookup(current, draftLookupKey)) {
             return current
           }
 
@@ -1632,7 +1631,7 @@ function PlannerPanel({
         const record = await getFlightRecord({
           date: draftFlightLookup.date,
           flightCode: draftFlightLookup.flightNumber,
-          forceRefresh: isTodayInTokyo(draftFlightLookup.date),
+          forceRefresh: isCurrentDate(draftFlightLookup.date),
         })
 
         if (record) {
@@ -1742,21 +1741,15 @@ function PlannerPanel({
                   <div className="truncate text-[12px] font-semibold text-slate-900">
                     {weatherDisplay.compact || weatherDisplay.headline}
                   </div>
-                  <div className="mt-0.5 truncate text-[10px] text-slate-500">
-                    {weatherDisplay.seasonal ? 'Seasonal outlook for this date' : weatherDisplay.detail}
-                  </div>
+                  <div className="mt-0.5 truncate text-[10px] text-slate-500">{weatherDisplay.detail}</div>
                 </div>
               </div>
             ) : (
               <div className="mt-4 flex items-center justify-between gap-4 rounded-[1.1rem] bg-white px-4 py-3">
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-                    {weatherDisplay.seasonal ? 'Seasonal weather' : 'Weather'}
-                  </p>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Weather</p>
                   <div className="mt-1 text-[15px] font-semibold text-slate-900">{weatherDisplay.headline}</div>
-                  <div className="mt-1 text-[13px] text-slate-500">
-                    {weatherDisplay.seasonal ? weatherDisplay.eyebrow : weatherDisplay.detail}
-                  </div>
+                  <div className="mt-1 text-[13px] text-slate-500">{weatherDisplay.detail}</div>
                 </div>
                 <div className="rounded-2xl bg-slate-100 p-3 text-slate-700">
                   <weatherDisplay.icon className="h-5 w-5" />
@@ -1965,7 +1958,26 @@ function PlannerPanel({
               <Field label="Category">
                 <select
                   value={draft.category}
-                  onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value }))}
+                  onChange={(event) =>
+                    setDraft((current) => {
+                      const nextCategory = event.target.value
+                      if (nextCategory === 'Flight') {
+                        return {
+                          ...current,
+                          category: nextCategory,
+                          startTime: '',
+                          endTime: '',
+                        }
+                      }
+
+                      return {
+                        ...current,
+                        category: nextCategory,
+                        startTime: current.startTime || '10:00',
+                        endTime: current.endTime || '11:00',
+                      }
+                    })
+                  }
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                 >
                   {CATEGORY_OPTIONS.map((option) => (
@@ -1993,12 +2005,14 @@ function PlannerPanel({
                 label="Start time"
                 value={draft.startTime}
                 onChange={(event) => setDraft((current) => ({ ...current, startTime: event.target.value }))}
+                disabled={draft.category === 'Flight'}
                 conflict={Boolean(draftScheduleConflict?.nextId === draftConflictId)}
               />
               <TimeField
                 label="End time"
                 value={draft.endTime}
                 onChange={(event) => setDraft((current) => ({ ...current, endTime: event.target.value }))}
+                disabled={draft.category === 'Flight'}
                 conflict={Boolean(draftScheduleConflict?.currentId === draftConflictId)}
               />
             </div>
@@ -2108,7 +2122,12 @@ export default function App() {
     status: firebaseEnabled ? 'connecting' : 'disabled',
     error: '',
   })
-  const [weatherState, setWeatherState] = useState({ loading: true, data: null, error: '' })
+  const [weatherState, setWeatherState] = useState({
+    loading: true,
+    data: null,
+    error: '',
+    targetKey: '',
+  })
   const [noteItem, setNoteItem] = useState(null)
   const [detailItem, setDetailItem] = useState(null)
   const [autosaveStatus, setAutosaveStatus] = useState(firebaseEnabled ? 'saved' : 'offline')
@@ -2121,6 +2140,8 @@ export default function App() {
   const flightLookupCacheRef = useRef(new Map())
   const debounceRef = useRef(null)
   const dragDaySwitchRef = useRef(null)
+  const dragAutoScrollFrameRef = useRef(null)
+  const dragPointerRef = useRef({ x: 0, y: 0 })
   const dragStateRef = useRef(null)
   const pressStateRef = useRef({
     timer: null,
@@ -2182,6 +2203,22 @@ export default function App() {
     resolvedActiveDayId === DAY_VIEW_ALL
       ? null
       : weatherState.data?.dailyByDate?.[tripState.dayMap[resolvedActiveDayId]?.date || ''] ?? null
+  const weatherTarget = useMemo(() => {
+    const sourceItems =
+      resolvedActiveDayId === DAY_VIEW_ALL
+        ? tripState.items
+        : tripState.dayMap[resolvedActiveDayId]?.items || []
+    return getWeatherTarget(sourceItems)
+  }, [resolvedActiveDayId, tripState.dayMap, tripState.items])
+  const weatherTargetKey = weatherTarget
+    ? `${weatherTarget.lat.toFixed(4)},${weatherTarget.lng.toFixed(4)}`
+    : ''
+  const effectiveWeatherState = weatherTarget
+    ? {
+        ...weatherState,
+        loading: weatherState.targetKey !== weatherTargetKey,
+      }
+    : { loading: false, data: null, error: '' }
   const firestoreReady = firebaseEnabled && authReady && firestoreState.status === 'ready'
   const detailItemId = detailItem?.id || ''
   const detailCategory = detailItem?.category || ''
@@ -2345,19 +2382,28 @@ export default function App() {
   useEffect(() => {
     let cancelled = false
 
-    fetchWeatherSnapshot()
+    if (!weatherTarget) return undefined
+
+    fetchWeatherSnapshot(weatherTarget)
       .then((data) => {
-        if (!cancelled) setWeatherState({ loading: false, data, error: '' })
+        if (!cancelled) setWeatherState({ loading: false, data, error: '', targetKey: weatherTargetKey })
       })
       .catch((error) => {
         console.error(error)
-        if (!cancelled) setWeatherState({ loading: false, data: null, error: 'Weather unavailable' })
+        if (!cancelled) {
+          setWeatherState({
+            loading: false,
+            data: null,
+            error: 'Weather unavailable',
+            targetKey: weatherTargetKey,
+          })
+        }
       })
 
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [weatherTarget, weatherTargetKey])
 
   useEffect(() => {
     if (!firestoreReady) return
@@ -2374,7 +2420,7 @@ export default function App() {
     if (!detailItemId || detailCategory !== 'Flight' || !detailFlightCode || !detailDayDate) {
       return undefined
     }
-    if (!isTodayInTokyo(detailDayDate) && detailAppliedLookupKey === detailFlightLookupKey) {
+    if (!isCurrentDate(detailDayDate) && detailAppliedLookupKey === detailFlightLookupKey) {
       return undefined
     }
 
@@ -2385,7 +2431,7 @@ export default function App() {
         const record = await getFlightRecord({
           date: detailDayDate,
           flightCode: detailFlightCode,
-          forceRefresh: isTodayInTokyo(detailDayDate),
+          forceRefresh: isCurrentDate(detailDayDate),
         })
 
         if (!active || !record) return
@@ -2406,7 +2452,7 @@ export default function App() {
             return current
           }
 
-          if (!isTodayInTokyo(detailDayDate) && hasAppliedFlightLookup(current, detailFlightLookupKey)) {
+          if (!isCurrentDate(detailDayDate) && hasAppliedFlightLookup(current, detailFlightLookupKey)) {
             return current
           }
 
@@ -2485,6 +2531,10 @@ export default function App() {
       window.clearTimeout(dragDaySwitchRef.current)
       dragDaySwitchRef.current = null
     }
+    if (dragAutoScrollFrameRef.current) {
+      window.cancelAnimationFrame(dragAutoScrollFrameRef.current)
+      dragAutoScrollFrameRef.current = null
+    }
     dragStateRef.current = null
     setDragState(null)
   }
@@ -2507,18 +2557,16 @@ export default function App() {
   useEffect(() => {
     if (!dragState?.itemId) return undefined
     const previousTouchAction = document.body.style.touchAction
-    const previousOverflow = document.body.style.overflow
     document.body.style.touchAction = 'none'
-    document.body.style.overflow = 'hidden'
 
     function preventTouchMove(event) {
       event.preventDefault()
     }
 
-    function handlePointerMove(event) {
+    function updateDragTarget(clientX, clientY) {
       const currentDrag = dragStateRef.current
       if (!currentDrag) return
-      const target = document.elementFromPoint(event.clientX, event.clientY)
+      const target = document.elementFromPoint(clientX, clientY)
       if (!target) {
         setDragState((current) => (current ? { ...current, overDayId: null, slot: null } : current))
         return
@@ -2565,6 +2613,41 @@ export default function App() {
       setDragState((current) => (current ? { ...current, overDayId: null, slot: null } : current))
     }
 
+    function tickAutoScroll() {
+      if (!dragStateRef.current) {
+        dragAutoScrollFrameRef.current = null
+        return
+      }
+
+      const edgeThreshold = 88
+      const maxStep = 18
+      const { x, y } = dragPointerRef.current
+      let deltaY = 0
+
+      if (y < edgeThreshold) {
+        deltaY = -Math.ceil(((edgeThreshold - y) / edgeThreshold) * maxStep)
+      } else if (y > window.innerHeight - edgeThreshold) {
+        deltaY = Math.ceil(((y - (window.innerHeight - edgeThreshold)) / edgeThreshold) * maxStep)
+      }
+
+      if (deltaY !== 0) {
+        const scroller = document.scrollingElement || document.documentElement
+        const previousTop = scroller.scrollTop
+        window.scrollBy(0, deltaY)
+        if (scroller.scrollTop !== previousTop) {
+          updateDragTarget(x, y)
+        }
+      }
+
+      dragAutoScrollFrameRef.current = window.requestAnimationFrame(tickAutoScroll)
+    }
+
+    function handlePointerMove(event) {
+      if (!dragStateRef.current) return
+      dragPointerRef.current = { x: event.clientX, y: event.clientY }
+      updateDragTarget(event.clientX, event.clientY)
+    }
+
     async function handlePointerUp() {
       const currentDrag = dragStateRef.current
       const dropSlot = currentDrag?.slot
@@ -2586,10 +2669,14 @@ export default function App() {
     window.addEventListener('pointerup', handlePointerUp)
     window.addEventListener('pointercancel', clearDragState)
     window.addEventListener('touchmove', preventTouchMove, { passive: false })
+    dragAutoScrollFrameRef.current = window.requestAnimationFrame(tickAutoScroll)
 
     return () => {
       document.body.style.touchAction = previousTouchAction
-      document.body.style.overflow = previousOverflow
+      if (dragAutoScrollFrameRef.current) {
+        window.cancelAnimationFrame(dragAutoScrollFrameRef.current)
+        dragAutoScrollFrameRef.current = null
+      }
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
       window.removeEventListener('pointercancel', clearDragState)
@@ -2952,7 +3039,7 @@ export default function App() {
             onUpdateTravelMode={(itemId, mode) => void updateTravelMode(itemId, mode)}
             routeSegments={routeSegments}
             selectedWeather={selectedWeather}
-            weatherState={weatherState}
+            weatherState={effectiveWeatherState}
           />
         </div>
 
