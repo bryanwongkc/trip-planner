@@ -69,6 +69,7 @@ import {
   reorderTripItems,
   renumberDays,
   slugId,
+  stripFlightLocationFields,
 } from './utils/trip'
 
 const LONG_PRESS_MS = 600
@@ -356,7 +357,7 @@ function serializeTripState(tripState) {
         .filter((item) => !item.generated)
         .map((item) => [
           item.id,
-          {
+          stripFlightLocationFields({
             id: item.id,
             dayId: item.dayId,
             order: item.order,
@@ -378,7 +379,7 @@ function serializeTripState(tripState) {
             lat: item.lat,
             lng: item.lng,
             placeId: item.placeId,
-          },
+          }),
         ]),
     ),
   }
@@ -473,14 +474,10 @@ function mergeFlightInfoIntoDescription(description, record) {
 }
 
 function applyFlightRecordToDraft(item, record, flightCode, lookupKey) {
-  const departureLabel = airportCodeLabel(record.departureAirport, record.departureAirportName)
-  const arrivalLabel = airportCodeLabel(record.arrivalAirport, record.arrivalAirportName)
-  const departureLat =
-    typeof record.departureAirportLocation?.lat === 'number' ? record.departureAirportLocation.lat : item.lat
-  const departureLng =
-    typeof record.departureAirportLocation?.lng === 'number' ? record.departureAirportLocation.lng : item.lng
+  const departureLabel = ''
+  const arrivalLabel = ''
 
-  return {
+  return stripFlightLocationFields({
     ...item,
     category: 'Flight',
     flightCode,
@@ -489,8 +486,6 @@ function applyFlightRecordToDraft(item, record, flightCode, lookupKey) {
     address: [departureLabel, arrivalLabel].filter(Boolean).join(' → ') || item.address,
     startTime: formatLocalTimeToClock(record.scheduledDeparture) || item.startTime,
     endTime: formatLocalTimeToClock(record.scheduledArrival) || item.endTime,
-    lat: departureLat,
-    lng: departureLng,
     description: mergeFlightInfoIntoDescription(item.description, record),
     flightInfo: {
       number: record.number || flightCode,
@@ -510,7 +505,7 @@ function applyFlightRecordToDraft(item, record, flightCode, lookupKey) {
       lookupKey: lookupKey || '',
       fetchedAt: new Date().toISOString(),
     },
-  }
+  })
 }
 
 function hasAppliedFlightLookup(item, lookupKey) {
@@ -631,7 +626,7 @@ function mergeItemsForDay(currentItems, nextItem) {
 }
 
 function createItemDraft(item) {
-  const normalized = normalizeItemTimeFields(item)
+  const normalized = stripFlightLocationFields(normalizeItemTimeFields(item))
   return {
     ...normalized,
     durationMinutes:
@@ -648,14 +643,14 @@ function applyItemDraftPatch(item, patch) {
     const derivedDuration =
       nextItem.durationMinutes ?? getDurationMinutes(nextItem.startTime, nextItem.endTime)
 
-    return normalizeItemTimeFields({
+    return stripFlightLocationFields(normalizeItemTimeFields({
       ...nextItem,
       endTimeMode: 'duration',
       durationMinutes: derivedDuration,
-    })
+    }))
   }
 
-  return normalizeItemTimeFields(nextItem)
+  return stripFlightLocationFields(normalizeItemTimeFields(nextItem))
 }
 
 function getEndTimeWarning(item) {
@@ -693,20 +688,17 @@ function makeMovementPairs(items) {
       item,
       items[index + 1],
     ])
+    .filter(([, , fromItem, toItem]) => fromItem.category !== 'Flight' && toItem.category !== 'Flight')
     .filter(([fromPoint, toPoint]) => typeof fromPoint?.lat === 'number' && typeof toPoint?.lat === 'number')
     .map(([fromPoint, toPoint, fromItem, toItem]) => [fromPoint, toPoint, fromItem, toItem])
 }
 
 function buildMapItems(items) {
   return items
+    .filter((item) => item.category !== 'Flight')
     .map((item, index) => {
       const previousItem = items[index - 1] || null
       const nextItem = items[index + 1] || null
-
-      if (item.category === 'Flight') {
-        if (nextItem) return resolveTravelPoint(item, 'outbound', nextItem)
-        if (previousItem) return resolveTravelPoint(item, 'inbound', previousItem)
-      }
 
       return resolveTravelPoint(item, 'outbound', nextItem)
     })
@@ -1519,7 +1511,7 @@ function NoteModal({ item, isMobilePortrait, onClose, onDelete, onOpenDetails })
 }
 
 function ItemQuickActionsModal({ item, isMobilePortrait, onClose, onOpenDetails }) {
-  const mapsUrl = getGoogleMapsUrl(item)
+  const mapsUrl = item.category === 'Flight' ? '' : getGoogleMapsUrl(item)
 
   return (
     <div
@@ -1551,18 +1543,18 @@ function ItemQuickActionsModal({ item, isMobilePortrait, onClose, onOpenDetails 
             <span>Edit details</span>
             <Pencil className="h-4 w-4 text-slate-400" />
           </button>
-          <a
-            href={mapsUrl || '#'}
-            target="_blank"
-            rel="noreferrer"
-            onClick={() => onClose()}
-            className={`flex w-full items-center justify-between rounded-[1rem] px-4 py-3.5 text-sm font-semibold ${
-              mapsUrl ? 'bg-white text-slate-800' : 'pointer-events-none bg-slate-100 text-slate-400'
-            }`}
-          >
-            <span>Open in Google Maps</span>
-            <ExternalLink className="h-4 w-4" />
-          </a>
+          {mapsUrl ? (
+            <a
+              href={mapsUrl}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => onClose()}
+              className="flex w-full items-center justify-between rounded-[1rem] bg-white px-4 py-3.5 text-sm font-semibold text-slate-800"
+            >
+              <span>Open in Google Maps</span>
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          ) : null}
           <button
             type="button"
             onClick={onClose}
@@ -1593,6 +1585,7 @@ function DetailModal({
   const fieldReadOnly = !firestoreReady
   const linkedLocked = isGenerated
   const effectiveFlightCode = detailItem.flightCode || extractFlightNumber(detailItem.title || '')
+  const mapsUrl = detailItem.category === 'Flight' ? '' : getGoogleMapsUrl(detailItem)
   const travelModeMeta = useMemo(() => {
     if (detailItem.travelModeToNext === 'driving') {
       return { label: 'Car to next stop', icon: CarFront }
@@ -1750,23 +1743,17 @@ function DetailModal({
           </Field>
         </div>
 
-        <a
-          href={
-            typeof detailItem.lat === 'number' && typeof detailItem.lng === 'number'
-              ? `https://www.google.com/maps/search/?api=1&query=${detailItem.lat},${detailItem.lng}`
-              : '#'
-          }
-          target="_blank"
-          rel="noreferrer"
-          className={`mt-3.5 flex items-center justify-between rounded-[1rem] px-4 py-3.5 text-sm font-bold ${
-            typeof detailItem.lat === 'number' && typeof detailItem.lng === 'number'
-              ? 'bg-indigo-600 text-white'
-              : 'pointer-events-none bg-slate-100 text-slate-400'
-          }`}
-        >
-          Open in Google Maps
-          <ExternalLink className="h-4 w-4" />
-        </a>
+        {mapsUrl ? (
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3.5 flex items-center justify-between rounded-[1rem] bg-indigo-600 px-4 py-3.5 text-sm font-bold text-white"
+          >
+            Open in Google Maps
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        ) : null}
 
         <div className="mt-4 flex items-center justify-end gap-2">
           <button
@@ -1807,7 +1794,7 @@ function PlannerPanel({
   onOpenNotes,
   onSaveNewItem,
   onUpdateTravelMode,
-  routeSegments,
+  routeSegmentMap,
   selectedWeather,
   weatherState,
 }) {
@@ -1928,10 +1915,10 @@ function PlannerPanel({
   async function saveNewItem() {
     if (!firestoreReady || !effectiveDraftDayId) return
 
-    let nextDraft = normalizeItemTimeFields({
+    let nextDraft = stripFlightLocationFields(normalizeItemTimeFields({
       ...draft,
       dayId: effectiveDraftDayId,
-    })
+    }))
 
     if (nextDraft.category === 'Flight' && draftFlightLookup?.flightNumber && draftFlightLookup.date) {
       try {
@@ -1955,7 +1942,7 @@ function PlannerPanel({
     }
 
     await onSaveNewItem({
-      ...normalizeItemTimeFields(nextDraft),
+      ...stripFlightLocationFields(normalizeItemTimeFields(nextDraft)),
       dayId: effectiveDraftDayId,
       id: slugId('item'),
     })
@@ -2074,7 +2061,7 @@ function PlannerPanel({
       <div className="space-y-2.5 browse-ui">
         {filteredItems.map((item, index) => {
           const meta = typeMeta(item.category)
-          const nextSegment = routeSegments[index]
+          const nextSegment = routeSegmentMap[item.id]
           const isOverview = activeDayId === DAY_VIEW_ALL
           const previousItem = filteredItems[index - 1]
           const nextItem = filteredItems[index + 1]
@@ -3044,9 +3031,13 @@ export default function App() {
       }),
     [routePairs, routeMap],
   )
+  const routeSegmentMap = useMemo(
+    () => Object.fromEntries(routeSegments.map((segment) => [segment.from.id, segment])),
+    [routeSegments],
+  )
 
   async function saveItem(item) {
-    const normalizedItem = normalizeItemTimeFields(item)
+    const normalizedItem = stripFlightLocationFields(normalizeItemTimeFields(item))
     const sameDayItems = (tripState.dayMap[item.dayId]?.items || []).filter((existing) => existing.id !== item.id)
     const manualItems = sameDayItems.filter((existing) => !existing.generated)
     const patchItems = Object.fromEntries(
@@ -3363,7 +3354,7 @@ export default function App() {
             onOpenNotes={openNotes}
             onSaveNewItem={saveItem}
             onUpdateTravelMode={(itemId, mode) => void updateTravelMode(itemId, mode)}
-            routeSegments={routeSegments}
+            routeSegmentMap={routeSegmentMap}
             selectedWeather={selectedWeather}
             weatherState={effectiveWeatherState}
           />

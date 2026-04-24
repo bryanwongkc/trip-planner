@@ -55,6 +55,19 @@ export function normalizeItemTimeFields(item) {
   }
 }
 
+export function stripFlightLocationFields(item) {
+  if (item?.category !== 'Flight') return item
+
+  return {
+    ...item,
+    locationName: '',
+    address: '',
+    lat: null,
+    lng: null,
+    placeId: '',
+  }
+}
+
 export function sortItemsByTimeline(items) {
   return [...items]
     .filter((item) => !item.hidden)
@@ -121,7 +134,7 @@ function sortDays(days) {
 
 export function sortItems(items) {
   return sortItemsByTimeline(
-    items.map((item) => normalizeItemTimeFields(item)),
+    items.map((item) => stripFlightLocationFields(normalizeItemTimeFields(item))),
   )
     .sort((a, b) => {
       if ((a.generated ? 0 : 1) !== (b.generated ? 0 : 1)) {
