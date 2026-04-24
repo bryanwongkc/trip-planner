@@ -179,6 +179,22 @@ function routeLabel(mode) {
   return mode === 'walking' ? 'Walk' : 'Drive'
 }
 
+function getGoogleMapsUrl(item) {
+  if (!item) return ''
+  if (typeof item.lat === 'number' && typeof item.lng === 'number') {
+    return `https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lng}`
+  }
+
+  const query = item.address || item.locationName || item.title || ''
+  if (!query) return ''
+
+  if (item.placeId) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}&query_place_id=${encodeURIComponent(item.placeId)}`
+  }
+
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
+}
+
 function RouteModeControl({ currentMode, onSelect }) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef(null)
@@ -1502,6 +1518,64 @@ function NoteModal({ item, isMobilePortrait, onClose, onDelete, onOpenDetails })
   )
 }
 
+function ItemQuickActionsModal({ item, isMobilePortrait, onClose, onOpenDetails }) {
+  const mapsUrl = getGoogleMapsUrl(item)
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        className={`glass-panel browse-ui w-full border border-white/60 p-4 sm:p-5 ${
+          isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-md rounded-[1.5rem]'
+        }`}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Quick actions</div>
+            <h3 className="mt-1 text-[1.2rem] font-bold tracking-[-0.02em] text-slate-900">{item.title}</h3>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          <button
+            type="button"
+            onClick={onOpenDetails}
+            className="flex w-full items-center justify-between rounded-[1rem] bg-white px-4 py-3.5 text-left text-sm font-semibold text-slate-800"
+          >
+            <span>Edit details</span>
+            <Pencil className="h-4 w-4 text-slate-400" />
+          </button>
+          <a
+            href={mapsUrl || '#'}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => onClose()}
+            className={`flex w-full items-center justify-between rounded-[1rem] px-4 py-3.5 text-sm font-semibold ${
+              mapsUrl ? 'bg-white text-slate-800' : 'pointer-events-none bg-slate-100 text-slate-400'
+            }`}
+          >
+            <span>Open in Google Maps</span>
+            <ExternalLink className="h-4 w-4" />
+          </a>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex w-full items-center justify-center rounded-[1rem] bg-slate-100 px-4 py-3.5 text-sm font-semibold text-slate-600"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function DetailModal({
   dayOptions,
   detailItem,
@@ -2045,7 +2119,14 @@ function PlannerPanel({
                 className={`timeline-card relative rounded-[1.25rem] px-4 py-4 transition hover:bg-white/90 active:bg-white/95 sm:px-5 ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
                 }`}
-                onClick={() => onOpenNotes(item)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    onOpenNotes(item)
+                  }
+                }}
                 onContextMenu={(event) => event.preventDefault()}
                 onPointerDown={(event) => onOpenDetails.startPress(event, item)}
                 onPointerMove={onOpenDetails.movePress}
@@ -2387,6 +2468,7 @@ export default function App() {
     error: '',
     targetKey: '',
   })
+  const [actionItem, setActionItem] = useState(null)
   const [noteItem, setNoteItem] = useState(null)
   const [detailItem, setDetailItem] = useState(null)
   const [routeMap, setRouteMap] = useState({})
@@ -2740,6 +2822,7 @@ export default function App() {
 
   function selectTrip(tripId) {
     setOverrides({ days: {}, items: {} })
+    setActionItem(null)
     setNoteItem(null)
     setDetailItem(null)
     setDragState(null)
@@ -3114,6 +3197,7 @@ export default function App() {
 
   async function deleteItem(itemId) {
     await mergeTripPatch(resolvedTripId, { items: { [itemId]: { hidden: true } } })
+    setActionItem((current) => (current?.id === itemId ? null : current))
     setNoteItem((current) => (current?.id === itemId ? null : current))
     setDetailItem((current) => (current?.id === itemId ? null : current))
   }
@@ -3141,10 +3225,13 @@ export default function App() {
   }
 
   function openNotes(item) {
+    setActionItem(null)
     setNoteItem(item)
   }
 
   function openDetails(item) {
+    setActionItem(null)
+    setNoteItem(null)
     setDetailItem(createItemDraft(item))
   }
 
@@ -3192,7 +3279,7 @@ export default function App() {
         const state = pressStateRef.current
         if (!state.moved && state.itemId === item.id) {
           pressStateRef.current.longPressed = true
-          openDetails(item)
+          setActionItem(item)
         }
       }, LONG_PRESS_MS),
       pointerId: event.pointerId,
@@ -3323,6 +3410,15 @@ export default function App() {
             setNoteItem(null)
             openDetails(match)
           }}
+        />
+      ) : null}
+
+      {actionItem ? (
+        <ItemQuickActionsModal
+          item={actionItem}
+          isMobilePortrait={isMobilePortrait}
+          onClose={() => setActionItem(null)}
+          onOpenDetails={() => openDetails(actionItem)}
         />
       ) : null}
 
