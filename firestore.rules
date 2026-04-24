@@ -5,6 +5,49 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function userOwnsProfile(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function validUserProfile() {
+      return request.resource.data.keys().hasOnly([
+        'uid',
+        'displayName',
+        'email',
+        'photoURL',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      request.resource.data.uid == request.auth.uid;
+    }
+
+    function isUnclaimedLegacyTrip(tripId) {
+      return tripId == 'default-trip' &&
+        (!(resource.data.ownerId is string) || resource.data.ownerId == '');
+    }
+
+    function isTripMember(tripId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid));
+    }
+
+    function memberRole(tripId) {
+      return get(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.role;
+    }
+
+    function canViewTrip(tripId) {
+      return isTripMember(tripId);
+    }
+
+    function canEditTrip(tripId) {
+      return canViewTrip(tripId) &&
+        memberRole(tripId) in ['owner', 'editor'];
+    }
+
+    function isTripOwner(tripId) {
+      return canViewTrip(tripId) && memberRole(tripId) == 'owner';
+    }
+
     function isSharedOverrideDoc() {
       return request.resource.data.keys().hasOnly(['days', 'items', 'updatedAt']) &&
         (!('days' in request.resource.data) || request.resource.data.days is map) &&
@@ -16,21 +59,87 @@ service cloud.firestore {
         'title',
         'startDate',
         'endDate',
+        'ownerId',
+        'createdBy',
         'hidden',
         'createdAt',
         'updatedAt'
       ]);
     }
 
-    match /trips/{tripId} {
+    function validTripMember(uid) {
+      return request.resource.data.keys().hasOnly([
+        'uid',
+        'email',
+        'displayName',
+        'photoURL',
+        'role',
+        'invitedBy',
+        'joinedAt',
+        'updatedAt'
+      ]) &&
+      request.resource.data.uid == uid &&
+      request.resource.data.role in ['owner', 'editor', 'viewer'];
+    }
+
+    function validTripMembershipIndex(tripId) {
+      return request.resource.data.keys().hasOnly([
+        'tripId',
+        'role',
+        'title',
+        'startDate',
+        'endDate',
+        'hidden',
+        'updatedAt'
+      ]) &&
+      request.resource.data.tripId == tripId &&
+      request.resource.data.role in ['owner', 'editor', 'viewer'];
+    }
+
+    match /users/{uid} {
       allow read: if isSignedIn();
-      allow create, update: if isSignedIn() && isTripMetaDoc();
+      allow create, update: if userOwnsProfile(uid) && validUserProfile();
+      allow delete: if false;
+
+      match /tripMemberships/{tripId} {
+        allow read: if userOwnsProfile(uid);
+        allow create, update: if validTripMembershipIndex(tripId) && (userOwnsProfile(uid) || isTripOwner(tripId));
+        allow delete: if userOwnsProfile(uid) || isTripOwner(tripId);
+      }
+    }
+
+    match /trips/{tripId} {
+      allow read: if canViewTrip(tripId) || (isSignedIn() && isUnclaimedLegacyTrip(tripId));
+      allow create: if isSignedIn() &&
+        isTripMetaDoc() &&
+        request.resource.data.ownerId == request.auth.uid &&
+        request.resource.data.createdBy == request.auth.uid;
+      allow update: if isTripMetaDoc() && (
+        isTripOwner(tripId) ||
+        (isSignedIn() && isUnclaimedLegacyTrip(tripId) &&
+          request.resource.data.ownerId == request.auth.uid &&
+          request.resource.data.createdBy == request.auth.uid)
+      );
       allow delete: if false;
     }
 
+    match /trips/{tripId}/members/{uid} {
+      allow read: if canViewTrip(tripId);
+      allow create: if validTripMember(uid) && (
+        (isTripOwner(tripId) && request.resource.data.role in ['owner', 'editor', 'viewer']) ||
+        (isSignedIn() &&
+          request.auth.uid == uid &&
+          get(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid &&
+          request.resource.data.role == 'owner')
+      );
+      allow update: if isTripOwner(tripId) &&
+        validTripMember(uid);
+      allow delete: if isTripOwner(tripId);
+    }
+
     match /trips/{tripId}/overrides/shared {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn() && isSharedOverrideDoc();
+      allow read: if canViewTrip(tripId);
+      allow create, update: if canEditTrip(tripId) && isSharedOverrideDoc();
       allow delete: if false;
     }
 

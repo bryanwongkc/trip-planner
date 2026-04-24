@@ -18,6 +18,7 @@ import {
   ChevronDown,
   Cloud,
   CloudRain,
+  LogOut,
   Pencil,
   Footprints,
   ExternalLink,
@@ -26,6 +27,7 @@ import {
   Search,
   Sun,
   Trash2,
+  Users,
   X,
   CarFront,
   GripVertical,
@@ -39,12 +41,21 @@ import {
   TRIP_ID,
 } from './data/seedItinerary'
 import {
-  createTripRecord,
-  ensureAnonymousAuth,
+  addTripMember,
+  claimLegacyTrip,
+  createTripRecordWithOwner,
+  ensureUserProfile,
   firebaseEnabled,
+  lookupUserByEmail,
   mergeTripPatch,
-  subscribeToTripDirectory,
+  removeTripMember,
+  signInWithGoogle,
+  signOutUser,
+  subscribeToAuthState,
+  subscribeToTripMembers,
   subscribeToTripState,
+  subscribeToUserTripDirectory,
+  updateTripMemberRole,
   upsertTripMeta,
 } from './services/firebase'
 import {
@@ -94,6 +105,18 @@ const DURATION_PRESETS = [
   { label: '2h', value: 120 },
   { label: '3h', value: 180 },
 ]
+
+function canViewTrip(role) {
+  return ['owner', 'editor', 'viewer'].includes(role)
+}
+
+function canEditTrip(role) {
+  return ['owner', 'editor'].includes(role)
+}
+
+function canManageMembers(role) {
+  return role === 'owner'
+}
 
 function useResponsiveMode() {
   const [isMobilePortrait, setIsMobilePortrait] = useState(() =>
@@ -1315,6 +1338,80 @@ function TripSwitcher({
   )
 }
 
+function UserBar({ user, onShare, onSignOut }) {
+  return (
+    <div className="glass-panel flex items-center justify-between gap-3 rounded-[1rem] border border-white/60 px-3 py-2.5">
+      <div className="flex min-w-0 items-center gap-3">
+        {user?.photoURL ? (
+          <img src={user.photoURL} alt={user.displayName || user.email || 'User'} className="h-9 w-9 rounded-full object-cover" />
+        ) : (
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-[12px] font-semibold text-slate-700">
+            {(user?.displayName || user?.email || 'U').slice(0, 1).toUpperCase()}
+          </div>
+        )}
+        <div className="min-w-0">
+          <div className="truncate text-[13px] font-semibold tracking-[-0.01em] text-slate-900">
+            {user?.displayName || 'Signed in'}
+          </div>
+          <div className="truncate text-[11px] text-slate-500">{user?.email || ''}</div>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onShare}
+          className="rounded-full bg-white px-3 py-2 text-[12px] font-semibold text-slate-700"
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <Users className="h-3.5 w-3.5" />
+            Share
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={onSignOut}
+          className="rounded-full bg-white p-2 text-slate-600"
+          aria-label="Sign out"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function SignInScreen({ configured, error, onSignIn }) {
+  return (
+    <main className="mx-auto flex min-h-screen max-w-7xl items-center justify-center px-4 py-10 text-slate-900">
+      <div className="glass-panel w-full max-w-md rounded-[1.5rem] border border-white/60 p-6 text-center">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Trip planner</div>
+        <h1 className="mt-3 text-[2rem] font-bold tracking-[-0.03em] text-slate-900">Sign in to your trips</h1>
+        <p className="mt-3 text-[14px] leading-6 text-slate-600">
+          Use Google sign-in to access only the trips you own or have been added to.
+        </p>
+        {!configured ? (
+          <div className="mt-5 rounded-[1rem] bg-amber-50 px-4 py-3 text-left text-[13px] leading-6 text-amber-700">
+            Firebase is not fully configured. Add the required Vite Firebase environment variables first.
+          </div>
+        ) : null}
+        {error ? (
+          <div className="mt-5 rounded-[1rem] bg-rose-50 px-4 py-3 text-left text-[13px] leading-6 text-rose-700">
+            {error}
+          </div>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => void onSignIn()}
+          disabled={!configured}
+          className="mt-6 w-full rounded-[1rem] bg-slate-900 px-4 py-4 text-sm font-semibold text-white disabled:bg-slate-300"
+        >
+          Continue with Google
+        </button>
+      </div>
+    </main>
+  )
+}
+
 function DayManagerModal({
   activeDayId,
   days,
@@ -2444,7 +2541,9 @@ export default function App() {
   })
   const [overrides, setOverrides] = useState({ days: {}, items: {} })
   const [tripSummaries, setTripSummaries] = useState([])
+  const [currentUser, setCurrentUser] = useState(null)
   const [authReady, setAuthReady] = useState(false)
+  const [authError, setAuthError] = useState('')
   const [firestoreState, setFirestoreState] = useState({
     status: firebaseEnabled ? 'connecting' : 'disabled',
     error: '',
@@ -2460,7 +2559,9 @@ export default function App() {
   const [detailItem, setDetailItem] = useState(null)
   const [routeMap, setRouteMap] = useState({})
   const [showDayManager, setShowDayManager] = useState(false)
+  const [showCollaborators, setShowCollaborators] = useState(false)
   const [dragState, setDragState] = useState(null)
+  const [tripMembers, setTripMembers] = useState([])
 
   const isMobilePortrait = useResponsiveMode()
   const routeCacheRef = useRef(new Map())
@@ -2486,25 +2587,23 @@ export default function App() {
         .sort((a, b) => (a.title || '').localeCompare(b.title || '')),
     [tripSummaries],
   )
-  const availableTrips = useMemo(() => {
-    const tripMap = new Map(tripSummaries.filter((trip) => !trip.hidden).map((trip) => [trip.id, trip]))
-    if (!tripMap.has(defaultTripSummary.id)) {
-      tripMap.set(defaultTripSummary.id, defaultTripSummary)
-    }
-
-    return [...tripMap.values()].sort((a, b) => {
-      if (a.id === defaultTripSummary.id) return -1
-      if (b.id === defaultTripSummary.id) return 1
-      return (a.title || '').localeCompare(b.title || '')
-    })
-  }, [defaultTripSummary, tripSummaries])
+  const availableTrips = useMemo(
+    () =>
+      tripSummaries
+        .filter((trip) => !trip.hidden && canViewTrip(trip.role))
+        .sort((a, b) => (a.title || '').localeCompare(b.title || '')),
+    [tripSummaries],
+  )
   const resolvedTripId = availableTrips.some((trip) => trip.id === activeTripId)
     ? activeTripId
-    : defaultTripSummary.id
+    : availableTrips[0]?.id || ''
 
   const tripState = useMemo(() => deriveTripState(overrides), [overrides])
   const activeTripSummary =
     availableTrips.find((trip) => trip.id === resolvedTripId) || defaultTripSummary
+  const activeRole = activeTripSummary?.role || ''
+  const canEditCurrentTrip = canEditTrip(activeRole)
+  const canManageCurrentTrip = canManageMembers(activeRole)
   const visibleDays = tripState.days
   const resolvedActiveDayId =
     activeDayId === DAY_VIEW_ALL || tripState.dayMap[activeDayId]
@@ -2545,7 +2644,7 @@ export default function App() {
         loading: weatherState.targetKey !== weatherTargetKey,
       }
     : { loading: false, data: null, error: '' }
-  const firestoreReady = firebaseEnabled && authReady && firestoreState.status === 'ready'
+  const firestoreReady = firebaseEnabled && authReady && Boolean(currentUser) && firestoreState.status === 'ready'
   const detailItemId = detailItem?.id || ''
   const detailCategory = detailItem?.category || ''
   const detailAppliedLookupKey = detailItem?.flightInfo?.lookupKey || ''
@@ -2597,7 +2696,9 @@ export default function App() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    window.localStorage.setItem(ACTIVE_TRIP_STORAGE_KEY, resolvedTripId)
+    if (resolvedTripId) {
+      window.localStorage.setItem(ACTIVE_TRIP_STORAGE_KEY, resolvedTripId)
+    }
   }, [resolvedTripId])
 
   useEffect(() => {
@@ -2615,44 +2716,63 @@ export default function App() {
   useEffect(() => {
     let active = true
 
-    async function bootstrap() {
-      if (!firebaseEnabled) {
-        if (active) {
-          setAuthReady(true)
-          setTripSummaries([defaultTripSummary])
-          setFirestoreState({ status: 'disabled', error: 'Firebase env vars missing' })
-        }
-        return
-      }
-
-      try {
-        await ensureAnonymousAuth()
-        if (!active) return
-
-        setAuthReady(true)
-      } catch (error) {
-        console.error(error)
-        if (active) {
-          setAuthReady(true)
-          setFirestoreState({ status: 'error', error: error?.message || 'Auth failed' })
-        }
+    if (!firebaseEnabled) {
+      setAuthReady(true)
+      setFirestoreState({ status: 'disabled', error: 'Firebase env vars missing' })
+      return () => {
+        active = false
       }
     }
 
-    void bootstrap()
+    let unsubscribe = () => {}
+
+    async function connectAuth() {
+      unsubscribe = await subscribeToAuthState(
+        async (user) => {
+          if (!active) return
+          setCurrentUser(user || null)
+          setAuthError('')
+          setAuthReady(true)
+
+          if (user) {
+            try {
+              await ensureUserProfile(user)
+            } catch (error) {
+              console.error(error)
+            }
+          } else {
+            setTripSummaries([])
+            setOverrides({ days: {}, items: {} })
+            setFirestoreState({ status: 'connecting', error: '' })
+          }
+        },
+        (error) => {
+          console.error(error)
+          if (active) {
+            setAuthReady(true)
+            setAuthError(error?.message || 'Authentication failed')
+            setCurrentUser(null)
+          }
+        },
+      )
+    }
+
+    void connectAuth()
     return () => {
       active = false
+      unsubscribe()
     }
-  }, [defaultTripSummary])
+  }, [])
 
   useEffect(() => {
-    if (!authReady || !firebaseEnabled) return undefined
+    if (!authReady || !firebaseEnabled || !currentUser?.uid) return undefined
 
     let active = true
     let unsubscribe = () => {}
 
     async function connectDirectory() {
-      unsubscribe = await subscribeToTripDirectory(
+      unsubscribe = await subscribeToUserTripDirectory(
+        currentUser.uid,
         (payload) => {
           if (!active) return
           setTripSummaries(payload || [])
@@ -2671,10 +2791,10 @@ export default function App() {
       active = false
       unsubscribe()
     }
-  }, [authReady])
+  }, [authReady, currentUser?.uid])
 
   useEffect(() => {
-    if (!authReady || !firebaseEnabled || !resolvedTripId) return undefined
+    if (!authReady || !firebaseEnabled || !currentUser?.uid || !resolvedTripId) return undefined
 
     let active = true
     let unsubscribe = () => {}
@@ -2704,7 +2824,7 @@ export default function App() {
       active = false
       unsubscribe()
     }
-  }, [authReady, resolvedTripId])
+  }, [authReady, currentUser?.uid, resolvedTripId])
 
   useEffect(() => {
     let cancelled = false
@@ -2733,15 +2853,28 @@ export default function App() {
   }, [weatherTarget, weatherTargetKey])
 
   useEffect(() => {
-    if (!firestoreReady) return
-    if (tripSummaries.some((trip) => trip.id === defaultTripSummary.id)) return
+    if (!authReady || !currentUser?.uid || tripSummaries.length) return
 
-    void upsertTripMeta(defaultTripSummary.id, {
-      title: defaultTripSummary.title,
-      startDate: defaultTripSummary.startDate,
-      endDate: defaultTripSummary.endDate,
-    })
-  }, [defaultTripSummary, firestoreReady, tripSummaries])
+    let active = true
+    async function claimDefault() {
+      try {
+        await claimLegacyTrip(defaultTripSummary.id, currentUser, defaultTripSummary)
+      } catch (error) {
+        console.error(error)
+        if (active) {
+          setFirestoreState((current) => ({
+            status: current.status === 'error' ? current.status : current.status,
+            error: current.error || '',
+          }))
+        }
+      }
+    }
+
+    void claimDefault()
+    return () => {
+      active = false
+    }
+  }, [authReady, currentUser, defaultTripSummary, tripSummaries.length])
 
   useEffect(() => {
     if (!detailItemId || detailCategory !== 'Flight' || !detailFlightCode || !detailDayDate) {
@@ -2804,6 +2937,35 @@ export default function App() {
     getFlightRecord,
     tripState.dayMap,
   ])
+
+  useEffect(() => {
+    if (!firebaseEnabled || !authReady || !resolvedTripId || !canViewTrip(activeRole)) {
+      setTripMembers([])
+      return undefined
+    }
+
+    let active = true
+    let unsubscribe = () => {}
+
+    async function connectMembers() {
+      unsubscribe = await subscribeToTripMembers(
+        resolvedTripId,
+        (payload) => {
+          if (!active) return
+          setTripMembers(payload || [])
+        },
+        (error) => {
+          console.error(error)
+        },
+      )
+    }
+
+    void connectMembers()
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [activeRole, authReady, resolvedTripId])
 
   const routePairs = useMemo(() => makeMovementPairs(deferredItems), [deferredItems])
 
@@ -3036,7 +3198,32 @@ export default function App() {
     [routeSegments],
   )
 
+  async function handleSignIn() {
+    try {
+      setAuthError('')
+      await signInWithGoogle()
+    } catch (error) {
+      console.error(error)
+      setAuthError(error?.message || 'Google sign-in failed')
+    }
+  }
+
+  async function handleSignOut() {
+    try {
+      await signOutUser()
+      setShowCollaborators(false)
+      setActionItem(null)
+      setNoteItem(null)
+      setDetailItem(null)
+      setTripMembers([])
+    } catch (error) {
+      console.error(error)
+      setAuthError(error?.message || 'Sign out failed')
+    }
+  }
+
   async function saveItem(item) {
+    if (!canEditCurrentTrip) return
     const normalizedItem = stripFlightLocationFields(normalizeItemTimeFields(item))
     const sameDayItems = (tripState.dayMap[item.dayId]?.items || []).filter((existing) => existing.id !== item.id)
     const manualItems = sameDayItems.filter((existing) => !existing.generated)
@@ -3047,7 +3234,7 @@ export default function App() {
   }
 
   async function createTrip() {
-    if (!firestoreReady) return
+    if (!firestoreReady || !currentUser?.uid) return
 
     const nextIndex = availableTrips.length + 1
     const suggestedTitle = `Trip ${nextIndex}`
@@ -3063,13 +3250,17 @@ export default function App() {
       endDate: tripState.days[tripState.days.length - 1]?.date || '',
     }
 
-    await createTripRecord(tripId, {
-      title: nextSummary.title,
-      startDate: nextSummary.startDate,
-      endDate: nextSummary.endDate,
-      days: snapshot.days,
-      items: snapshot.items,
-    })
+    await createTripRecordWithOwner(
+      tripId,
+      {
+        title: nextSummary.title,
+        startDate: nextSummary.startDate,
+        endDate: nextSummary.endDate,
+        days: snapshot.days,
+        items: snapshot.items,
+      },
+      currentUser,
+    )
 
     setTripSummaries((current) =>
       current.some((trip) => trip.id === tripId) ? current : [...current, nextSummary],
@@ -3078,7 +3269,7 @@ export default function App() {
   }
 
   async function renameTrip() {
-    if (!firestoreReady) return
+    if (!firestoreReady || !canManageCurrentTrip) return
 
     const currentTitle = activeTripSummary?.title || 'Untitled trip'
     const nextTitle = window.prompt('Rename trip', currentTitle)?.trim()
@@ -3092,7 +3283,7 @@ export default function App() {
   }
 
   async function deleteTrip() {
-    if (!firestoreReady) return
+    if (!firestoreReady || !canManageCurrentTrip) return
     if (resolvedTripId === defaultTripSummary.id) {
       window.alert('The default trip cannot be deleted.')
       return
@@ -3112,12 +3303,13 @@ export default function App() {
   }
 
   async function restoreTrip(tripId) {
-    if (!firestoreReady || !tripId) return
+    if (!firestoreReady || !tripId || !canManageCurrentTrip) return
     await upsertTripMeta(tripId, { hidden: false })
     selectTrip(tripId)
   }
 
   async function updateDay(dayId, changes) {
+    if (!canEditCurrentTrip) return
     if (changes.date) {
       const duplicate = visibleDays.find((day) => day.id !== dayId && day.date === changes.date)
       if (duplicate) {
@@ -3129,7 +3321,7 @@ export default function App() {
   }
 
   async function addDay(draft) {
-    if (!firestoreReady || !draft.date) return
+    if (!firestoreReady || !canEditCurrentTrip || !draft.date) return
     if (visibleDays.some((day) => day.date === draft.date)) {
       window.alert('That date already exists in the itinerary.')
       return
@@ -3150,6 +3342,7 @@ export default function App() {
   }
 
   async function moveDay(dayId, direction) {
+    if (!canEditCurrentTrip) return
     const index = visibleDays.findIndex((day) => day.id === dayId)
     const targetIndex = index + direction
     if (index < 0 || targetIndex < 0 || targetIndex >= visibleDays.length) return
@@ -3165,6 +3358,7 @@ export default function App() {
   }
 
   async function deleteDay(dayId) {
+    if (!canEditCurrentTrip) return
     const day = tripState.dayMap[dayId]
     if (!day) return
     if (!window.confirm(`Delete ${day.label}? This will delete every item under that day.`)) return
@@ -3187,6 +3381,7 @@ export default function App() {
   }
 
   async function deleteItem(itemId) {
+    if (!canEditCurrentTrip) return
     await mergeTripPatch(resolvedTripId, { items: { [itemId]: { hidden: true } } })
     setActionItem((current) => (current?.id === itemId ? null : current))
     setNoteItem((current) => (current?.id === itemId ? null : current))
@@ -3194,6 +3389,7 @@ export default function App() {
   }
 
   async function updateTravelMode(itemId, travelModeToNext) {
+    if (!canEditCurrentTrip) return
     const targetItem = tripState.items.find((item) => item.id === itemId)
     if (!targetItem) return
 
@@ -3231,7 +3427,7 @@ export default function App() {
   }
 
   async function saveDetailItem() {
-    if (!detailItem || !firestoreReady) return
+    if (!detailItem || !firestoreReady || !canEditCurrentTrip) return
 
     const nextItem = normalizeItemTimeFields(detailItem)
 
@@ -3304,8 +3500,29 @@ export default function App() {
     if (shouldOpenNotes) openNotes(item)
   }
 
+  if (authReady && !currentUser) {
+    return <SignInScreen configured={firebaseEnabled} error={authError} onSignIn={handleSignIn} />
+  }
+
+  if (!authReady) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-7xl items-center justify-center px-4 py-10 text-slate-600">
+        <div className="glass-panel rounded-[1.25rem] border border-white/60 px-5 py-4 text-sm font-medium">
+          Loading trip access...
+        </div>
+      </main>
+    )
+  }
+
   return (
     <main className="mx-auto min-h-screen max-w-7xl overflow-x-clip px-3 py-4 pb-8 text-slate-900 sm:px-6 sm:py-5 sm:pb-10 lg:px-8">
+      <div className={isMobilePortrait ? 'mx-auto mb-3 max-w-[28rem]' : 'mb-3 max-w-xl'}>
+        <UserBar
+          user={currentUser}
+          onShare={() => setShowCollaborators(true)}
+          onSignOut={() => void handleSignOut()}
+        />
+      </div>
       <div className={isMobilePortrait ? 'mx-auto mb-4 max-w-[28rem]' : 'mb-4 max-w-md'}>
         <TripSwitcher
           activeTripId={activeTripSummary.id}
@@ -3320,6 +3537,24 @@ export default function App() {
           tripSummaries={availableTrips}
         />
       </div>
+      {!availableTrips.length ? (
+        <div className="glass-panel max-w-md rounded-[1.35rem] border border-white/60 px-5 py-5">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Trips</div>
+          <h2 className="mt-2 text-[1.45rem] font-bold tracking-[-0.02em] text-slate-900">No trips yet</h2>
+          <p className="mt-2 text-[13px] leading-6 text-slate-600">
+            Create your first trip, or ask the trip owner to add you as a collaborator.
+          </p>
+          <button
+            type="button"
+            onClick={() => void createTrip()}
+            disabled={!firestoreReady}
+            className="mt-4 rounded-[1rem] bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-300"
+          >
+            Create trip
+          </button>
+        </div>
+      ) : null}
+      {availableTrips.length ? (
       <section
         className={
           isMobilePortrait
@@ -3371,6 +3606,7 @@ export default function App() {
           />
         </div>
       </section>
+      ) : null}
 
       {showDayManager ? (
         <DayManagerModal
