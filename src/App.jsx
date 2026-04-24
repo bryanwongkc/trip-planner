@@ -75,15 +75,11 @@ import {
   getDurationMinutes,
   movementItemsForDay,
   nextDayDate,
-  bookingsForItem,
-  deriveBookingDeadlineState,
   normalizeBookingOption,
   normalizeDayTimelineOrder,
   normalizeItemTimeFields,
-  nextCancellationDeadline,
   reorderTripItems,
   renumberDays,
-  sortBookingOptionsByDeadline,
   slugId,
   stripFlightLocationFields,
   timeToMinutes,
@@ -228,24 +224,19 @@ function intervalsOverlap(a, b) {
   return a.start < b.end && b.start < a.end
 }
 
-function hasActiveBooking(item, bookingOptions) {
-  return (
-    item?.status === 'active' ||
-    bookingsForItem(bookingOptions, item?.id, { includeCancelled: true }).some(
-      (booking) => booking.status === 'active',
-    )
-  )
+function hasActiveStayOrMealStatus(item) {
+  return item?.status === 'active'
 }
 
-function chooseStackLead(items, bookingOptions) {
+function chooseStackLead(items) {
   return [...items].sort((a, b) => {
-    const activeCompare = Number(hasActiveBooking(b, bookingOptions)) - Number(hasActiveBooking(a, bookingOptions))
+    const activeCompare = Number(hasActiveStayOrMealStatus(b)) - Number(hasActiveStayOrMealStatus(a))
     if (activeCompare !== 0) return activeCompare
     return itemInterval(a).start - itemInterval(b).start
   })[0]
 }
 
-function buildTimelineEntries(items, bookingOptions) {
+function buildTimelineEntries(items) {
   const stackByItemId = new Map()
 
   Object.values(
@@ -276,7 +267,7 @@ function buildTimelineEntries(items, bookingOptions) {
     clusters
       .filter((cluster) => cluster.items.length > 1)
       .forEach((cluster) => {
-        const leadItem = chooseStackLead(cluster.items, bookingOptions)
+        const leadItem = chooseStackLead(cluster.items)
         const stack = {
           id: `stack:${leadItem.dayId}:${leadItem.category}:${cluster.items.map((item) => item.id).sort().join(':')}`,
           type: 'stack',
@@ -296,6 +287,31 @@ function buildTimelineEntries(items, bookingOptions) {
     emittedStacks.add(stack.id)
     return [stack]
   })
+}
+
+function isMonitoredCancellationItem(item) {
+  return ['Hotel', 'Restaurant'].includes(item?.category)
+}
+
+function cancellationStateForItem(item, now = new Date()) {
+  if (!item?.cancellationDeadline) return 'no_deadline'
+  const deadline = new Date(item.cancellationDeadline)
+  if (Number.isNaN(deadline.getTime())) return 'invalid_deadline'
+  const diffMs = deadline.getTime() - now.getTime()
+  if (diffMs < 0) return 'overdue'
+  if (diffMs <= 3 * 24 * 60 * 60 * 1000) return 'within_3_days'
+  return 'later'
+}
+
+function sortedCancellationItems(items) {
+  return items
+    .filter(isMonitoredCancellationItem)
+    .sort((a, b) => {
+      const aTime = a.cancellationDeadline ? new Date(a.cancellationDeadline).getTime() : Infinity
+      const bTime = b.cancellationDeadline ? new Date(b.cancellationDeadline).getTime() : Infinity
+      if (aTime !== bTime) return aTime - bTime
+      return compareTime(a.startTime || '23:59', b.startTime || '23:59')
+    })
 }
 
 function routeLabel(mode) {
@@ -437,6 +453,8 @@ function buildEmptyDraft(dayId = '') {
     durationMinutes: null,
     description: '',
     bookingRef: '',
+    status: 'considering',
+    cancellationDeadline: '',
     travelModeToNext: '',
     flightInfo: null,
     lat: null,
@@ -497,6 +515,8 @@ function serializeTripState(tripState) {
               : null,
             description: item.description,
             bookingRef: item.bookingRef,
+            status: item.status || 'considering',
+            cancellationDeadline: item.cancellationDeadline || '',
             travelModeToNext: item.travelModeToNext || '',
             flightInfo: item.flightInfo || null,
             lat: item.lat,
@@ -540,14 +560,6 @@ function buildBlankTripSnapshot(date = localTodayIso()) {
   }
 }
 
-function isBookingEligibleItem(item) {
-  return ['Hotel', 'Restaurant', 'Activity', 'Others'].includes(item?.category)
-}
-
-function defaultBookingType(item) {
-  return item?.category === 'Hotel' ? 'hotel' : 'meal'
-}
-
 function formatBookingDateTime(value) {
   if (!value) return 'No deadline'
   const date = new Date(value)
@@ -565,43 +577,8 @@ function formatDateTimeInputValue(value) {
   return String(value).slice(0, 16)
 }
 
-function bookingDeadlineLabel(booking) {
-  const state = deriveBookingDeadlineState(booking)
-  if (state === 'overdue') return 'Deadline passed'
-  if (state === 'due_soon') return 'Due within 24h'
-  if (state === 'upcoming') return 'Due this week'
-  if (state === 'later') return 'Later'
-  if (state === 'cancelled') return 'Cancelled'
-  return 'No deadline'
-}
-
-function bookingStatusLabel(status) {
-  if (status === 'active') return 'Active'
-  if (status === 'cancelled') return 'Cancelled'
-  return 'Considering'
-}
-
-function createBookingDraft(item, option = null) {
-  const base = option || {}
-  return normalizeBookingOption({
-    id: base.id || '',
-    linkedItemId: item?.id || base.linkedItemId || '',
-    dayId: item?.dayId || base.dayId || '',
-    type: base.type || defaultBookingType(item),
-    title: base.title || item?.locationName || item?.title || '',
-    provider: base.provider || '',
-    bookingRef: base.bookingRef || '',
-    status: base.status || 'tentative',
-    startDate: base.startDate || item?.dayDate || '',
-    endDate: base.endDate || item?.dayDate || '',
-    reservationTime: base.reservationTime || '',
-    partySize: base.partySize ?? null,
-    cancellationDeadline: formatDateTimeInputValue(base.cancellationDeadline || ''),
-    cancellationPolicy: base.cancellationPolicy || '',
-    price: base.price ?? null,
-    currency: base.currency || 'JPY',
-    notes: base.notes || '',
-  })
+function itemStatusLabel(status) {
+  return status === 'active' ? 'Active' : 'Considering'
 }
 
 function generatedItemPatch(item) {
@@ -860,6 +837,15 @@ function createItemDraft(item) {
 
 function applyItemDraftPatch(item, patch) {
   const nextItem = { ...item, ...patch }
+  const cancellationFields = isMonitoredCancellationItem(nextItem)
+    ? {
+        status: nextItem.status || 'considering',
+        cancellationDeadline: nextItem.cancellationDeadline || '',
+      }
+    : {
+        status: '',
+        cancellationDeadline: '',
+      }
 
   if (Object.prototype.hasOwnProperty.call(patch, 'endTimeMode') && patch.endTimeMode === 'duration') {
     const derivedDuration =
@@ -867,12 +853,13 @@ function applyItemDraftPatch(item, patch) {
 
     return stripFlightLocationFields(normalizeItemTimeFields({
       ...nextItem,
+      ...cancellationFields,
       endTimeMode: 'duration',
       durationMinutes: derivedDuration,
     }))
   }
 
-  return stripFlightLocationFields(normalizeItemTimeFields(nextItem))
+  return stripFlightLocationFields(normalizeItemTimeFields({ ...nextItem, ...cancellationFields }))
 }
 
 function getEndTimeWarning(item) {
@@ -1905,16 +1892,7 @@ function DayManagerModal({
   )
 }
 
-function NoteModal({
-  bookingCount,
-  canEdit,
-  item,
-  isMobilePortrait,
-  onClose,
-  onDelete,
-  onOpenBookings,
-  onOpenDetails,
-}) {
+function NoteModal({ canEdit, item, isMobilePortrait, onClose, onDelete, onOpenDetails }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
@@ -1963,22 +1941,20 @@ function NoteModal({
               <div className="mt-2 text-[13px] font-semibold tracking-[-0.01em] text-slate-900">{item.bookingRef}</div>
             </div>
           ) : null}
-          {isBookingEligibleItem(item) ? (
-            <button
-              type="button"
-              onClick={onOpenBookings}
-              className="flex w-full items-center justify-between rounded-[1rem] bg-white px-4 py-3.5 text-left"
-            >
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Booking options
-                </div>
-                <div className="mt-2 text-[13px] font-semibold tracking-[-0.01em] text-slate-900">
-                  {bookingCount ? `${bookingCount} linked option${bookingCount === 1 ? '' : 's'}` : 'No linked options'}
-                </div>
+          {isMonitoredCancellationItem(item) ? (
+            <div className="rounded-[1rem] bg-white px-4 py-3.5">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                Cancellation
               </div>
-              <ChevronDown className="-rotate-90 h-4 w-4 text-slate-400" />
-            </button>
+              <div className="mt-2 text-[13px] font-semibold tracking-[-0.01em] text-slate-900">
+                {itemStatusLabel(item.status)}
+              </div>
+              <div className="mt-1 text-[12px] text-slate-500">
+                {item.cancellationDeadline
+                  ? `Deadline ${formatBookingDateTime(item.cancellationDeadline)}`
+                  : 'No cancellation deadline'}
+              </div>
+            </div>
           ) : null}
         </div>
 
@@ -1996,7 +1972,7 @@ function NoteModal({
   )
 }
 
-function ItemQuickActionsModal({ canEdit, item, isMobilePortrait, onClose, onOpenBookings, onOpenDetails }) {
+function ItemQuickActionsModal({ canEdit, item, isMobilePortrait, onClose, onOpenDetails }) {
   const mapsUrl = item.category === 'Flight' ? '' : getGoogleMapsUrl(item)
 
   return (
@@ -2031,16 +2007,6 @@ function ItemQuickActionsModal({ canEdit, item, isMobilePortrait, onClose, onOpe
               <Pencil className="h-4 w-4 text-slate-400" />
             </button>
           ) : null}
-          {isBookingEligibleItem(item) ? (
-            <button
-              type="button"
-              onClick={onOpenBookings}
-              className="flex w-full items-center justify-between rounded-[1rem] bg-white px-4 py-3.5 text-left text-sm font-semibold text-slate-800"
-            >
-              <span>Manage booking options</span>
-              <CalendarDays className="h-4 w-4 text-slate-400" />
-            </button>
-          ) : null}
           {mapsUrl ? (
             <a
               href={mapsUrl}
@@ -2066,311 +2032,14 @@ function ItemQuickActionsModal({ canEdit, item, isMobilePortrait, onClose, onOpe
   )
 }
 
-function BookingOptionsModal({
-  bookings,
-  canEdit,
-  firestoreReady,
-  isMobilePortrait,
-  item,
-  onClose,
-  onDelete,
-  onMarkActive,
-  onMarkCancelled,
-  onSave,
-}) {
-  const [draft, setDraft] = useState(null)
-  const activeBookings = bookings.filter((booking) => booking.status !== 'cancelled')
-  const cancelledBookings = bookings.filter((booking) => booking.status === 'cancelled')
-
-  function openDraft(option = null) {
-    setDraft(createBookingDraft(item, option))
-  }
-
-  async function saveDraft() {
-    if (!draft?.title?.trim()) return
-    await onSave({
-      ...draft,
-      title: draft.title.trim(),
-      cancellationDeadline: draft.cancellationDeadline || '',
-      reservationTime: draft.reservationTime || '',
-    })
-    setDraft(null)
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
-      onClick={onClose}
-    >
-      <div
-        onClick={(event) => event.stopPropagation()}
-        className={`glass-panel browse-ui w-full max-h-[82svh] overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
-          isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-2xl rounded-[1.65rem]'
-        }`}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Booking options
-            </div>
-            <h3 className="mt-1 text-[1.45rem] font-bold tracking-[-0.025em] text-slate-900">{item.title}</h3>
-            <p className="mt-1 text-[12px] leading-5 text-slate-600">
-              Hold multiple hotel or meal options and track free-cancellation deadlines.
-            </p>
-          </div>
-          <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {draft ? (
-          <div className="mt-4 rounded-[1.2rem] bg-white p-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Type">
-                <select
-                  value={draft.type}
-                  onChange={(event) => setDraft((current) => ({ ...current, type: event.target.value }))}
-                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
-                >
-                  <option value="hotel">Hotel</option>
-                  <option value="meal">Meal</option>
-                </select>
-              </Field>
-              <Field label="Status">
-                <select
-                  value={draft.status}
-                  onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))}
-                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
-                >
-                  <option value="tentative">Considering</option>
-                  <option value="active">Active</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-              </Field>
-              <Field label="Title">
-                <input
-                  value={draft.title}
-                  onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
-                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
-                />
-              </Field>
-              <Field label="Provider">
-                <input
-                  value={draft.provider}
-                  onChange={(event) => setDraft((current) => ({ ...current, provider: event.target.value }))}
-                  placeholder="Booking.com, TableCheck..."
-                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
-                />
-              </Field>
-              <Field label="Booking reference">
-                <input
-                  value={draft.bookingRef}
-                  onChange={(event) => setDraft((current) => ({ ...current, bookingRef: event.target.value }))}
-                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
-                />
-              </Field>
-              <Field label="Free-cancel deadline">
-                <input
-                  type="datetime-local"
-                  value={formatDateTimeInputValue(draft.cancellationDeadline)}
-                  onChange={(event) => setDraft((current) => ({ ...current, cancellationDeadline: event.target.value }))}
-                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
-                />
-              </Field>
-              <Field label={draft.type === 'hotel' ? 'Check-in date' : 'Reservation date'}>
-                <input
-                  type="date"
-                  value={draft.startDate}
-                  onChange={(event) => setDraft((current) => ({ ...current, startDate: event.target.value }))}
-                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
-                />
-              </Field>
-              {draft.type === 'hotel' ? (
-                <Field label="Check-out date">
-                  <input
-                    type="date"
-                    value={draft.endDate}
-                    onChange={(event) => setDraft((current) => ({ ...current, endDate: event.target.value }))}
-                    className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
-                  />
-                </Field>
-              ) : (
-                <Field label="Reservation time">
-                  <input
-                    type="datetime-local"
-                    value={formatDateTimeInputValue(draft.reservationTime)}
-                    onChange={(event) => setDraft((current) => ({ ...current, reservationTime: event.target.value }))}
-                    className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
-                  />
-                </Field>
-              )}
-              <Field label="Price">
-                <input
-                  type="number"
-                  value={draft.price ?? ''}
-                  onChange={(event) => setDraft((current) => ({ ...current, price: event.target.value }))}
-                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
-                />
-              </Field>
-              <Field label="Currency">
-                <input
-                  value={draft.currency}
-                  onChange={(event) => setDraft((current) => ({ ...current, currency: event.target.value.toUpperCase() }))}
-                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
-                />
-              </Field>
-            </div>
-            <Field label="Cancellation policy">
-              <textarea
-                rows={2}
-                value={draft.cancellationPolicy}
-                onChange={(event) => setDraft((current) => ({ ...current, cancellationPolicy: event.target.value }))}
-                className="mt-1 w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
-              />
-            </Field>
-            <Field label="Notes">
-              <textarea
-                rows={3}
-                value={draft.notes}
-                onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))}
-                className="mt-1 w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
-              />
-            </Field>
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setDraft(null)}
-                className="rounded-[1rem] border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void saveDraft()}
-                disabled={!firestoreReady || !canEdit || !draft.title.trim()}
-                className="rounded-[1rem] bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-300"
-              >
-                Save booking
-              </button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="mt-4 space-y-2.5">
-              {[...activeBookings, ...cancelledBookings].map((booking) => {
-                const deadlineState = deriveBookingDeadlineState(booking)
-                return (
-                  <div
-                    key={booking.id}
-                    className={`rounded-[1.1rem] bg-white px-4 py-3.5 ${
-                      booking.status === 'cancelled' ? 'opacity-55' : ''
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-[14px] font-semibold tracking-[-0.01em] text-slate-900">
-                          {booking.title}
-                        </div>
-                        <div className="mt-1 text-[12px] text-slate-500">
-                          {booking.provider || booking.type} {booking.bookingRef ? `· ${booking.bookingRef}` : ''}
-                        </div>
-                      </div>
-                      <div
-                        className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
-                          deadlineState === 'overdue'
-                            ? 'bg-rose-50 text-rose-700'
-                            : booking.status === 'active'
-                              ? 'bg-emerald-50 text-emerald-700'
-                              : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {deadlineState === 'overdue' ? 'Deadline passed' : bookingStatusLabel(booking.status)}
-                      </div>
-                    </div>
-                    <div className="mt-2 text-[12px] leading-5 text-slate-500">
-                      Free cancel: {formatBookingDateTime(booking.cancellationDeadline)}
-                    </div>
-                    {booking.price ? (
-                      <div className="mt-1 text-[12px] text-slate-500">
-                        {booking.currency} {Number(booking.price).toLocaleString()}
-                      </div>
-                    ) : null}
-                    {canEdit ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openDraft(booking)}
-                          className="rounded-full bg-slate-100 px-3 py-1.5 text-[12px] font-semibold text-slate-700"
-                        >
-                          Edit
-                        </button>
-                        {booking.status !== 'active' && booking.status !== 'cancelled' ? (
-                          <button
-                            type="button"
-                            onClick={() => void onMarkActive(booking)}
-                            className="rounded-full bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700"
-                          >
-                            Mark active
-                          </button>
-                        ) : null}
-                        {booking.status !== 'cancelled' ? (
-                          <button
-                            type="button"
-                            onClick={() => void onMarkCancelled(booking)}
-                            className="rounded-full bg-amber-50 px-3 py-1.5 text-[12px] font-semibold text-amber-700"
-                          >
-                            Mark cancelled
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => void onDelete(booking)}
-                          className="rounded-full bg-rose-50 px-3 py-1.5 text-[12px] font-semibold text-rose-700"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                )
-              })}
-              {!bookings.length ? (
-                <div className="rounded-[1rem] bg-white px-4 py-5 text-center text-[13px] text-slate-500">
-                  No booking options linked yet.
-                </div>
-              ) : null}
-            </div>
-            {canEdit ? (
-              <button
-                type="button"
-                onClick={() => openDraft()}
-                disabled={!firestoreReady}
-                className="mt-4 w-full rounded-[1rem] bg-slate-900 px-4 py-3.5 text-sm font-bold text-white disabled:bg-slate-300"
-              >
-                Add booking option
-              </button>
-            ) : null}
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
-
 function CancellationDeadlinesModal({
-  bookings,
   canEdit,
-  dayMap,
-  firestoreReady,
   isMobilePortrait,
-  itemMap,
+  items,
   onClose,
-  onEditBooking,
-  onMarkCancelled,
+  onOpenDetails,
 }) {
-  const trackedBookings = sortBookingOptionsByDeadline(
-    bookings.filter((booking) => booking.status !== 'cancelled' && booking.cancellationDeadline),
-  )
+  const monitoredItems = sortedCancellationItems(items)
 
   return (
     <div
@@ -2392,7 +2061,7 @@ function CancellationDeadlinesModal({
               Free-cancel tracker
             </h3>
             <p className="mt-1 text-[12px] leading-5 text-slate-600">
-              Non-cancelled booking options sorted by the nearest deadline.
+              Hotel and restaurant items sorted by cancellation deadline.
             </p>
           </div>
           <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
@@ -2401,67 +2070,68 @@ function CancellationDeadlinesModal({
         </div>
 
         <div className="mt-4 space-y-2.5">
-          {trackedBookings.map((booking) => {
-            const state = deriveBookingDeadlineState(booking)
-            const item = itemMap[booking.linkedItemId]
-            const day = dayMap[booking.dayId || item?.dayId]
+          {monitoredItems.map((item) => {
+            const state = cancellationStateForItem(item)
+            const urgent = state === 'overdue' || state === 'within_3_days'
             return (
-              <div key={booking.id} className="rounded-[1.15rem] bg-white px-4 py-3.5">
+              <div
+                key={item.id}
+                className={`rounded-[1.15rem] px-4 py-3.5 ${
+                  urgent ? 'bg-amber-50/90 ring-1 ring-amber-100' : 'bg-white'
+                }`}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-[14px] font-semibold tracking-[-0.01em] text-slate-900">
-                      {booking.title}
+                      {item.locationName || item.title}
                     </div>
                     <div className="mt-1 text-[12px] leading-5 text-slate-500">
-                      {booking.type === 'hotel' ? 'Hotel' : 'Meal'}
-                      {day ? ` · ${day.label}` : ''}
-                      {item ? ` · ${item.title}` : ''}
+                      {item.dayLabel || formatFullDayDate(item.dayDate || '')} · {item.startTime}
+                      {item.endTime ? `-${item.endTime}` : ''} · {item.category}
                     </div>
                   </div>
                   <div
                     className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
                       state === 'overdue'
                         ? 'bg-rose-50 text-rose-700'
-                        : state === 'due_soon'
+                        : state === 'within_3_days'
                           ? 'bg-amber-50 text-amber-700'
                           : 'bg-slate-100 text-slate-600'
                     }`}
                   >
-                    {bookingDeadlineLabel(booking)}
+                    {state === 'overdue'
+                      ? 'Overdue'
+                      : state === 'within_3_days'
+                        ? 'Within 3 days'
+                        : itemStatusLabel(item.status)}
                   </div>
                 </div>
                 <div className="mt-2 text-[13px] font-semibold text-slate-800">
-                  {formatBookingDateTime(booking.cancellationDeadline)}
+                  {item.cancellationDeadline
+                    ? formatBookingDateTime(item.cancellationDeadline)
+                    : 'No cancellation deadline'}
                 </div>
                 <div className="mt-1 text-[12px] text-slate-500">
-                  {bookingStatusLabel(booking.status)}
-                  {booking.bookingRef ? ` · ${booking.bookingRef}` : ''}
+                  {itemStatusLabel(item.status)}
+                  {item.bookingRef ? ` · ${item.bookingRef}` : ''}
                 </div>
                 {canEdit ? (
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={() => onEditBooking(booking)}
+                      onClick={() => onOpenDetails(item)}
                       className="rounded-full bg-slate-100 px-3 py-1.5 text-[12px] font-semibold text-slate-700"
                     >
                       Open details
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void onMarkCancelled(booking)}
-                      disabled={!firestoreReady}
-                      className="rounded-full bg-amber-50 px-3 py-1.5 text-[12px] font-semibold text-amber-700 disabled:text-slate-400"
-                    >
-                      Mark cancelled
                     </button>
                   </div>
                 ) : null}
               </div>
             )
           })}
-          {!trackedBookings.length ? (
+          {!monitoredItems.length ? (
             <div className="rounded-[1.15rem] bg-white px-4 py-6 text-center text-[13px] leading-6 text-slate-500">
-              No active cancellation deadlines yet.
+              No hotel or restaurant items to monitor yet.
             </div>
           ) : null}
         </div>
@@ -2635,6 +2305,30 @@ function DetailModal({
               className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             />
           </Field>
+          {isMonitoredCancellationItem(detailItem) ? (
+            <div className={`grid gap-3.5 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
+              <Field label="Status">
+                <select
+                  value={detailItem.status === 'active' ? 'active' : 'considering'}
+                  onChange={(event) => onChange({ status: event.target.value })}
+                  disabled={fieldReadOnly}
+                  className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+                >
+                  <option value="considering">Considering</option>
+                  <option value="active">Active</option>
+                </select>
+              </Field>
+              <Field label="Cancellation deadline">
+                <input
+                  type="datetime-local"
+                  value={formatDateTimeInputValue(detailItem.cancellationDeadline || '')}
+                  onChange={(event) => onChange({ cancellationDeadline: event.target.value })}
+                  disabled={fieldReadOnly}
+                  className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+                />
+              </Field>
+            </div>
+          ) : null}
           <Field label="Notes">
             <textarea
               rows={5}
@@ -2682,7 +2376,6 @@ function DetailModal({
 
 function PlannerPanel({
   activeDayId,
-  bookingOptions,
   canEdit,
   dayOptions,
   dayMap,
@@ -2694,7 +2387,6 @@ function PlannerPanel({
   mapsReady,
   onDayChange,
   onDragStart,
-  onOpenBookings,
   onManageDays,
   onOpenDetails,
   onOpenNotes,
@@ -2747,8 +2439,8 @@ function PlannerPanel({
   const visibleManualCount =
     activeDayId === DAY_VIEW_ALL ? 0 : manualOrderLookup.counts[activeDayId] || 0
   const timelineEntries = useMemo(
-    () => buildTimelineEntries(filteredItems, bookingOptions),
-    [bookingOptions, filteredItems],
+    () => buildTimelineEntries(filteredItems),
+    [filteredItems],
   )
   const draftScheduleConflict = useMemo(() => {
     if (!effectiveDraftDayId) return null
@@ -2976,8 +2668,6 @@ function PlannerPanel({
         {timelineEntries.map((entry, index) => {
           const item = entry.item
           const meta = typeMeta(item.category)
-          const linkedBookings = bookingsForItem(bookingOptions, item.id)
-          const nextBookingDeadline = nextCancellationDeadline(linkedBookings)
           const nextSegment = routeSegmentMap[item.id]
           const isOverview = activeDayId === DAY_VIEW_ALL
           const previousItem = timelineEntries[index - 1]?.item
@@ -3112,24 +2802,13 @@ function PlannerPanel({
                         {isExpandedStack ? 'Hide overlapping options' : `Show ${stackAlternatives.length} overlapping option${stackAlternatives.length === 1 ? '' : 's'}`}
                       </button>
                     ) : null}
-                    {linkedBookings.length ? (
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onOpenBookings(item)
-                        }}
-                        className="mt-3 rounded-[0.9rem] bg-slate-50 px-3 py-2 text-left text-[11px] leading-5 text-slate-600 transition hover:bg-slate-100"
-                      >
-                        <span className="font-semibold text-slate-800">
-                          {linkedBookings.length} booking option{linkedBookings.length === 1 ? '' : 's'}
+                    {isMonitoredCancellationItem(item) && item.cancellationDeadline ? (
+                      <div className="mt-3 rounded-[0.9rem] bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-600">
+                        <span className="font-semibold text-slate-800">{itemStatusLabel(item.status)}</span>
+                        <span className="block">
+                          Cancellation deadline: {formatBookingDateTime(item.cancellationDeadline)}
                         </span>
-                        {nextBookingDeadline ? (
-                          <span className="block">
-                            Next free-cancel deadline: {formatBookingDateTime(nextBookingDeadline.cancellationDeadline)}
-                          </span>
-                        ) : null}
-                      </button>
+                      </div>
                     ) : null}
                   </div>
                 </div>
@@ -3139,8 +2818,7 @@ function PlannerPanel({
                 <div className="ml-[4.85rem] space-y-2 sm:ml-[5.9rem]">
                   {stackAlternatives.map((stackItem) => {
                     const stackMeta = typeMeta(stackItem.category)
-                    const stackBookings = bookingsForItem(bookingOptions, stackItem.id)
-                    const stackHasActive = hasActiveBooking(stackItem, bookingOptions)
+                    const stackHasActive = hasActiveStayOrMealStatus(stackItem)
                     return (
                       <article
                         key={stackItem.id}
@@ -3175,9 +2853,9 @@ function PlannerPanel({
                                 </div>
                               ) : null}
                             </div>
-                            {stackBookings.length ? (
+                            {stackItem.cancellationDeadline ? (
                               <div className="mt-2 text-[11px] text-slate-500">
-                                {stackBookings.length} booking option{stackBookings.length === 1 ? '' : 's'}
+                                Deadline {formatBookingDateTime(stackItem.cancellationDeadline)}
                               </div>
                             ) : null}
                           </div>
@@ -3311,6 +2989,12 @@ function PlannerPanel({
                         startTime: current.startTime || '10:00',
                         endTime: current.endTime || '11:00',
                         endTimeMode: current.endTimeMode || 'time',
+                        status: isMonitoredCancellationItem({ category: nextCategory })
+                          ? current.status || 'considering'
+                          : '',
+                        cancellationDeadline: isMonitoredCancellationItem({ category: nextCategory })
+                          ? current.cancellationDeadline || ''
+                          : '',
                       }
                     })
                   }
@@ -3399,6 +3083,32 @@ function PlannerPanel({
                   className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
                 />
               </Field>
+              {isMonitoredCancellationItem(draft) ? (
+                <div className={`grid gap-3.5 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
+                  <Field label="Status">
+                    <select
+                      value={draft.status === 'active' ? 'active' : 'considering'}
+                      onChange={(event) =>
+                        setDraft((current) => ({ ...current, status: event.target.value }))
+                      }
+                      className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                    >
+                      <option value="considering">Considering</option>
+                      <option value="active">Active</option>
+                    </select>
+                  </Field>
+                  <Field label="Cancellation deadline">
+                    <input
+                      type="datetime-local"
+                      value={formatDateTimeInputValue(draft.cancellationDeadline || '')}
+                      onChange={(event) =>
+                        setDraft((current) => ({ ...current, cancellationDeadline: event.target.value }))
+                      }
+                      className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                    />
+                  </Field>
+                </div>
+              ) : null}
             </div>
 
             <button
@@ -3490,7 +3200,6 @@ export default function App() {
   const [actionItem, setActionItem] = useState(null)
   const [noteItem, setNoteItem] = useState(null)
   const [detailItem, setDetailItem] = useState(null)
-  const [bookingItem, setBookingItem] = useState(null)
   const [routeMap, setRouteMap] = useState({})
   const [showDayManager, setShowDayManager] = useState(false)
   const [showCollaborators, setShowCollaborators] = useState(false)
@@ -3599,16 +3308,12 @@ export default function App() {
     return getScheduleConflictMeta([...existingItems, detailItem])
   }, [detailItem, tripState.dayMap])
   const detailEndTimeWarning = useMemo(() => getEndTimeWarning(detailItem), [detailItem])
-  const itemMap = useMemo(
-    () => Object.fromEntries(tripState.items.map((item) => [item.id, item])),
-    [tripState.items],
-  )
   const urgentDeadlineCount = useMemo(
     () =>
-      tripState.bookingOptions.filter((booking) =>
-        ['overdue', 'due_soon'].includes(deriveBookingDeadlineState(booking)),
+      tripState.items.filter((item) =>
+        ['overdue', 'within_3_days'].includes(cancellationStateForItem(item)),
       ).length,
-    [tripState.bookingOptions],
+    [tripState.items],
   )
 
   const getFlightRecord = useMemo(
@@ -3898,7 +3603,6 @@ export default function App() {
     setActionItem(null)
     setNoteItem(null)
     setDetailItem(null)
-    setBookingItem(null)
     setDragState(null)
     setRouteMap({})
     setActiveDayId(DAY_VIEW_ALL)
@@ -4140,7 +3844,6 @@ export default function App() {
       setActionItem(null)
       setNoteItem(null)
       setDetailItem(null)
-      setBookingItem(null)
       setTripMembers([])
     } catch (error) {
       console.error(error)
@@ -4157,45 +3860,6 @@ export default function App() {
       mergeItemsForDay(manualItems, normalizedItem).map((entry) => [entry.id, entry]),
     )
     await mergeTripPatch(resolvedTripId, { items: patchItems })
-  }
-
-  async function saveBookingOption(option) {
-    if (!firestoreReady || !canEditCurrentTrip) return
-    const normalized = normalizeBookingOption({
-      ...option,
-      id: option.id || slugId('booking'),
-      linkedItemId: option.linkedItemId || bookingItem?.id || '',
-      dayId: option.dayId || bookingItem?.dayId || '',
-    })
-    const patch = { [normalized.id]: normalized }
-
-    if (normalized.status === 'active') {
-      tripState.bookingOptions
-        .filter(
-          (booking) =>
-            booking.linkedItemId === normalized.linkedItemId &&
-            booking.id !== normalized.id &&
-            booking.status !== 'cancelled',
-        )
-        .forEach((booking) => {
-          patch[booking.id] = { ...booking, status: 'tentative' }
-        })
-    }
-
-    await mergeTripPatch(resolvedTripId, { bookingOptions: patch })
-  }
-
-  async function markBookingActive(option) {
-    await saveBookingOption({ ...option, status: 'active' })
-  }
-
-  async function markBookingCancelled(option) {
-    await saveBookingOption({ ...option, status: 'cancelled' })
-  }
-
-  async function deleteBookingOption(option) {
-    if (!firestoreReady || !canEditCurrentTrip || !option?.id) return
-    await mergeTripPatch(resolvedTripId, { bookingOptions: { [option.id]: { hidden: true } } })
   }
 
   async function createTrip() {
@@ -4374,7 +4038,6 @@ export default function App() {
     setActionItem((current) => (current?.id === itemId ? null : current))
     setNoteItem((current) => (current?.id === itemId ? null : current))
     setDetailItem((current) => (current?.id === itemId ? null : current))
-    setBookingItem((current) => (current?.id === itemId ? null : current))
   }
 
   async function updateTravelMode(itemId, travelModeToNext) {
@@ -4603,7 +4266,7 @@ export default function App() {
                 Cancellation deadlines
               </span>
               <span className="mt-1 block text-[13px] font-semibold">
-                {urgentDeadlineCount ? `${urgentDeadlineCount} urgent` : 'Review bookings'}
+                {urgentDeadlineCount ? `${urgentDeadlineCount} urgent` : 'Monitor items'}
               </span>
             </span>
             <CalendarDays className="h-4 w-4 text-slate-500" />
@@ -4638,7 +4301,6 @@ export default function App() {
         <div className="space-y-4">
           <PlannerPanel
             activeDayId={resolvedActiveDayId}
-            bookingOptions={tripState.bookingOptions}
             canEdit={canEditCurrentTrip}
             dayOptions={dayOptions}
             dayMap={tripState.dayMap}
@@ -4654,11 +4316,6 @@ export default function App() {
               })
             }}
             onDragStart={beginItemDrag}
-            onOpenBookings={(item) => {
-              setActionItem(null)
-              setNoteItem(null)
-              setBookingItem(item)
-            }}
             onManageDays={() => setShowDayManager(true)}
             onOpenDetails={{
               startPress,
@@ -4705,7 +4362,6 @@ export default function App() {
 
       {noteItem ? (
         <NoteModal
-          bookingCount={bookingsForItem(tripState.bookingOptions, noteItem.id, { includeCancelled: true }).length}
           canEdit={canEditCurrentTrip}
           item={noteItem}
           isMobilePortrait={isMobilePortrait}
@@ -4720,11 +4376,6 @@ export default function App() {
             setNoteItem(null)
             openDetails(match)
           }}
-          onOpenBookings={() => {
-            const match = tripState.items.find((item) => item.id === noteItem.id) || noteItem
-            setNoteItem(null)
-            setBookingItem(match)
-          }}
         />
       ) : null}
 
@@ -4734,46 +4385,20 @@ export default function App() {
           item={actionItem}
           isMobilePortrait={isMobilePortrait}
           onClose={() => setActionItem(null)}
-          onOpenBookings={() => {
-            const match = tripState.items.find((item) => item.id === actionItem.id) || actionItem
-            setActionItem(null)
-            setBookingItem(match)
-          }}
           onOpenDetails={() => openDetails(actionItem)}
-        />
-      ) : null}
-
-      {bookingItem ? (
-        <BookingOptionsModal
-          bookings={bookingsForItem(tripState.bookingOptions, bookingItem.id, { includeCancelled: true })}
-          canEdit={canEditCurrentTrip}
-          firestoreReady={firestoreReady}
-          isMobilePortrait={isMobilePortrait}
-          item={tripState.items.find((item) => item.id === bookingItem.id) || bookingItem}
-          onClose={() => setBookingItem(null)}
-          onDelete={deleteBookingOption}
-          onMarkActive={markBookingActive}
-          onMarkCancelled={markBookingCancelled}
-          onSave={saveBookingOption}
         />
       ) : null}
 
       {showDeadlines ? (
         <CancellationDeadlinesModal
-          bookings={tripState.bookingOptions}
           canEdit={canEditCurrentTrip}
-          dayMap={tripState.dayMap}
-          firestoreReady={firestoreReady}
           isMobilePortrait={isMobilePortrait}
-          itemMap={itemMap}
+          items={tripState.items}
           onClose={() => setShowDeadlines(false)}
-          onEditBooking={(booking) => {
-            const item = itemMap[booking.linkedItemId]
-            if (!item) return
+          onOpenDetails={(item) => {
             setShowDeadlines(false)
-            setBookingItem(item)
+            openDetails(item)
           }}
-          onMarkCancelled={markBookingCancelled}
         />
       ) : null}
 
