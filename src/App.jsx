@@ -541,8 +541,11 @@ function isCurrentDate(date) {
   return date === toLocalDateInput(new Date())
 }
 
-function formatLocalTimeToClock(value) {
+function formatAirportLocalTimeToClock(value) {
   if (!value) return ''
+
+  const localClock = String(value).match(/(?:T|\s)(\d{2}):(\d{2})/)
+  if (localClock) return `${localClock[1]}:${localClock[2]}`
 
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
@@ -608,8 +611,8 @@ function applyFlightRecordToDraft(item, record, flightCode, lookupKey) {
     title: buildFlightTitle(record, flightCode),
     locationName: departureLabel && arrivalLabel ? `${departureLabel} → ${arrivalLabel}` : item.locationName,
     address: [departureLabel, arrivalLabel].filter(Boolean).join(' → ') || item.address,
-    startTime: formatLocalTimeToClock(record.scheduledDeparture) || item.startTime,
-    endTime: formatLocalTimeToClock(record.scheduledArrival) || item.endTime,
+    startTime: formatAirportLocalTimeToClock(record.scheduledDeparture) || item.startTime,
+    endTime: formatAirportLocalTimeToClock(record.scheduledArrival) || item.endTime,
     description: mergeFlightInfoIntoDescription(item.description, record),
     flightInfo: {
       number: record.number || flightCode,
