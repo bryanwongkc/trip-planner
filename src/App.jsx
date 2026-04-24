@@ -201,7 +201,13 @@ function typeMeta(category) {
   if (category === 'Hotel') return { tone: 'bg-amber-50 text-amber-600' }
   if (category === 'Restaurant') return { tone: 'bg-orange-50 text-orange-600' }
   if (category === 'Wedding') return { tone: 'bg-pink-50 text-pink-600' }
+  if (category === 'Others') return { tone: 'bg-slate-100 text-slate-600' }
   return { tone: 'bg-emerald-50 text-emerald-600' }
+}
+
+function categoryOptionsForValue(category) {
+  if (!category || CATEGORY_OPTIONS.includes(category)) return CATEGORY_OPTIONS
+  return [category, ...CATEGORY_OPTIONS]
 }
 
 function routeLabel(mode) {
@@ -447,7 +453,7 @@ function buildBlankTripSnapshot(date = localTodayIso()) {
 }
 
 function isBookingEligibleItem(item) {
-  return ['Hotel', 'Restaurant', 'Wedding', 'Activity', 'Shopping'].includes(item?.category)
+  return ['Hotel', 'Restaurant', 'Activity', 'Others'].includes(item?.category)
 }
 
 function defaultBookingType(item) {
@@ -2459,7 +2465,7 @@ function DetailModal({
               disabled={fieldReadOnly || linkedLocked}
               className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             >
-              {CATEGORY_OPTIONS.map((option) => (
+              {categoryOptionsForValue(detailItem.category).map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -3107,7 +3113,7 @@ function PlannerPanel({
                   }
                   className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
                 >
-                  {CATEGORY_OPTIONS.map((option) => (
+                  {categoryOptionsForValue(draft.category).map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
