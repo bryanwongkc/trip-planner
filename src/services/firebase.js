@@ -246,6 +246,10 @@ export async function mergeTripPatch(tripId, patch) {
     payload.items = stampEntityMap(patch.items, serverTimestamp)
   }
 
+  if (patch.bookingOptions) {
+    payload.bookingOptions = stampEntityMap(patch.bookingOptions, serverTimestamp)
+  }
+
   await setDoc(overridesDoc, payload, { merge: true })
 }
 
@@ -298,6 +302,7 @@ export async function createTripRecordWithOwner(tripId, payload, ownerUser) {
       updatedAt: serverTimestamp(),
       days: stampEntityMap(payload.days, serverTimestamp),
       items: stampEntityMap(payload.items, serverTimestamp),
+      bookingOptions: stampEntityMap(payload.bookingOptions, serverTimestamp),
     },
     { merge: true },
   )

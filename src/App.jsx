@@ -75,6 +75,7 @@ import {
   getDurationMinutes,
   movementItemsForDay,
   nextDayDate,
+  normalizeBookingOption,
   normalizeDayTimelineOrder,
   normalizeItemTimeFields,
   reorderTripItems,
@@ -405,6 +406,12 @@ function serializeTripState(tripState) {
           }),
         ]),
     ),
+    bookingOptions: Object.fromEntries(
+      (tripState.bookingOptions || []).map((booking) => [
+        booking.id,
+        normalizeBookingOption(booking),
+      ]),
+    ),
   }
 }
 
@@ -430,6 +437,7 @@ function buildBlankTripSnapshot(date = localTodayIso()) {
       },
     },
     items: Object.fromEntries(SEED_ITEMS.map((item) => [item.id, { ...item, hidden: true }])),
+    bookingOptions: {},
   }
 }
 
@@ -3420,6 +3428,7 @@ export default function App() {
           endDate: nextSummary.endDate,
           days: snapshot.days,
           items: snapshot.items,
+          bookingOptions: snapshot.bookingOptions,
         },
         currentUser,
       )

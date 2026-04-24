@@ -203,6 +203,9 @@ function buildGeneratedHotelItem(sourceItem, dayId, nextStartTime) {
 
 export function deriveTripState(overrides) {
   const dayMap = Object.fromEntries(mergeEntityMap(SEED_DAYS, overrides.days).map((day) => [day.id, day]))
+  const bookingOptions = Object.values(overrides.bookingOptions || {})
+    .map(normalizeBookingOption)
+    .filter((booking) => !booking.hidden)
   const generatedItemOverrides = Object.fromEntries(
     Object.entries(overrides.items || {}).filter(([id]) => id.startsWith('generated-hotel:')),
   )
@@ -281,6 +284,7 @@ export function deriveTripState(overrides) {
   return {
     days: dayViews,
     items: allItems,
+    bookingOptions,
     dayMap: Object.fromEntries(dayViews.map((day) => [day.id, day])),
   }
 }
@@ -303,4 +307,81 @@ export function renumberDays(days) {
     ...day,
     order: index,
   }))
+}
+
+export function normalizeBookingOption(option = {}) {
+  return {
+    id: option.id || '',
+    linkedItemId: option.linkedItemId || '',
+    dayId: option.dayId || '',
+    type: option.type === 'meal' ? 'meal' : 'hotel',
+    title: option.title || '',
+    provider: option.provider || '',
+    bookingRef: option.bookingRef || '',
+    status: ['active', 'tentative', 'cancelled'].includes(option.status) ? option.status : 'tentative',
+    startDate: option.startDate || '',
+    endDate: option.endDate || '',
+    reservationTime: option.reservationTime || '',
+    partySize: Number.isFinite(Number(option.partySize)) ? Number(option.partySize) : null,
+    cancellationDeadline: option.cancellationDeadline || '',
+    cancellationPolicy: option.cancellationPolicy || '',
+    price: Number.isFinite(Number(option.price)) ? Number(option.price) : null,
+    currency: option.currency || 'JPY',
+    notes: option.notes || '',
+    hidden: Boolean(option.hidden),
+  }
+}
+
+export function deriveBookingDeadlineState(booking, now = new Date()) {
+  if (booking?.status === 'cancelled') return 'cancelled'
+  if (!booking?.cancellationDeadline) return 'no_deadline'
+
+  const deadline = new Date(booking.cancellationDeadline)
+  if (Number.isNaN(deadline.getTime())) return 'invalid_deadline'
+
+  const diffMs = deadline.getTime() - now.getTime()
+  if (diffMs < 0) return 'overdue'
+  if (diffMs <= 24 * 60 * 60 * 1000) return 'due_soon'
+  if (diffMs <= 7 * 24 * 60 * 60 * 1000) return 'upcoming'
+  return 'later'
+}
+
+export function sortBookingOptionsByDeadline(bookings, now = new Date()) {
+  return [...bookings].sort((a, b) => {
+    const aState = deriveBookingDeadlineState(a, now)
+    const bState = deriveBookingDeadlineState(b, now)
+    const stateRank = {
+      overdue: 0,
+      due_soon: 1,
+      upcoming: 2,
+      later: 3,
+      no_deadline: 4,
+      invalid_deadline: 5,
+      cancelled: 6,
+    }
+    const rankCompare = (stateRank[aState] ?? 9) - (stateRank[bState] ?? 9)
+    if (rankCompare !== 0) return rankCompare
+
+    const aTime = a.cancellationDeadline ? new Date(a.cancellationDeadline).getTime() : Infinity
+    const bTime = b.cancellationDeadline ? new Date(b.cancellationDeadline).getTime() : Infinity
+    return aTime - bTime
+  })
+}
+
+export function bookingsForItem(bookings, itemId, { includeCancelled = false } = {}) {
+  return bookings.filter(
+    (booking) =>
+      booking.linkedItemId === itemId &&
+      !booking.hidden &&
+      (includeCancelled || booking.status !== 'cancelled'),
+  )
+}
+
+export function nextCancellationDeadline(bookings, now = new Date()) {
+  return (
+    sortBookingOptionsByDeadline(
+      bookings.filter((booking) => booking.status !== 'cancelled' && booking.cancellationDeadline),
+      now,
+    )[0] || null
+  )
 }

@@ -44,9 +44,10 @@ service cloud.firestore {
     }
 
     function isSharedOverrideDoc() {
-      return request.resource.data.keys().hasOnly(['days', 'items', 'updatedAt']) &&
+      return request.resource.data.keys().hasOnly(['days', 'items', 'bookingOptions', 'updatedAt']) &&
         (!('days' in request.resource.data) || request.resource.data.days is map) &&
-        (!('items' in request.resource.data) || request.resource.data.items is map);
+        (!('items' in request.resource.data) || request.resource.data.items is map) &&
+        (!('bookingOptions' in request.resource.data) || request.resource.data.bookingOptions is map);
     }
 
     function isTripMetaDoc() {
