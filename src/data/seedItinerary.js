@@ -3,7 +3,7 @@ export const DEFAULT_TRIP_TITLE = 'My trip'
 
 export const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
 
-export const CATEGORY_OPTIONS = ['Activity', 'Flight', 'Car', 'Hotel', 'Wedding', 'Shopping']
+export const CATEGORY_OPTIONS = ['Activity', 'Restaurant', 'Flight', 'Car', 'Hotel', 'Wedding', 'Shopping']
 
 export const SEED_DAYS = [
   {

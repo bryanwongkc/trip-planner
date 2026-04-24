@@ -199,6 +199,7 @@ function typeMeta(category) {
   if (category === 'Flight') return { tone: 'bg-sky-50 text-sky-600' }
   if (category === 'Car') return { tone: 'bg-indigo-50 text-indigo-600' }
   if (category === 'Hotel') return { tone: 'bg-amber-50 text-amber-600' }
+  if (category === 'Restaurant') return { tone: 'bg-orange-50 text-orange-600' }
   if (category === 'Wedding') return { tone: 'bg-pink-50 text-pink-600' }
   return { tone: 'bg-emerald-50 text-emerald-600' }
 }
@@ -446,7 +447,7 @@ function buildBlankTripSnapshot(date = localTodayIso()) {
 }
 
 function isBookingEligibleItem(item) {
-  return ['Hotel', 'Wedding', 'Activity', 'Shopping'].includes(item?.category)
+  return ['Hotel', 'Restaurant', 'Wedding', 'Activity', 'Shopping'].includes(item?.category)
 }
 
 function defaultBookingType(item) {
