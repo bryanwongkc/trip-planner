@@ -193,13 +193,13 @@ function useGoogleMapsApi(apiKey) {
 }
 
 function typeMeta(category) {
-  if (category === 'Flight') return { tone: 'bg-sky-50 text-sky-600' }
-  if (category === 'Car') return { tone: 'bg-indigo-50 text-indigo-600' }
-  if (category === 'Hotel') return { tone: 'bg-amber-50 text-amber-600' }
-  if (category === 'Restaurant') return { tone: 'bg-orange-50 text-orange-600' }
-  if (category === 'Wedding') return { tone: 'bg-pink-50 text-pink-600' }
-  if (category === 'Others') return { tone: 'bg-slate-100 text-slate-600' }
-  return { tone: 'bg-emerald-50 text-emerald-600' }
+  if (category === 'Flight') return { tone: 'bg-sky-50 text-sky-600', card: 'timeline-card--flight' }
+  if (category === 'Car') return { tone: 'bg-indigo-50 text-indigo-600', card: 'timeline-card--transport' }
+  if (category === 'Hotel') return { tone: 'bg-amber-50 text-amber-600', card: 'timeline-card--hotel' }
+  if (category === 'Restaurant') return { tone: 'bg-orange-50 text-orange-600', card: 'timeline-card--restaurant' }
+  if (category === 'Wedding') return { tone: 'bg-pink-50 text-pink-600', card: 'timeline-card--event' }
+  if (category === 'Others') return { tone: 'bg-slate-100 text-slate-600', card: 'timeline-card--other' }
+  return { tone: 'bg-emerald-50 text-emerald-600', card: 'timeline-card--activity' }
 }
 
 function categoryOptionsForValue(category) {
@@ -301,6 +301,82 @@ function cancellationStateForItem(item, now = new Date()) {
   if (diffMs < 0) return 'overdue'
   if (diffMs <= 3 * 24 * 60 * 60 * 1000) return 'within_3_days'
   return 'later'
+}
+
+function deadlineDayDistance(value, now = new Date()) {
+  if (!value) return null
+  const deadline = new Date(value)
+  if (Number.isNaN(deadline.getTime())) return null
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const deadlineDay = new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate())
+  return Math.round((deadlineDay.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
+}
+
+function cancellationUrgencyMeta(item) {
+  const state = cancellationStateForItem(item)
+  const days = deadlineDayDistance(item?.cancellationDeadline)
+
+  if (state === 'overdue') {
+    return {
+      label: 'Overdue',
+      note: 'Action needed',
+      card: 'border-rose-200 bg-rose-50/85',
+      rail: 'bg-rose-500',
+      badge: 'bg-rose-100 text-rose-700',
+      deadline: 'text-rose-700',
+    }
+  }
+
+  if (state === 'within_3_days') {
+    const label = days === 0 ? 'Due today' : days === 1 ? 'Due tomorrow' : `${days} days left`
+    return {
+      label,
+      note: 'Cancel soon',
+      card: 'border-amber-200 bg-amber-50/80',
+      rail: 'bg-amber-500',
+      badge: 'bg-amber-100 text-amber-800',
+      deadline: 'text-amber-800',
+    }
+  }
+
+  if (state === 'no_deadline') {
+    return {
+      label: 'No deadline',
+      note: 'Add date',
+      card: 'border-slate-200 bg-white',
+      rail: 'bg-slate-300',
+      badge: 'bg-slate-100 text-slate-600',
+      deadline: 'text-slate-500',
+    }
+  }
+
+  if (state === 'invalid_deadline') {
+    return {
+      label: 'Check date',
+      note: 'Invalid',
+      card: 'border-slate-200 bg-white',
+      rail: 'bg-slate-400',
+      badge: 'bg-slate-100 text-slate-600',
+      deadline: 'text-slate-600',
+    }
+  }
+
+  return {
+    label: days ? `${days} days left` : 'Scheduled',
+    note: itemStatusLabel(item?.status),
+    card: 'border-slate-200 bg-white',
+    rail: 'bg-slate-300',
+    badge: 'bg-slate-100 text-slate-600',
+    deadline: 'text-slate-900',
+  }
+}
+
+function formatItemBookingDateTime(item) {
+  const dateLabel = item?.dayDate ? formatDayDate(item.dayDate) : item?.dayLabel || 'Date unset'
+  const timeLabel = item?.startTime
+    ? `${item.startTime}${item.endTime ? `-${item.endTime}` : ''}`
+    : 'Time unset'
+  return `${dateLabel} · ${timeLabel}`
 }
 
 function sortedCancellationItems(items) {
@@ -1366,7 +1442,7 @@ function TripSwitcher({
 
       {open ? (
         <div className="absolute inset-x-0 top-[calc(100%+0.55rem)] z-50">
-          <div className="overflow-hidden rounded-[1rem] border border-slate-200/90 bg-[rgba(255,253,250,0.99)] p-1.5 shadow-[0_18px_38px_rgba(15,23,42,0.09)] backdrop-blur-sm">
+          <div className="overflow-hidden rounded-[1rem] border border-slate-200/90 bg-[rgba(255,253,250,0.99)] p-1.5 shadow-[0_16px_30px_rgba(15,23,42,0.075)]">
             <div className="no-scrollbar max-h-[min(24rem,56svh)] overflow-y-auto pr-0.5">
               {tripSummaries.map((trip) => {
                 const selected = trip.id === activeTripId
@@ -1546,7 +1622,7 @@ function AppDrawer({
         aria-hidden="true"
       />
       <aside
-        className={`fixed bottom-0 left-0 top-0 z-50 flex w-[min(22rem,calc(100vw-1.4rem))] flex-col border-r border-white/70 bg-[rgba(255,253,249,0.97)] px-3.5 py-4 shadow-[20px_0_52px_rgba(15,23,42,0.13)] backdrop-blur-xl transition-transform duration-200 ${
+        className={`fixed bottom-0 left-0 top-0 z-50 flex w-[min(22rem,calc(100vw-1.4rem))] flex-col border-r border-white/70 bg-[rgba(255,253,249,0.98)] px-3.5 py-4 shadow-[18px_0_42px_rgba(15,23,42,0.11)] transition-transform duration-200 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -1624,7 +1700,7 @@ function MenuButton({ onClick }) {
 function BottomDayNav({ activeDayId, dayOptions, dragState, onDayChange, onManageDays, canEdit }) {
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 px-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] sm:px-4">
-      <div className="mx-auto flex max-w-5xl items-center gap-1 rounded-[1rem] border border-white/70 bg-[rgba(255,253,249,0.96)] p-1 shadow-[0_-12px_30px_rgba(15,23,42,0.09)] backdrop-blur-xl">
+      <div className="mx-auto flex max-w-5xl items-center gap-1 rounded-[1rem] border border-white/80 bg-[rgba(255,253,249,0.98)] p-1 shadow-[0_-10px_24px_rgba(15,23,42,0.075)]">
         <button
           type="button"
           onClick={() => onDayChange(DAY_VIEW_ALL)}
@@ -1672,13 +1748,13 @@ function BottomDayNav({ activeDayId, dayOptions, dragState, onDayChange, onManag
 
 function SignInScreen({ configured, error, onSignIn }) {
   return (
-    <main className="mx-auto flex min-h-screen max-w-7xl items-center justify-center px-4 py-10 text-slate-900">
-      <div className="glass-panel w-full max-w-[27rem] rounded-[1.35rem] px-6 py-7 text-center sm:px-7 sm:py-8">
-        <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400">Trip Planner</div>
-        <h1 className="mt-4 text-[1.95rem] font-extrabold leading-tight tracking-[-0.045em] text-slate-950 sm:text-[2.15rem]">
+    <main className="mx-auto flex min-h-screen max-w-7xl items-center justify-center px-4 py-8 text-slate-900">
+      <div className="glass-panel w-full max-w-[25.5rem] rounded-[1.25rem] px-6 py-7 text-center sm:px-7 sm:py-8">
+        <div className="text-[9px] font-bold uppercase tracking-[0.28em] text-slate-400">Trip Planner</div>
+        <h1 className="mt-3.5 text-[1.9rem] font-extrabold leading-tight tracking-[-0.045em] text-slate-950 sm:text-[2.08rem]">
           Sign in to your trips
         </h1>
-        <p className="mx-auto mt-3 max-w-[21rem] text-[14px] leading-6 text-slate-600">
+        <p className="mx-auto mt-2.5 max-w-[20rem] text-[14px] leading-6 text-slate-600">
           Use Google sign-in to access only the trips you own or have been added to.
         </p>
         {!configured ? (
@@ -1695,7 +1771,7 @@ function SignInScreen({ configured, error, onSignIn }) {
           type="button"
           onClick={() => void onSignIn()}
           disabled={!configured}
-          className="mt-6 w-full rounded-[0.95rem] bg-slate-950 px-4 py-3.5 text-sm font-bold text-white shadow-[0_12px_26px_rgba(15,23,42,0.12)] transition hover:bg-slate-800 disabled:bg-slate-300"
+          className="mt-6 w-full rounded-[0.9rem] bg-slate-950 px-4 py-3.5 text-sm font-bold text-white shadow-[0_10px_22px_rgba(15,23,42,0.10)] transition hover:bg-slate-800 disabled:bg-slate-300"
         >
           Continue with Google
         </button>
@@ -1734,7 +1810,7 @@ function CollaboratorsModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
@@ -1861,7 +1937,7 @@ function DayManagerModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
@@ -1980,7 +2056,7 @@ function NoteModal({ canEdit, item, isMobilePortrait, onClose, onDelete, onOpenD
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
@@ -2084,16 +2160,23 @@ function CancellationDeadlinesModal({
   onOpenDetails,
 }) {
   const monitoredItems = sortedCancellationItems(items)
+  const urgentCount = monitoredItems.filter((item) =>
+    ['overdue', 'within_3_days'].includes(cancellationStateForItem(item)),
+  ).length
+  const missingDeadlineCount = monitoredItems.filter(
+    (item) => cancellationStateForItem(item) === 'no_deadline',
+  ).length
+  const nextDeadline = monitoredItems.find((item) => item.cancellationDeadline)
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
         onClick={(event) => event.stopPropagation()}
         className={`glass-panel browse-ui w-full max-h-[82svh] overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
-          isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-3xl rounded-[1.65rem]'
+          isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-4xl rounded-[1.65rem]'
         }`}
       >
         <div className="flex items-start justify-between gap-4">
@@ -2104,8 +2187,8 @@ function CancellationDeadlinesModal({
             <h3 className="mt-1 text-[1.45rem] font-bold tracking-[-0.025em] text-slate-900">
               Free-cancel tracker
             </h3>
-            <p className="mt-1 text-[12px] leading-5 text-slate-600">
-              Hotel and restaurant items sorted by cancellation deadline.
+            <p className="mt-1 max-w-xl text-[12px] leading-5 text-slate-600">
+              Sorted by deadline. Check overdue and next 3-day cancellation windows first.
             </p>
           </div>
           <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
@@ -2113,69 +2196,93 @@ function CancellationDeadlinesModal({
           </button>
         </div>
 
-        <div className="mt-4 space-y-2.5">
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          <div className="rounded-[0.95rem] bg-white px-3 py-2.5">
+            <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-400">Urgent</div>
+            <div className={`mt-1 text-[1.25rem] font-bold leading-none ${urgentCount ? 'text-rose-700' : 'text-slate-900'}`}>
+              {urgentCount}
+            </div>
+          </div>
+          <div className="rounded-[0.95rem] bg-white px-3 py-2.5">
+            <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-400">Missing</div>
+            <div className={`mt-1 text-[1.25rem] font-bold leading-none ${missingDeadlineCount ? 'text-amber-800' : 'text-slate-900'}`}>
+              {missingDeadlineCount}
+            </div>
+          </div>
+          <div className="rounded-[0.95rem] bg-white px-3 py-2.5">
+            <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-400">Next</div>
+            <div className="mt-1 truncate text-[12px] font-bold leading-5 text-slate-900">
+              {nextDeadline ? formatBookingDateTime(nextDeadline.cancellationDeadline) : 'None'}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-2">
           {monitoredItems.map((item) => {
-            const state = cancellationStateForItem(item)
-            const urgent = state === 'overdue' || state === 'within_3_days'
+            const meta = cancellationUrgencyMeta(item)
+            const name = item.locationName || item.title
             return (
               <div
                 key={item.id}
-                className={`rounded-[1.15rem] px-4 py-3.5 ${
-                  urgent ? 'bg-amber-50/90 ring-1 ring-amber-100' : 'bg-white'
-                }`}
+                className={`relative overflow-hidden rounded-[1.05rem] border px-3.5 py-3 ${meta.card}`}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-[14px] font-semibold tracking-[-0.01em] text-slate-900">
-                      {item.locationName || item.title}
+                <div className={`absolute inset-y-0 left-0 w-1 ${meta.rail}`} />
+                <div className={`grid gap-3 ${isMobilePortrait ? '' : 'sm:grid-cols-[minmax(0,1.35fr)_10rem_11rem_auto] sm:items-center'}`}>
+                  <div className="min-w-0 pl-1">
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                        {item.category}
+                      </span>
+                      <span className="text-[11px] font-medium text-slate-500">{itemStatusLabel(item.status)}</span>
                     </div>
-                    <div className="mt-1 text-[12px] leading-5 text-slate-500">
-                      {item.dayLabel || formatFullDayDate(item.dayDate || '')} · {item.startTime}
-                      {item.endTime ? `-${item.endTime}` : ''} · {item.category}
+                    <div className="mt-1.5 truncate text-[14px] font-bold tracking-[-0.015em] text-slate-950">
+                      {name}
                     </div>
                   </div>
-                  <div
-                    className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
-                      state === 'overdue'
-                        ? 'bg-rose-50 text-rose-700'
-                        : state === 'within_3_days'
-                          ? 'bg-amber-50 text-amber-700'
-                          : 'bg-slate-100 text-slate-600'
-                    }`}
-                  >
-                    {state === 'overdue'
-                      ? 'Overdue'
-                      : state === 'within_3_days'
-                        ? 'Within 3 days'
-                        : itemStatusLabel(item.status)}
+
+                  <div className="pl-1 sm:pl-0">
+                    <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Booking</div>
+                    <div className="mt-1 text-[12px] font-semibold text-slate-700">
+                      {formatItemBookingDateTime(item)}
+                    </div>
+                  </div>
+
+                  <div className="pl-1 sm:pl-0">
+                    <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Cancel by</div>
+                    <div className={`mt-1 text-[13px] font-bold ${meta.deadline}`}>
+                      {item.cancellationDeadline
+                        ? formatBookingDateTime(item.cancellationDeadline)
+                        : 'No deadline set'}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pl-1 sm:justify-end sm:pl-0">
+                    <div>
+                      <div className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${meta.badge}`}>
+                        {meta.label}
+                      </div>
+                      <div className="mt-1 text-[10px] font-medium text-slate-500 sm:text-right">{meta.note}</div>
+                    </div>
+                    {canEdit ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenDetails(item)}
+                        className="rounded-full bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 shadow-[0_4px_12px_rgba(15,23,42,0.035)]"
+                      >
+                        Details
+                      </button>
+                    ) : null}
                   </div>
                 </div>
-                <div className="mt-2 text-[13px] font-semibold text-slate-800">
-                  {item.cancellationDeadline
-                    ? formatBookingDateTime(item.cancellationDeadline)
-                    : 'No cancellation deadline'}
-                </div>
-                <div className="mt-1 text-[12px] text-slate-500">
-                  {itemStatusLabel(item.status)}
-                  {item.bookingRef ? ` · ${item.bookingRef}` : ''}
-                </div>
-                {canEdit ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onOpenDetails(item)}
-                      className="rounded-full bg-slate-100 px-3 py-1.5 text-[12px] font-semibold text-slate-700"
-                    >
-                      Open details
-                    </button>
-                  </div>
-                ) : null}
               </div>
             )
           })}
           {!monitoredItems.length ? (
-            <div className="rounded-[1.15rem] bg-white px-4 py-6 text-center text-[13px] leading-6 text-slate-500">
-              No hotel or restaurant items to monitor yet.
+            <div className="rounded-[1.15rem] bg-white px-4 py-7 text-center">
+              <div className="text-[14px] font-bold text-slate-900">No cancellation deadlines yet</div>
+              <div className="mx-auto mt-1 max-w-xs text-[12px] leading-5 text-slate-500">
+                Add a hotel or restaurant item with a cancellation deadline and it will appear here.
+              </div>
             </div>
           ) : null}
         </div>
@@ -2218,7 +2325,7 @@ function DetailModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
@@ -2389,7 +2496,7 @@ function DetailModal({
             href={mapsUrl}
             target="_blank"
             rel="noreferrer"
-            className="mt-3.5 flex items-center justify-between rounded-[1rem] bg-indigo-600 px-4 py-3.5 text-sm font-bold text-white"
+            className="mt-3.5 flex items-center justify-between rounded-[1rem] bg-slate-900 px-4 py-3.5 text-sm font-bold text-white"
           >
             Open in Google Maps
             <ExternalLink className="h-4 w-4" />
@@ -2616,7 +2723,7 @@ function PlannerPanel({
         </div>
       ) : null}
 
-      <div className="space-y-2.5 browse-ui">
+      <div className={`${isMobilePortrait ? 'space-y-1.5' : 'space-y-2.5'} browse-ui`}>
         {timelineEntries.map((entry, index) => {
           const item = entry.item
           const meta = typeMeta(item.category)
@@ -2645,9 +2752,9 @@ function PlannerPanel({
             (!nextItem || nextItem.dayId !== item.dayId || nextItem.generated)
           const isDraggingItem = dragState?.itemId === item.id
           return (
-            <div key={entry.id} className="space-y-2">
+            <div key={entry.id} className={isMobilePortrait ? 'space-y-1.5' : 'space-y-2'}>
               {showDayDivider ? (
-                <div className="flex items-center gap-3 px-1 py-4 first:pt-0">
+                <div className={`flex items-center gap-3 px-1 first:pt-0 ${isMobilePortrait ? 'py-2.5' : 'py-4'}`}>
                   <div className="min-w-0">
                     <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                       {dayContext?.label || 'Day'}
@@ -2673,7 +2780,7 @@ function PlannerPanel({
                 />
               ) : null}
               <article
-                className={`timeline-card relative rounded-[1.08rem] px-4 py-4 transition hover:bg-white active:bg-white sm:px-5 ${
+                className={`timeline-card ${meta.card} relative rounded-[1.08rem] px-3 py-3 transition hover:bg-white active:bg-white sm:px-5 sm:py-4 ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
                 }`}
                 role="button"
@@ -2691,19 +2798,19 @@ function PlannerPanel({
                 onPointerCancel={onOpenDetails.cancelPress}
                 onPointerLeave={onOpenDetails.cancelPress}
               >
-                <div className="flex gap-4 sm:gap-5">
-                  <div className="w-[3.55rem] shrink-0 pt-0.5 text-right">
+                <div className="flex gap-3 sm:gap-5">
+                  <div className="w-[3.1rem] shrink-0 pt-0.5 text-right sm:w-[3.55rem]">
                     <div className="text-[13px] font-bold tracking-[-0.01em] text-slate-900">{item.startTime}</div>
-                    {item.endTime ? <div className="mt-1 text-[10px] font-medium tracking-[-0.01em] text-slate-400">{item.endTime}</div> : null}
+                    {item.endTime ? <div className="mt-0.5 text-[10px] font-medium tracking-[-0.01em] text-slate-400 sm:mt-1">{item.endTime}</div> : null}
                   </div>
                   <div className="timeline-rail shrink-0">
                     <span className={`timeline-dot ${meta.tone}`} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className={`flex gap-3 ${isMobilePortrait ? 'flex-col items-stretch' : 'items-start justify-between'}`}>
+                    <div className={`flex ${isMobilePortrait ? 'flex-col items-stretch gap-2' : 'items-start justify-between gap-3'}`}>
                       <div className="min-w-0">
-                        <h3 className={`${isMobilePortrait ? 'line-clamp-2' : ''} text-[0.98rem] font-bold leading-6 tracking-[-0.02em] text-slate-950`}>{item.title}</h3>
-                        <p className="mt-1 truncate text-[12px] text-slate-500">{item.locationName || item.address}</p>
+                        <h3 className={`${isMobilePortrait ? 'line-clamp-2 leading-5' : 'leading-6'} text-[0.98rem] font-bold tracking-[-0.02em] text-slate-950`}>{item.title}</h3>
+                        <p className="mt-0.5 truncate text-[12px] text-slate-500 sm:mt-1">{item.locationName || item.address}</p>
                       </div>
                       <div className={`flex items-center gap-2 ${isMobilePortrait ? 'justify-between' : ''}`}>
                         {isStack ? (
@@ -2713,7 +2820,7 @@ function PlannerPanel({
                             onClick={toggleStack}
                             aria-expanded={isExpandedStack}
                             className={`inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-200/80 bg-white text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600 transition hover:bg-slate-50 ${
-                              isMobilePortrait ? 'min-w-[7.3rem] px-3 py-2' : 'px-2.5 py-1'
+                              isMobilePortrait ? 'min-w-[6.6rem] px-2.5 py-1.5' : 'px-2.5 py-1'
                             }`}
                           >
                             <span>{entry.items.length}</span>
@@ -2731,7 +2838,7 @@ function PlannerPanel({
                             onPointerDown={(event) => onDragStart(event, item)}
                             onClick={(event) => event.stopPropagation()}
                             data-drag-handle="true"
-                            className={`touch-none rounded-full bg-slate-50 p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 active:scale-95 ${isMobilePortrait ? 'ml-auto' : ''}`}
+                            className={`touch-none rounded-full bg-slate-50 p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 active:scale-95 sm:p-2 ${isMobilePortrait ? 'ml-auto' : ''}`}
                             aria-label={`Drag ${item.title}`}
                           >
                             <GripVertical className="h-4 w-4" />
@@ -2740,10 +2847,10 @@ function PlannerPanel({
                       </div>
                     </div>
                     {item.address && item.address !== item.locationName ? (
-                      <p className="mt-1 truncate text-[11px] text-slate-400">{item.address}</p>
+                      <p className="mt-0.5 truncate text-[11px] text-slate-400 sm:mt-1">{item.address}</p>
                     ) : null}
                     {(item.description || item.generated) ? (
-                      <p className="mt-2 line-clamp-2 text-[12px] leading-6 text-slate-500">
+                      <p className="mt-1.5 line-clamp-2 text-[12px] leading-5 text-slate-500 sm:mt-2 sm:leading-6">
                         {item.generated ? 'Auto-carried from the previous day hotel stay.' : item.description}
                       </p>
                     ) : null}
@@ -2753,7 +2860,7 @@ function PlannerPanel({
                         onPointerDown={(event) => event.stopPropagation()}
                         onClick={toggleStack}
                         aria-expanded={isExpandedStack}
-                        className="mt-3 flex w-full items-center justify-between gap-3 rounded-[0.85rem] border border-slate-200/75 bg-slate-50/85 px-3 py-2.5 text-left transition hover:border-slate-300 hover:bg-white"
+                        className="mt-2 flex w-full items-center justify-between gap-3 rounded-[0.85rem] border border-slate-200/75 bg-slate-50/85 px-3 py-2 text-left transition hover:border-slate-300 hover:bg-white sm:mt-3 sm:py-2.5"
                       >
                         <span className="min-w-0">
                           <span className="block text-[12px] font-bold tracking-[-0.01em] text-slate-800">
@@ -2771,7 +2878,7 @@ function PlannerPanel({
                       </button>
                     ) : null}
                     {isMonitoredCancellationItem(item) && item.cancellationDeadline ? (
-                      <div className="mt-3 rounded-[0.8rem] bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-600">
+                      <div className="mt-2 rounded-[0.8rem] bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-600 sm:mt-3">
                         <span className="font-semibold text-slate-800">{itemStatusLabel(item.status)}</span>
                         <span className="block">
                           Cancellation deadline: {formatBookingDateTime(item.cancellationDeadline)}
@@ -2783,7 +2890,7 @@ function PlannerPanel({
               </article>
 
               {isExpandedStack ? (
-                <div className="ml-[4.85rem] space-y-2.5 overflow-visible sm:ml-[5.9rem]">
+                <div className="ml-[4.45rem] space-y-1.5 overflow-visible sm:ml-[5.9rem] sm:space-y-2.5">
                   {stackAlternatives.map((stackItem, stackIndex) => {
                     const stackMeta = typeMeta(stackItem.category)
                     const stackHasActive = hasActiveStayOrMealStatus(stackItem)
@@ -2803,7 +2910,7 @@ function PlannerPanel({
                         onPointerUp={(event) => onOpenDetails.endPress(event, stackItem)}
                         onPointerCancel={onOpenDetails.cancelPress}
                         onPointerLeave={onOpenDetails.cancelPress}
-                        className={`rounded-[0.95rem] border border-slate-200/70 bg-white/86 px-3.5 py-3 shadow-[0_10px_22px_rgba(15,23,42,0.035)] transition hover:bg-white ${
+                        className={`rounded-[0.95rem] border border-slate-200/70 bg-white/86 px-3 py-2.5 shadow-[0_10px_22px_rgba(15,23,42,0.035)] transition hover:bg-white sm:px-3.5 sm:py-3 ${
                           isMobilePortrait ? 'border-l-4' : ''
                         }`}
                         style={
@@ -2852,7 +2959,7 @@ function PlannerPanel({
                 <button
                   type="button"
                   onClick={toggleStack}
-                  className="ml-[4.85rem] hidden w-[calc(100%-4.85rem)] items-center justify-center rounded-b-[0.9rem] border border-t-0 border-slate-200/65 bg-white/62 px-3 py-2 text-[11px] font-semibold text-slate-500 shadow-[0_8px_16px_rgba(15,23,42,0.025)] transition hover:bg-white sm:ml-[5.9rem] sm:flex sm:w-[calc(100%-5.9rem)]"
+                  className="ml-[4.45rem] hidden w-[calc(100%-4.45rem)] items-center justify-center rounded-b-[0.9rem] border border-t-0 border-slate-200/65 bg-white/62 px-3 py-2 text-[11px] font-semibold text-slate-500 shadow-[0_8px_16px_rgba(15,23,42,0.025)] transition hover:bg-white sm:ml-[5.9rem] sm:flex sm:w-[calc(100%-5.9rem)]"
                 >
                   + {stackAlternatives.length} more overlapping {stackAlternatives.length === 1 ? 'option' : 'options'}
                 </button>
@@ -2860,13 +2967,13 @@ function PlannerPanel({
 
               {nextSegment ? (
                 <div
-                  className={`ml-[4.85rem] rounded-[0.9rem] px-4 py-1.5 text-[11px] text-slate-500 sm:ml-[5.9rem] ${
+                  className={`ml-[4.45rem] rounded-[0.9rem] px-3 py-1 text-[11px] text-slate-500 sm:ml-[5.9rem] sm:px-4 sm:py-1.5 ${
                     isMobilePortrait
                       ? 'flex items-center justify-between gap-3'
                       : 'flex items-center justify-between gap-4'
                   }`}
                 >
-                  <div className="flex min-w-0 items-center gap-2.5">
+                  <div className="flex min-w-0 items-center gap-2">
                     <span className="font-medium text-slate-700">{routeLabel(nextSegment.mode)}</span>
                     <span>
                       {nextSegment.route
@@ -2921,11 +3028,11 @@ function PlannerPanel({
         ) : null}
       </div>
 
-      <div className="glass-panel rounded-[1.08rem] px-4 py-4 sm:px-5 browse-ui">
+      <div className="glass-panel rounded-[1.08rem] px-3 py-3 sm:px-5 sm:py-4 browse-ui">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h3 className="headline text-[1.35rem] leading-none text-slate-950">Add stop</h3>
-            <p className="mt-1 text-[13px] text-slate-500">Open the composer only when you need it.</p>
+            <h3 className="headline text-[1.18rem] leading-none text-slate-950 sm:text-[1.35rem]">Add stop</h3>
+            <p className="mt-1 hidden text-[13px] text-slate-500 sm:block">Open the composer only when you need it.</p>
           </div>
           {canEdit ? (
             <button
@@ -2942,7 +3049,7 @@ function PlannerPanel({
 
         {isComposerOpen && canEdit ? (
           <>
-            <div className={`mt-5 grid gap-3.5 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
+            <div className={`mt-3.5 grid gap-3 ${isMobilePortrait ? '' : 'sm:grid-cols-2 sm:gap-3.5 sm:mt-5'}`}>
               <Field label="Day">
                 <select
                   value={effectiveDraftDayId}
@@ -3044,7 +3151,7 @@ function PlannerPanel({
               </div>
             ) : null}
 
-            <div className="mt-4 space-y-3">
+            <div className="mt-3 space-y-3 sm:mt-4">
               {draft.category !== 'Flight' ? (
                 <PlaceFields
                   draft={draft}
@@ -3111,7 +3218,7 @@ function PlannerPanel({
             </button>
           </>
         ) : (
-          <div className="mt-4 rounded-[0.95rem] bg-white px-4 py-3 text-[13px] leading-6 text-slate-500">
+              <div className="mt-3 hidden rounded-[0.95rem] bg-white px-4 py-3 text-[13px] leading-6 text-slate-500 sm:block">
             {canEdit
               ? 'Open the composer only when you need to add a new stop.'
               : 'You have view-only access on this trip.'}
@@ -4222,7 +4329,7 @@ export default function App() {
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl overflow-x-clip px-3 py-4 pb-24 pt-14 text-slate-900 sm:px-6 sm:py-5 sm:pb-24 sm:pt-16 lg:px-8">
+    <main className="mx-auto min-h-screen max-w-7xl overflow-x-clip px-2.5 py-3 pb-20 pt-11 text-slate-900 sm:px-6 sm:py-5 sm:pb-24 sm:pt-16 lg:px-8">
       <MenuButton onClick={() => setShowMenu(true)} />
       <AppDrawer
         activeTripSummary={activeTripSummary}
@@ -4278,11 +4385,11 @@ export default function App() {
       <section
         className={
           isMobilePortrait
-            ? 'mx-auto max-w-[28rem] space-y-4'
+            ? 'mx-auto max-w-[28rem] space-y-2.5'
             : 'grid gap-6 lg:grid-cols-[1.08fr_0.92fr]'
         }
       >
-        <div className="space-y-4">
+        <div className={isMobilePortrait ? 'space-y-2.5' : 'space-y-4'}>
           <PlannerPanel
             activeDayId={resolvedActiveDayId}
             canEdit={canEditCurrentTrip}
