@@ -22,8 +22,7 @@ service cloud.firestore {
     }
 
     function isUnclaimedLegacyTrip(tripId) {
-      return tripId == 'default-trip' &&
-        (!(resource.data.ownerId is string) || resource.data.ownerId == '');
+      return !(resource.data.ownerId is string) || resource.data.ownerId == '';
     }
 
     function isTripMember(tripId) {
@@ -124,7 +123,7 @@ service cloud.firestore {
     }
 
     match /trips/{tripId}/members/{uid} {
-      allow read: if canViewTrip(tripId);
+      allow read: if canViewTrip(tripId) || (isSignedIn() && isUnclaimedLegacyTrip(tripId));
       allow create: if validTripMember(uid) && (
         (isTripOwner(tripId) && request.resource.data.role in ['owner', 'editor', 'viewer']) ||
         (isSignedIn() &&

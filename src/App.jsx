@@ -1159,6 +1159,7 @@ function TripSwitcher({
   canManageTrip,
   deletedTrips,
   disabled,
+  onClaimTrip,
   isMobilePortrait,
   onCreateTrip,
   onDeleteTrip,
@@ -1329,6 +1330,20 @@ function TripSwitcher({
                 </div>
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white">
                   <Plus className="h-4 w-4" />
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => void onClaimTrip()}
+                disabled={disabled}
+                className="mt-1 flex w-full items-center justify-between gap-3 rounded-[0.9rem] px-3 py-2.5 text-left text-slate-700 transition hover:bg-white/80 disabled:text-slate-400"
+              >
+                <div>
+                  <div className="text-[13px] font-semibold tracking-[-0.01em]">Claim existing trip</div>
+                  <div className="pt-0.5 text-[11px] text-slate-500">Attach a legacy trip with no members yet.</div>
+                </div>
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+                  <Users className="h-4 w-4" />
                 </div>
               </button>
             </div>
@@ -3426,6 +3441,21 @@ export default function App() {
     selectTrip(tripId)
   }
 
+  async function claimExistingTrip() {
+    if (!currentUser?.uid) return
+
+    const tripId = window.prompt('Legacy trip id')?.trim()
+    if (!tripId) return
+
+    const claimed = await claimLegacyTrip(tripId, currentUser)
+    if (!claimed) {
+      window.alert('That trip could not be claimed. It may already have members or an owner.')
+      return
+    }
+
+    selectTrip(tripId)
+  }
+
   async function renameTrip() {
     if (!firestoreReady || !canManageCurrentTrip) return
 
@@ -3755,6 +3785,7 @@ export default function App() {
           canManageTrip={canManageCurrentTrip}
           deletedTrips={deletedTrips}
           disabled={!firestoreReady}
+          onClaimTrip={() => void claimExistingTrip()}
           isMobilePortrait={isMobilePortrait}
           onCreateTrip={() => void createTrip()}
           onDeleteTrip={() => void deleteTrip()}
@@ -3778,6 +3809,14 @@ export default function App() {
             className="mt-4 rounded-[1rem] bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-300"
           >
             Create trip
+          </button>
+          <button
+            type="button"
+            onClick={() => void claimExistingTrip()}
+            disabled={!firebaseEnabled || !currentUser?.uid}
+            className="mt-2 rounded-[1rem] bg-white px-4 py-3 text-sm font-semibold text-slate-700 disabled:bg-slate-100 disabled:text-slate-400"
+          >
+            Claim existing trip
           </button>
         </div>
       ) : null}
