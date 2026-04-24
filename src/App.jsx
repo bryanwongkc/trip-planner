@@ -3419,26 +3419,36 @@ export default function App() {
     const nextSummary = {
       id: tripId,
       title,
+      role: 'owner',
+      hidden: false,
       startDate: tripState.days[0]?.date || '',
       endDate: tripState.days[tripState.days.length - 1]?.date || '',
     }
 
-    await createTripRecordWithOwner(
-      tripId,
-      {
-        title: nextSummary.title,
-        startDate: nextSummary.startDate,
-        endDate: nextSummary.endDate,
-        days: snapshot.days,
-        items: snapshot.items,
-      },
-      currentUser,
-    )
+    try {
+      await createTripRecordWithOwner(
+        tripId,
+        {
+          title: nextSummary.title,
+          startDate: nextSummary.startDate,
+          endDate: nextSummary.endDate,
+          days: snapshot.days,
+          items: snapshot.items,
+        },
+        currentUser,
+      )
 
-    setTripSummaries((current) =>
-      current.some((trip) => trip.id === tripId) ? current : [...current, nextSummary],
-    )
-    selectTrip(tripId)
+      setTripSummaries((current) =>
+        current.some((trip) => trip.id === tripId) ? current : [...current, nextSummary],
+      )
+      selectTrip(tripId)
+      setFirestoreState((current) => ({ ...current, error: '' }))
+    } catch (error) {
+      console.error(error)
+      const message = error?.message || 'Trip creation failed'
+      setFirestoreState((current) => ({ ...current, status: 'error', error: message }))
+      window.alert(message)
+    }
   }
 
   async function claimExistingTrip() {
