@@ -1976,6 +1976,8 @@ function DayManagerModal({
 }
 
 function NoteModal({ canEdit, item, isMobilePortrait, onClose, onDelete, onOpenDetails }) {
+  const mapsUrl = item.category === 'Flight' ? '' : getGoogleMapsUrl(item)
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
@@ -2003,9 +2005,6 @@ function NoteModal({ canEdit, item, isMobilePortrait, onClose, onDelete, onOpenD
                 <Trash2 className="h-5 w-5" />
               </button>
             ) : null}
-            <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
-              <X className="h-5 w-5" />
-            </button>
           </div>
         </div>
 
@@ -2041,53 +2040,15 @@ function NoteModal({ canEdit, item, isMobilePortrait, onClose, onDelete, onOpenD
           ) : null}
         </div>
 
-        {canEdit ? (
-          <button
-            type="button"
-            onClick={onOpenDetails}
-            className="mt-3.5 w-full rounded-[0.95rem] bg-slate-900 px-4 py-3.5 text-sm font-bold text-white"
-          >
-            {item.generated ? 'View linked details' : 'Open details'}
-          </button>
-        ) : null}
-      </div>
-    </div>
-  )
-}
-
-function ItemQuickActionsModal({ canEdit, item, isMobilePortrait, onClose, onOpenDetails }) {
-  const mapsUrl = item.category === 'Flight' ? '' : getGoogleMapsUrl(item)
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
-      onClick={onClose}
-    >
-      <div
-        onClick={(event) => event.stopPropagation()}
-        className={`glass-panel browse-ui w-full border border-white/60 p-4 sm:p-5 ${
-          isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-md rounded-[1.5rem]'
-        }`}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Quick actions</div>
-            <h3 className="mt-1 text-[1.2rem] font-bold tracking-[-0.02em] text-slate-900">{item.title}</h3>
-          </div>
-          <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
         <div className="mt-4 space-y-2">
           {canEdit ? (
             <button
               type="button"
               onClick={onOpenDetails}
-              className="flex w-full items-center justify-between rounded-[1rem] bg-white px-4 py-3.5 text-left text-sm font-semibold text-slate-800"
+              className="flex w-full items-center justify-between rounded-[0.95rem] bg-slate-900 px-4 py-3.5 text-left text-sm font-bold text-white"
             >
               <span>Edit details</span>
-              <Pencil className="h-4 w-4 text-slate-400" />
+              <Pencil className="h-4 w-4" />
             </button>
           ) : null}
           {mapsUrl ? (
@@ -2096,7 +2057,7 @@ function ItemQuickActionsModal({ canEdit, item, isMobilePortrait, onClose, onOpe
               target="_blank"
               rel="noreferrer"
               onClick={() => onClose()}
-              className="flex w-full items-center justify-between rounded-[1rem] bg-white px-4 py-3.5 text-sm font-semibold text-slate-800"
+              className="flex w-full items-center justify-between rounded-[0.95rem] bg-white px-4 py-3.5 text-sm font-semibold text-slate-800"
             >
               <span>Open in Google Maps</span>
               <ExternalLink className="h-4 w-4" />
@@ -2105,7 +2066,7 @@ function ItemQuickActionsModal({ canEdit, item, isMobilePortrait, onClose, onOpe
           <button
             type="button"
             onClick={onClose}
-            className="flex w-full items-center justify-center rounded-[1rem] bg-slate-100 px-4 py-3.5 text-sm font-semibold text-slate-600"
+            className="flex w-full items-center justify-center rounded-[0.95rem] bg-slate-100 px-4 py-3.5 text-sm font-semibold text-slate-600"
           >
             Cancel
           </button>
@@ -2670,6 +2631,14 @@ function PlannerPanel({
           const isStack = entry.type === 'stack'
           const isExpandedStack = Boolean(expandedStacks[entry.id])
           const stackAlternatives = isStack ? entry.items.filter((stackItem) => stackItem.id !== item.id) : []
+          const stackChoiceLabel = item.category === 'Hotel' ? 'hotel options' : 'restaurant options'
+          const toggleStack = (event) => {
+            event?.stopPropagation?.()
+            setExpandedStacks((current) => ({
+              ...current,
+              [entry.id]: !current[entry.id],
+            }))
+          }
           const showBeforeSlot = Boolean(dragState && isManual)
           const showAfterSlot =
             Boolean(dragState && isManual) &&
@@ -2718,7 +2687,7 @@ function PlannerPanel({
                 onContextMenu={(event) => event.preventDefault()}
                 onPointerDown={(event) => onOpenDetails.startPress(event, item)}
                 onPointerMove={onOpenDetails.movePress}
-                onPointerUp={(event) => onOpenDetails.endPress(event, item)}
+                onPointerUp={(event) => onOpenDetails.endPress(event, item, isStack ? toggleStack : undefined)}
                 onPointerCancel={onOpenDetails.cancelPress}
                 onPointerLeave={onOpenDetails.cancelPress}
               >
@@ -2740,16 +2709,13 @@ function PlannerPanel({
                         {isStack ? (
                           <button
                             type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              setExpandedStacks((current) => ({
-                                ...current,
-                                [entry.id]: !current[entry.id],
-                              }))
-                            }}
-                            className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600"
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={toggleStack}
+                            aria-expanded={isExpandedStack}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600 transition hover:bg-slate-50"
                           >
                             {entry.items.length} options
+                            <ChevronDown className={`h-3 w-3 transition ${isExpandedStack ? 'rotate-180' : ''}`} />
                           </button>
                         ) : null}
                         {item.generated ? (
@@ -2781,16 +2747,24 @@ function PlannerPanel({
                     {isStack ? (
                       <button
                         type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          setExpandedStacks((current) => ({
-                            ...current,
-                            [entry.id]: !current[entry.id],
-                          }))
-                        }}
-                        className="mt-2 text-[11px] font-semibold text-slate-500"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={toggleStack}
+                        aria-expanded={isExpandedStack}
+                        className="mt-3 flex w-full items-center justify-between gap-3 rounded-[0.85rem] border border-slate-200/75 bg-slate-50/85 px-3 py-2.5 text-left transition hover:border-slate-300 hover:bg-white"
                       >
-                        {isExpandedStack ? 'Hide overlapping options' : `Show ${stackAlternatives.length} overlapping option${stackAlternatives.length === 1 ? '' : 's'}`}
+                        <span className="min-w-0">
+                          <span className="block text-[12px] font-bold tracking-[-0.01em] text-slate-800">
+                            {isExpandedStack
+                              ? `Hide ${stackAlternatives.length} other ${stackAlternatives.length === 1 ? 'option' : 'options'}`
+                              : `Compare ${stackAlternatives.length} other ${stackAlternatives.length === 1 ? 'option' : 'options'}`}
+                          </span>
+                          <span className="mt-0.5 block truncate text-[11px] text-slate-500">
+                            {entry.items.length} overlapping {stackChoiceLabel}; active or earliest is shown first.
+                          </span>
+                        </span>
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-slate-500">
+                          <ChevronDown className={`h-4 w-4 transition ${isExpandedStack ? 'rotate-180' : ''}`} />
+                        </span>
                       </button>
                     ) : null}
                     {isMonitoredCancellationItem(item) && item.cancellationDeadline ? (
@@ -2806,8 +2780,8 @@ function PlannerPanel({
               </article>
 
               {isExpandedStack ? (
-                <div className="ml-[4.85rem] space-y-2 sm:ml-[5.9rem]">
-                  {stackAlternatives.map((stackItem) => {
+                <div className="ml-[4.85rem] space-y-2.5 overflow-visible sm:ml-[5.9rem]">
+                  {stackAlternatives.map((stackItem, stackIndex) => {
                     const stackMeta = typeMeta(stackItem.category)
                     const stackHasActive = hasActiveStayOrMealStatus(stackItem)
                     return (
@@ -2815,14 +2789,22 @@ function PlannerPanel({
                         key={stackItem.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => onOpenNotes(stackItem)}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter' || event.key === ' ') {
                             event.preventDefault()
-                            onOpenNotes(stackItem)
                           }
                         }}
-                        className="rounded-[0.95rem] border border-slate-200/70 bg-white/82 px-3.5 py-3 transition hover:bg-white"
+                        onContextMenu={(event) => event.preventDefault()}
+                        onPointerDown={(event) => onOpenDetails.startPress(event, stackItem)}
+                        onPointerMove={onOpenDetails.movePress}
+                        onPointerUp={(event) => onOpenDetails.endPress(event, stackItem)}
+                        onPointerCancel={onOpenDetails.cancelPress}
+                        onPointerLeave={onOpenDetails.cancelPress}
+                        className="rounded-[0.95rem] border border-slate-200/70 bg-white/86 px-3.5 py-3 shadow-[0_10px_22px_rgba(15,23,42,0.035)] transition hover:bg-white"
+                        style={{
+                          transform: `translateX(${Math.min((stackIndex + 1) * 10, 28)}px) rotate(${Math.min((stackIndex + 1) * 0.35, 1)}deg)`,
+                          width: `calc(100% - ${Math.min((stackIndex + 1) * 10, 28)}px)`,
+                        }}
                       >
                         <div className="flex items-start gap-3">
                           <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${stackMeta.tone}`} />
@@ -2856,7 +2838,13 @@ function PlannerPanel({
                   })}
                 </div>
               ) : isStack ? (
-                <div className="ml-[4.85rem] h-2.5 rounded-b-[0.9rem] bg-white/55 shadow-[0_8px_16px_rgba(15,23,42,0.025)] sm:ml-[5.9rem]" />
+                <button
+                  type="button"
+                  onClick={toggleStack}
+                  className="ml-[4.85rem] flex w-[calc(100%-4.85rem)] items-center justify-center rounded-b-[0.9rem] border border-t-0 border-slate-200/65 bg-white/62 px-3 py-2 text-[11px] font-semibold text-slate-500 shadow-[0_8px_16px_rgba(15,23,42,0.025)] transition hover:bg-white sm:ml-[5.9rem] sm:w-[calc(100%-5.9rem)]"
+                >
+                  + {stackAlternatives.length} more overlapping {stackAlternatives.length === 1 ? 'option' : 'options'}
+                </button>
               ) : null}
 
               {nextSegment ? (
@@ -3188,7 +3176,6 @@ export default function App() {
     error: '',
     targetKey: '',
   })
-  const [actionItem, setActionItem] = useState(null)
   const [noteItem, setNoteItem] = useState(null)
   const [detailItem, setDetailItem] = useState(null)
   const [routeMap, setRouteMap] = useState({})
@@ -3595,7 +3582,6 @@ export default function App() {
 
   function selectTrip(tripId) {
     setOverrides({ days: {}, items: {} })
-    setActionItem(null)
     setNoteItem(null)
     setDetailItem(null)
     setDragState(null)
@@ -3836,7 +3822,6 @@ export default function App() {
     try {
       await signOutUser()
       setShowCollaborators(false)
-      setActionItem(null)
       setNoteItem(null)
       setDetailItem(null)
       setTripMembers([])
@@ -4030,7 +4015,6 @@ export default function App() {
           .map((booking) => [booking.id, { hidden: true }]),
       ),
     })
-    setActionItem((current) => (current?.id === itemId ? null : current))
     setNoteItem((current) => (current?.id === itemId ? null : current))
     setDetailItem((current) => (current?.id === itemId ? null : current))
   }
@@ -4059,13 +4043,11 @@ export default function App() {
   }
 
   function openNotes(item) {
-    setActionItem(null)
     setNoteItem(item)
   }
 
   function openDetails(item) {
     if (!canEditCurrentTrip) return
-    setActionItem(null)
     setNoteItem(null)
     setDetailItem(createItemDraft(item))
   }
@@ -4180,7 +4162,7 @@ export default function App() {
         const state = pressStateRef.current
         if (!state.moved && state.itemId === item.id) {
           pressStateRef.current.longPressed = true
-          setActionItem(item)
+          setNoteItem(item)
         }
       }, LONG_PRESS_MS),
       pointerId: event.pointerId,
@@ -4206,12 +4188,12 @@ export default function App() {
     }
   }
 
-  function endPress(event, item) {
+  function endPress(event, item, onTap) {
     const state = pressStateRef.current
     if (state.pointerId !== event.pointerId) return
-    const shouldOpenNotes = !state.moved && !state.longPressed && state.itemId === item.id
+    const shouldHandleTap = !state.moved && !state.longPressed && state.itemId === item.id
     clearPressState()
-    if (shouldOpenNotes) openNotes(item)
+    if (shouldHandleTap) onTap?.()
   }
 
   if (authReady && !currentUser) {
@@ -4376,16 +4358,6 @@ export default function App() {
             setNoteItem(null)
             openDetails(match)
           }}
-        />
-      ) : null}
-
-      {actionItem ? (
-        <ItemQuickActionsModal
-          canEdit={canEditCurrentTrip}
-          item={actionItem}
-          isMobilePortrait={isMobilePortrait}
-          onClose={() => setActionItem(null)}
-          onOpenDetails={() => openDetails(actionItem)}
         />
       ) : null}
 
