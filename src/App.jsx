@@ -38,6 +38,7 @@ import {
   DEFAULT_TRIP_TITLE,
   MAPS_API_KEY,
   SEED_DAYS,
+  SEED_ITEMS,
   TRIP_ID,
 } from './data/seedItinerary'
 import {
@@ -405,6 +406,31 @@ function serializeTripState(tripState) {
           }),
         ]),
     ),
+  }
+}
+
+function localTodayIso() {
+  const now = new Date()
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 10)
+}
+
+function buildBlankTripSnapshot(date = localTodayIso()) {
+  const dayId = slugId('day')
+
+  return {
+    startDate: date,
+    endDate: date,
+    days: {
+      ...Object.fromEntries(SEED_DAYS.map((day) => [day.id, { ...day, hidden: true }])),
+      [dayId]: {
+        id: dayId,
+        date,
+        name: '',
+        order: 0,
+      },
+    },
+    items: Object.fromEntries(SEED_ITEMS.map((item) => [item.id, { ...item, hidden: true }])),
   }
 }
 
@@ -3415,14 +3441,14 @@ export default function App() {
     if (!title) return
 
     const tripId = slugId('trip')
-    const snapshot = serializeTripState(tripState)
+    const snapshot = buildBlankTripSnapshot()
     const nextSummary = {
       id: tripId,
       title,
       role: 'owner',
       hidden: false,
-      startDate: tripState.days[0]?.date || '',
-      endDate: tripState.days[tripState.days.length - 1]?.date || '',
+      startDate: snapshot.startDate,
+      endDate: snapshot.endDate,
     }
 
     try {
