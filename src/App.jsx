@@ -1451,44 +1451,65 @@ function TripSwitcher({
 }
 
 function UserBar({ canShare, user, onShare, onSignOut }) {
+  const [open, setOpen] = useState(false)
+
   return (
-    <div className="glass-panel flex items-center justify-between gap-3 rounded-[1rem] border border-white/60 px-3 py-2.5">
-      <div className="flex min-w-0 items-center gap-3">
+    <div className="fixed right-3 top-3 z-40 sm:right-5 sm:top-5">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="glass-panel flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-white/70 p-0.5 shadow-[0_10px_24px_rgba(15,23,42,0.08)]"
+        aria-label="Account menu"
+        aria-expanded={open}
+      >
         {user?.photoURL ? (
-          <img src={user.photoURL} alt={user.displayName || user.email || 'User'} className="h-9 w-9 rounded-full object-cover" />
+          <img
+            src={user.photoURL}
+            alt={user.displayName || user.email || 'User'}
+            className="h-full w-full rounded-full object-cover"
+          />
         ) : (
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-[12px] font-semibold text-slate-700">
+          <div className="flex h-full w-full items-center justify-center rounded-full bg-slate-200 text-[12px] font-semibold text-slate-700">
             {(user?.displayName || user?.email || 'U').slice(0, 1).toUpperCase()}
           </div>
         )}
-        <div className="min-w-0">
-          <div className="truncate text-[13px] font-semibold tracking-[-0.01em] text-slate-900">
-            {user?.displayName || 'Signed in'}
+      </button>
+
+      {open ? (
+        <div className="glass-panel absolute right-0 mt-2 w-56 rounded-[1rem] border border-white/70 p-2 shadow-[0_18px_38px_rgba(15,23,42,0.10)]">
+          <div className="px-2.5 py-2">
+            <div className="truncate text-[13px] font-semibold tracking-[-0.01em] text-slate-900">
+              {user?.displayName || 'Signed in'}
+            </div>
+            <div className="mt-0.5 truncate text-[11px] text-slate-500">{user?.email || ''}</div>
           </div>
-          <div className="truncate text-[11px] text-slate-500">{user?.email || ''}</div>
+          <div className="mt-1 space-y-1 border-t border-slate-200/70 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                onShare()
+              }}
+              disabled={!canShare}
+              className="flex w-full items-center gap-2 rounded-[0.8rem] px-2.5 py-2 text-left text-[12px] font-semibold text-slate-700 transition hover:bg-white disabled:text-slate-400"
+            >
+              <Users className="h-3.5 w-3.5" />
+              Share trip
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                onSignOut()
+              }}
+              className="flex w-full items-center gap-2 rounded-[0.8rem] px-2.5 py-2 text-left text-[12px] font-semibold text-slate-700 transition hover:bg-white"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              Sign out
+            </button>
+          </div>
         </div>
-      </div>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onShare}
-          disabled={!canShare}
-          className="rounded-full bg-white px-3 py-2 text-[12px] font-semibold text-slate-700 disabled:bg-slate-100 disabled:text-slate-400"
-        >
-          <span className="inline-flex items-center gap-1.5">
-            <Users className="h-3.5 w-3.5" />
-            Share
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={onSignOut}
-          className="rounded-full bg-white p-2 text-slate-600"
-          aria-label="Sign out"
-        >
-          <LogOut className="h-4 w-4" />
-        </button>
-      </div>
+      ) : null}
     </div>
   )
 }
@@ -4369,14 +4390,12 @@ export default function App() {
 
   return (
     <main className="mx-auto min-h-screen max-w-7xl overflow-x-clip px-3 py-4 pb-8 text-slate-900 sm:px-6 sm:py-5 sm:pb-10 lg:px-8">
-      <div className={isMobilePortrait ? 'mx-auto mb-3 max-w-[28rem]' : 'mb-3 max-w-xl'}>
-        <UserBar
-          canShare={canViewTrip(activeRole)}
-          user={currentUser}
-          onShare={() => setShowCollaborators(true)}
-          onSignOut={() => void handleSignOut()}
-        />
-      </div>
+      <UserBar
+        canShare={canViewTrip(activeRole)}
+        user={currentUser}
+        onShare={() => setShowCollaborators(true)}
+        onSignOut={() => void handleSignOut()}
+      />
       <div className={isMobilePortrait ? 'mx-auto mb-4 max-w-[28rem]' : 'mb-4 max-w-md'}>
         <TripSwitcher
           activeTripId={activeTripSummary.id}
