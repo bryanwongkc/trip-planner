@@ -309,7 +309,7 @@ export async function createTripRecordWithOwner(tripId, payload, ownerUser) {
 }
 
 export async function upsertTripMeta(tripId, payload) {
-  const { db, doc, serverTimestamp, setDoc, writeBatch } = await loadFirebaseServices()
+  const { db, doc, serverTimestamp, writeBatch } = await loadFirebaseServices()
   if (!db || !tripId) return
 
   const { tripData, memberDocs } = await getTripMetaAndMembers(tripId)
@@ -346,7 +346,7 @@ export async function upsertTripMeta(tripId, payload) {
 }
 
 export async function addTripMember(tripId, actorUser, memberUser, role, tripMeta = {}) {
-  const { db, doc, serverTimestamp, setDoc, writeBatch } = await loadFirebaseServices()
+  const { db, doc, serverTimestamp, writeBatch } = await loadFirebaseServices()
   if (!db || !tripId || !memberUser?.uid) return
 
   const batch = writeBatch(db)
@@ -377,7 +377,7 @@ export async function addTripMember(tripId, actorUser, memberUser, role, tripMet
 }
 
 export async function updateTripMemberRole(tripId, memberUid, role, tripMeta = {}) {
-  const { db, doc, getDoc, serverTimestamp, setDoc, writeBatch } = await loadFirebaseServices()
+  const { db, doc, getDoc, serverTimestamp, writeBatch } = await loadFirebaseServices()
   if (!db || !tripId || !memberUid) return
 
   const memberDoc = doc(db, 'trips', tripId, 'members', memberUid)

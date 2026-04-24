@@ -1,12 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 @import 'tailwindcss';
 
 :root {
-  color: #17252f;
-  background:
-    radial-gradient(circle at top left, rgba(196, 167, 118, 0.07), transparent 24%),
-    radial-gradient(circle at top right, rgba(120, 151, 181, 0.05), transparent 24%),
-    linear-gradient(180deg, #f7f5f0 0%, #f2efe9 42%, #edf0ec 100%);
+  color: #14202b;
+  background: linear-gradient(180deg, #f7f5f0 0%, #f1eee7 46%, #eef0eb 100%);
   font-family: 'Manrope', 'Segoe UI Variable Text', sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -29,12 +26,10 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.25) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.18) 1px, transparent 1px);
-  background-size: 40px 40px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5), transparent 85%);
-  opacity: 0.045;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(194, 168, 128, 0.08), transparent 30%),
+    radial-gradient(circle at 80% 8%, rgba(85, 112, 140, 0.055), transparent 26%);
+  opacity: 0.85;
 }
 
 #root {
@@ -43,16 +38,17 @@ body::before {
 }
 
 .glass-panel {
-  background: rgba(255, 253, 249, 0.92);
+  background: rgba(255, 253, 249, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.68);
   box-shadow:
-    0 10px 26px rgba(27, 39, 48, 0.03),
-    inset 0 1px 0 rgba(255, 255, 255, 0.62);
+    0 18px 42px rgba(31, 41, 55, 0.055),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 @supports (backdrop-filter: blur(12px)) {
   .glass-panel {
-    background: rgba(255, 253, 249, 0.78);
-    backdrop-filter: blur(8px);
+    background: rgba(255, 253, 249, 0.88);
+    backdrop-filter: blur(12px);
   }
 }
 
@@ -67,15 +63,17 @@ body::before {
 }
 
 .headline {
-  font-family: 'Fraunces', Georgia, serif;
-  font-variation-settings: 'SOFT' 60, 'WONK' 0;
+  font-family: 'Manrope', 'Segoe UI Variable Text', sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.045em;
 }
 
 .timeline-card {
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(226, 232, 240, 0.72);
   box-shadow:
-    0 4px 14px rgba(29, 43, 53, 0.022),
-    inset 0 1px 0 rgba(255, 255, 255, 0.76);
+    0 12px 30px rgba(27, 39, 48, 0.035),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
 }
 
 .timeline-rail {
@@ -91,7 +89,7 @@ body::before {
   top: 2px;
   bottom: 2px;
   width: 1px;
-  background: rgba(148, 163, 184, 0.14);
+  background: rgba(148, 163, 184, 0.22);
 }
 
 .timeline-dot {
@@ -102,7 +100,8 @@ body::before {
   width: 14px;
   height: 14px;
   border-radius: 9999px;
-  border: 2px solid rgba(15, 23, 42, 0.7);
+  border: 2px solid rgba(15, 23, 42, 0.58);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.86);
 }
 
 .quiet-divider {
@@ -123,6 +122,19 @@ body::before {
 
 .animate-float-in {
   animation: float-in 0.5s ease-out both;
+}
+
+.app-control {
+  border: 1px solid rgba(203, 213, 225, 0.7);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.app-control:focus,
+.app-control:focus-visible {
+  outline: none;
+  border-color: rgba(15, 23, 42, 0.42);
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.08);
 }
 
 .browse-ui,
@@ -155,9 +167,35 @@ input,
 select,
 textarea {
   letter-spacing: -0.01em;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid rgba(15, 23, 42, 0.42);
+  outline-offset: 3px;
 }
 
 input::placeholder,
 textarea::placeholder {
   color: rgba(100, 116, 139, 0.72);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: rgba(15, 23, 42, 0.42) !important;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.075);
 }

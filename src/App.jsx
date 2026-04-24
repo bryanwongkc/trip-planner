@@ -23,6 +23,7 @@ import {
   Footprints,
   ExternalLink,
   Loader2,
+  Menu,
   Plus,
   Search,
   Sun,
@@ -75,7 +76,6 @@ import {
   getDurationMinutes,
   movementItemsForDay,
   nextDayDate,
-  normalizeBookingOption,
   normalizeDayTimelineOrder,
   normalizeItemTimeFields,
   reorderTripItems,
@@ -480,60 +480,6 @@ function formatTripDateRange(startDate, endDate) {
   return formatDayDate(startDate || endDate)
 }
 
-function serializeTripState(tripState) {
-  return {
-    days: Object.fromEntries(
-      tripState.days.map((day) => [
-        day.id,
-        {
-          id: day.id,
-          date: day.date,
-          name: day.name || '',
-          order: day.order,
-        },
-      ]),
-    ),
-    items: Object.fromEntries(
-      tripState.items
-        .filter((item) => !item.generated)
-        .map((item) => [
-          item.id,
-          stripFlightLocationFields({
-            id: item.id,
-            dayId: item.dayId,
-            order: item.order,
-            title: item.title,
-            flightCode: item.flightCode || '',
-            locationName: item.locationName,
-            address: item.address,
-            category: item.category,
-            startTime: item.startTime,
-            endTime: item.endTime,
-            endTimeMode: item.endTimeMode || 'time',
-            durationMinutes: Number.isFinite(Number(item.durationMinutes))
-              ? Number(item.durationMinutes)
-              : null,
-            description: item.description,
-            bookingRef: item.bookingRef,
-            status: item.status || 'considering',
-            cancellationDeadline: item.cancellationDeadline || '',
-            travelModeToNext: item.travelModeToNext || '',
-            flightInfo: item.flightInfo || null,
-            lat: item.lat,
-            lng: item.lng,
-            placeId: item.placeId,
-          }),
-        ]),
-    ),
-    bookingOptions: Object.fromEntries(
-      (tripState.bookingOptions || []).map((booking) => [
-        booking.id,
-        normalizeBookingOption(booking),
-      ]),
-    ),
-  }
-}
-
 function localTodayIso() {
   const now = new Date()
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
@@ -906,7 +852,6 @@ function buildMapItems(items) {
   return items
     .filter((item) => item.category !== 'Flight')
     .map((item, index) => {
-      const previousItem = items[index - 1] || null
       const nextItem = items[index + 1] || null
 
       return resolveTravelPoint(item, 'outbound', nextItem)
@@ -1391,10 +1336,10 @@ function TripSwitcher({
   return (
     <div
       ref={containerRef}
-      className="relative z-40 isolate rounded-[1rem] border border-white/70 bg-[rgba(255,252,247,0.96)] px-2.5 py-1.5 shadow-[0_10px_24px_rgba(35,56,64,0.03)] sm:px-3 sm:py-2"
+      className="relative z-40 isolate rounded-[1rem] border border-slate-200/70 bg-white/80 px-2.5 py-1.5 sm:px-3 sm:py-2"
     >
       <div className="mb-0.5 flex items-center justify-between gap-3 px-0.5">
-        <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400">Trips</div>
+        <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">Trips</div>
         <div className="text-[9px] font-medium text-slate-400">{tripSummaries.length}</div>
       </div>
       <button
@@ -1402,7 +1347,7 @@ function TripSwitcher({
         onClick={() => setOpen((current) => !current)}
         disabled={disabled || !activeTrip}
         aria-expanded={open}
-        className={`flex w-full items-center justify-between gap-2.5 rounded-[0.9rem] border border-slate-200/90 bg-white text-left text-slate-900 transition hover:border-slate-300 ${
+        className={`flex w-full items-center justify-between gap-2.5 rounded-[0.85rem] border border-slate-200/80 bg-white text-left text-slate-900 transition hover:border-slate-300 hover:bg-slate-50/70 ${
           isMobilePortrait ? 'px-2.5 py-2' : 'px-3 py-2.5'
         } disabled:bg-slate-100`}
       >
@@ -1421,7 +1366,7 @@ function TripSwitcher({
 
       {open ? (
         <div className="absolute inset-x-0 top-[calc(100%+0.55rem)] z-50">
-          <div className="overflow-hidden rounded-[1rem] border border-slate-200/90 bg-[rgba(255,253,250,0.99)] p-1.5 shadow-[0_18px_38px_rgba(15,23,42,0.08)] backdrop-blur-sm">
+          <div className="overflow-hidden rounded-[1rem] border border-slate-200/90 bg-[rgba(255,253,250,0.99)] p-1.5 shadow-[0_18px_38px_rgba(15,23,42,0.09)] backdrop-blur-sm">
             <div className="no-scrollbar max-h-[min(24rem,56svh)] overflow-y-auto pr-0.5">
               {tripSummaries.map((trip) => {
                 const selected = trip.id === activeTripId
@@ -1430,7 +1375,7 @@ function TripSwitcher({
                     key={trip.id}
                     type="button"
                     onClick={() => handleSelectTrip(trip.id)}
-                    className={`flex w-full items-center gap-3 rounded-[0.9rem] px-3 py-2.5 text-left transition ${
+                    className={`flex w-full items-center gap-3 rounded-[0.82rem] px-3 py-2.5 text-left transition ${
                       selected ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-white/80'
                     }`}
                   >
@@ -1461,7 +1406,7 @@ function TripSwitcher({
                   type="button"
                   onClick={() => void onRenameTrip()}
                   disabled={disabled || !activeTrip || !canManageTrip}
-                  className="flex items-center justify-center gap-2 rounded-[0.8rem] px-3 py-2 text-[12px] font-semibold text-slate-600 transition hover:bg-white/80 disabled:text-slate-400"
+                  className="flex items-center justify-center gap-2 rounded-[0.78rem] px-3 py-2 text-[12px] font-semibold text-slate-600 transition hover:bg-white/80 disabled:text-slate-400"
                 >
                   <Pencil className="h-3.5 w-3.5" />
                   Rename
@@ -1470,7 +1415,7 @@ function TripSwitcher({
                   type="button"
                   onClick={() => void onDeleteTrip()}
                   disabled={disabled || !activeTrip || !canManageTrip || activeTrip.id === TRIP_ID}
-                  className="flex items-center justify-center gap-2 rounded-[0.8rem] px-3 py-2 text-[12px] font-semibold text-rose-600 transition hover:bg-rose-50 disabled:text-slate-300"
+                  className="flex items-center justify-center gap-2 rounded-[0.78rem] px-3 py-2 text-[12px] font-semibold text-rose-600 transition hover:bg-rose-50 disabled:text-slate-300"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   Delete
@@ -1487,7 +1432,7 @@ function TripSwitcher({
                         key={trip.id}
                         type="button"
                         onClick={() => void onRestoreTrip(trip.id)}
-                        className="flex w-full items-center justify-between gap-3 rounded-[0.8rem] px-3 py-2 text-left text-slate-600 transition hover:bg-white/80"
+                        className="flex w-full items-center justify-between gap-3 rounded-[0.78rem] px-3 py-2 text-left text-slate-600 transition hover:bg-white/80"
                       >
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-[12px] font-semibold text-slate-700">{trip.title}</div>
@@ -1507,7 +1452,7 @@ function TripSwitcher({
                 type="button"
                 onClick={() => void handleCreateTrip()}
                 disabled={disabled}
-                className="flex w-full items-center justify-between gap-3 rounded-[0.9rem] px-3 py-2.5 text-left text-slate-700 transition hover:bg-white/80 disabled:text-slate-400"
+                className="flex w-full items-center justify-between gap-3 rounded-[0.85rem] px-3 py-2.5 text-left text-slate-700 transition hover:bg-white/80 disabled:text-slate-400"
               >
                 <div>
                   <div className="text-[13px] font-semibold tracking-[-0.01em]">New trip</div>
@@ -1525,66 +1470,202 @@ function TripSwitcher({
   )
 }
 
-function UserBar({ canShare, user, onShare, onSignOut }) {
-  const [open, setOpen] = useState(false)
-
+function AccountPanel({ canShare, user, onShare, onSignOut }) {
   return (
-    <div className="fixed right-3 top-3 z-40 sm:right-5 sm:top-5">
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        className="glass-panel flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-white/70 p-0.5 shadow-[0_10px_24px_rgba(15,23,42,0.08)]"
-        aria-label="Account menu"
-        aria-expanded={open}
-      >
-        {user?.photoURL ? (
-          <img
-            src={user.photoURL}
-            alt={user.displayName || user.email || 'User'}
-            className="h-full w-full rounded-full object-cover"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center rounded-full bg-slate-200 text-[12px] font-semibold text-slate-700">
-            {(user?.displayName || user?.email || 'U').slice(0, 1).toUpperCase()}
-          </div>
-        )}
-      </button>
-
-      {open ? (
-        <div className="glass-panel absolute right-0 mt-2 w-56 rounded-[1rem] border border-white/70 p-2 shadow-[0_18px_38px_rgba(15,23,42,0.10)]">
-          <div className="px-2.5 py-2">
-            <div className="truncate text-[13px] font-semibold tracking-[-0.01em] text-slate-900">
-              {user?.displayName || 'Signed in'}
-            </div>
-            <div className="mt-0.5 truncate text-[11px] text-slate-500">{user?.email || ''}</div>
-          </div>
-          <div className="mt-1 space-y-1 border-t border-slate-200/70 pt-1">
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false)
-                onShare()
-              }}
-              disabled={!canShare}
-              className="flex w-full items-center gap-2 rounded-[0.8rem] px-2.5 py-2 text-left text-[12px] font-semibold text-slate-700 transition hover:bg-white disabled:text-slate-400"
-            >
-              <Users className="h-3.5 w-3.5" />
-              Share trip
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false)
-                onSignOut()
-              }}
-              className="flex w-full items-center gap-2 rounded-[0.8rem] px-2.5 py-2 text-left text-[12px] font-semibold text-slate-700 transition hover:bg-white"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              Sign out
-            </button>
-          </div>
+    <div className="rounded-[1rem] border border-slate-200/70 bg-white/78 p-2.5">
+      <div className="flex items-center gap-3 px-1 py-1">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-200 text-[12px] font-semibold text-slate-700">
+          {user?.photoURL ? (
+            <img
+              src={user.photoURL}
+              alt={user.displayName || user.email || 'User'}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            (user?.displayName || user?.email || 'U').slice(0, 1).toUpperCase()
+          )}
         </div>
-      ) : null}
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-semibold tracking-[-0.01em] text-slate-900">
+            {user?.displayName || 'Signed in'}
+          </div>
+          <div className="mt-0.5 truncate text-[11px] text-slate-500">{user?.email || ''}</div>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        <button
+          type="button"
+          onClick={onShare}
+          disabled={!canShare}
+          className="flex items-center justify-center gap-2 rounded-[0.8rem] bg-white px-3 py-2.5 text-[12px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:text-slate-400"
+        >
+          <Users className="h-3.5 w-3.5" />
+          Share
+        </button>
+        <button
+          type="button"
+          onClick={onSignOut}
+          className="flex items-center justify-center gap-2 rounded-[0.8rem] bg-white px-3 py-2.5 text-[12px] font-semibold text-slate-700 transition hover:bg-slate-50"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+          Sign out
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AppDrawer({
+  activeTripSummary,
+  availableTrips,
+  canManageCurrentTrip,
+  canShare,
+  currentUser,
+  deletedTrips,
+  disabled,
+  isMobilePortrait,
+  onClose,
+  onCreateTrip,
+  onDeleteTrip,
+  onOpenDeadlines,
+  onRenameTrip,
+  onRestoreTrip,
+  onSelectTrip,
+  onShare,
+  onSignOut,
+  open,
+  urgentDeadlineCount,
+}) {
+  return (
+    <>
+      <div
+        onClick={open ? onClose : undefined}
+        className={`fixed inset-0 z-40 bg-slate-950/30 backdrop-blur-[2px] transition-opacity ${
+          open ? 'opacity-100' : 'pointer-events-none opacity-0'
+        }`}
+        aria-hidden="true"
+      />
+      <aside
+        className={`fixed bottom-0 left-0 top-0 z-50 flex w-[min(22rem,calc(100vw-1.4rem))] flex-col border-r border-white/70 bg-[rgba(255,253,249,0.97)] px-3.5 py-4 shadow-[20px_0_52px_rgba(15,23,42,0.13)] backdrop-blur-xl transition-transform duration-200 ${
+          open ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="flex items-center justify-between px-1 pb-3">
+          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Trip controls</div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full bg-white p-2 text-slate-500 shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
+            aria-label="Close menu"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-2.5">
+          <TripSwitcher
+            activeTripId={activeTripSummary.id}
+            canManageTrip={canManageCurrentTrip}
+            deletedTrips={deletedTrips}
+            disabled={disabled}
+            isMobilePortrait={isMobilePortrait}
+            onCreateTrip={onCreateTrip}
+            onDeleteTrip={onDeleteTrip}
+            onRenameTrip={onRenameTrip}
+            onRestoreTrip={onRestoreTrip}
+            onSelectTrip={onSelectTrip}
+            tripSummaries={availableTrips}
+          />
+          {availableTrips.length ? (
+            <button
+              type="button"
+              onClick={onOpenDeadlines}
+              className="flex w-full items-center justify-between rounded-[0.95rem] border border-slate-200/70 bg-white/90 px-3.5 py-3 text-left text-slate-800 transition hover:bg-white"
+            >
+              <span>
+                <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  Cancellation tracker
+                </span>
+                <span className="mt-1 block text-[13px] font-semibold">
+                  {urgentDeadlineCount ? `${urgentDeadlineCount} urgent` : 'Monitor hotel and restaurant'}
+                </span>
+              </span>
+              <CalendarDays className="h-4 w-4 text-slate-500" />
+            </button>
+          ) : null}
+        </div>
+
+        <div className="mt-auto pt-4">
+          <AccountPanel
+            canShare={canShare}
+            user={currentUser}
+            onShare={onShare}
+            onSignOut={onSignOut}
+          />
+        </div>
+      </aside>
+    </>
+  )
+}
+
+function MenuButton({ onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="glass-panel fixed left-3 top-3 z-30 flex h-10 w-10 items-center justify-center rounded-full text-slate-700 transition hover:bg-white sm:left-5 sm:top-5"
+      aria-label="Open menu"
+    >
+      <Menu className="h-4 w-4" />
+    </button>
+  )
+}
+
+function BottomDayNav({ activeDayId, dayOptions, dragState, onDayChange, onManageDays, canEdit }) {
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-30 px-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] sm:px-4">
+      <div className="mx-auto flex max-w-5xl items-center gap-1 rounded-[1rem] border border-white/70 bg-[rgba(255,253,249,0.96)] p-1 shadow-[0_-12px_30px_rgba(15,23,42,0.09)] backdrop-blur-xl">
+        <button
+          type="button"
+          onClick={() => onDayChange(DAY_VIEW_ALL)}
+          className={`shrink-0 rounded-[0.8rem] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.06em] transition ${
+            activeDayId === DAY_VIEW_ALL ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-white'
+          }`}
+        >
+          Overview
+        </button>
+        <div className="no-scrollbar flex min-w-0 flex-1 gap-1 overflow-x-auto">
+          {dayOptions.map((day, index) => (
+            <button
+              key={day.id}
+              type="button"
+              data-day-drop-id={day.id}
+              onClick={() => onDayChange(day.id)}
+              className={`shrink-0 rounded-[0.8rem] px-2.5 py-2 text-[10px] font-bold uppercase tracking-[0.05em] transition ${
+                dragState?.overDayId === day.id
+                  ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200'
+                  : activeDayId === day.id
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-600 hover:bg-white'
+              }`}
+            >
+              Day {index + 1}
+              <span className={`ml-1 font-semibold normal-case tracking-normal ${activeDayId === day.id ? 'text-white/68' : 'text-slate-400'}`}>
+                {formatDayDate(day.date)}
+              </span>
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={onManageDays}
+          disabled={!canEdit}
+          className="shrink-0 rounded-[0.8rem] bg-white/90 px-3 py-2 text-slate-600 transition hover:bg-white disabled:text-slate-300"
+          aria-label="Manage days"
+        >
+          <CalendarDays className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   )
 }
@@ -1592,19 +1673,21 @@ function UserBar({ canShare, user, onShare, onSignOut }) {
 function SignInScreen({ configured, error, onSignIn }) {
   return (
     <main className="mx-auto flex min-h-screen max-w-7xl items-center justify-center px-4 py-10 text-slate-900">
-      <div className="glass-panel w-full max-w-md rounded-[1.5rem] border border-white/60 p-6 text-center">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Trip planner</div>
-        <h1 className="mt-3 text-[2rem] font-bold tracking-[-0.03em] text-slate-900">Sign in to your trips</h1>
-        <p className="mt-3 text-[14px] leading-6 text-slate-600">
+      <div className="glass-panel w-full max-w-[27rem] rounded-[1.35rem] px-6 py-7 text-center sm:px-7 sm:py-8">
+        <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400">Trip Planner</div>
+        <h1 className="mt-4 text-[1.95rem] font-extrabold leading-tight tracking-[-0.045em] text-slate-950 sm:text-[2.15rem]">
+          Sign in to your trips
+        </h1>
+        <p className="mx-auto mt-3 max-w-[21rem] text-[14px] leading-6 text-slate-600">
           Use Google sign-in to access only the trips you own or have been added to.
         </p>
         {!configured ? (
-          <div className="mt-5 rounded-[1rem] bg-amber-50 px-4 py-3 text-left text-[13px] leading-6 text-amber-700">
+          <div className="mt-5 rounded-[0.95rem] bg-amber-50 px-4 py-3 text-left text-[13px] leading-6 text-amber-700">
             Firebase is not fully configured. Add the required Vite Firebase environment variables first.
           </div>
         ) : null}
         {error ? (
-          <div className="mt-5 rounded-[1rem] bg-rose-50 px-4 py-3 text-left text-[13px] leading-6 text-rose-700">
+          <div className="mt-5 rounded-[0.95rem] bg-rose-50 px-4 py-3 text-left text-[13px] leading-6 text-rose-700">
             {error}
           </div>
         ) : null}
@@ -1612,7 +1695,7 @@ function SignInScreen({ configured, error, onSignIn }) {
           type="button"
           onClick={() => void onSignIn()}
           disabled={!configured}
-          className="mt-6 w-full rounded-[1rem] bg-slate-900 px-4 py-4 text-sm font-semibold text-white disabled:bg-slate-300"
+          className="mt-6 w-full rounded-[0.95rem] bg-slate-950 px-4 py-3.5 text-sm font-bold text-white shadow-[0_12px_26px_rgba(15,23,42,0.12)] transition hover:bg-slate-800 disabled:bg-slate-300"
         >
           Continue with Google
         </button>
@@ -2385,9 +2468,7 @@ function PlannerPanel({
   getFlightRecord,
   isMobilePortrait,
   mapsReady,
-  onDayChange,
   onDragStart,
-  onManageDays,
   onOpenDetails,
   onOpenNotes,
   onSaveNewItem,
@@ -2558,111 +2639,21 @@ function PlannerPanel({
 
   return (
     <>
-      <div className="sticky top-4 z-20 space-y-2.5 browse-ui">
-        <div className="glass-panel rounded-[1.25rem] border border-white/60 px-3.5 py-3 sm:rounded-[1.45rem] sm:px-5 sm:py-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              {activeDayId !== DAY_VIEW_ALL ? (
-                <h2 className={`headline leading-none tracking-[-0.025em] text-slate-900 ${isMobilePortrait ? 'text-[1.44rem]' : 'text-[1.84rem]'}`}>
-                  {dayOptions.find((day) => day.id === activeDayId)?.label || 'Day view'}
-                </h2>
-              ) : null}
-              <div
-                className={`${activeDayId === DAY_VIEW_ALL ? '' : 'mt-1 '}text-slate-500 ${isMobilePortrait ? 'text-[12px]' : 'text-[13px]'}`}
-              >
-                {activeDayId === DAY_VIEW_ALL
-                  ? `${filteredItems.length} stops across ${dayOptions.length} days`
-                  : dayOptions.find((day) => day.id === activeDayId)?.name ||
-                    formatFullDayDate(dayOptions.find((day) => day.id === activeDayId)?.date || '')}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onManageDays}
-              disabled={!canEdit}
-              className={`shrink-0 rounded-full border border-slate-200/90 bg-white text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400 ${
-                isMobilePortrait ? 'p-2.5' : 'flex items-center gap-2 px-3.5 py-2'
-              }`}
-              aria-label="Manage days"
-            >
-              <CalendarDays className={`${isMobilePortrait ? 'h-4 w-4' : 'h-4 w-4'}`} />
-              {!isMobilePortrait ? <span className="text-sm font-semibold">Manage days</span> : null}
-            </button>
-          </div>
-
-          <div className="mt-3 flex items-center gap-2">
-            <div className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-              Days
+      {weatherDisplay ? (
+        <div className="sticky top-4 z-20 browse-ui">
+          <div className="glass-panel flex items-center gap-3 rounded-[0.95rem] px-3 py-2.5">
+            <div className="rounded-xl bg-white p-2 text-slate-700">
+              <weatherDisplay.icon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="no-scrollbar flex gap-1.5 overflow-x-auto pb-0.5">
-                <button
-                  type="button"
-                  onClick={() => onDayChange(DAY_VIEW_ALL)}
-                  className={`shrink-0 rounded-full px-3 py-2 text-left transition ${
-                    activeDayId === DAY_VIEW_ALL ? 'bg-slate-900 text-white shadow-[0_6px_18px_rgba(15,23,42,0.12)]' : 'bg-white text-slate-600'
-                  }`}
-                >
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.06em]">Overview</div>
-                </button>
-                {dayOptions.map((day, index) => (
-                  <button
-                    key={day.id}
-                    type="button"
-                    data-day-drop-id={day.id}
-                    onClick={() => onDayChange(day.id)}
-                    className={`shrink-0 rounded-full px-3 py-2 text-left transition ${
-                      dragState?.overDayId === day.id
-                        ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200'
-                        : activeDayId === day.id
-                          ? 'bg-slate-900 text-white shadow-[0_6px_18px_rgba(15,23,42,0.12)]'
-                          : 'bg-white text-slate-600'
-                    }`}
-                  >
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.05em]">
-                      Day {index + 1}
-                      <span className={`ml-1.5 font-medium normal-case tracking-normal ${activeDayId === day.id ? 'text-white/72' : 'text-slate-400'}`}>
-                        {formatDayDate(day.date)}
-                      </span>
-                    </div>
-                  </button>
-                ))}
+              <div className="truncate text-[12px] font-semibold text-slate-900">
+                {weatherDisplay.compact || weatherDisplay.headline}
               </div>
+              <div className="mt-0.5 truncate text-[10px] text-slate-500">{weatherDisplay.detail}</div>
             </div>
           </div>
-
-          <div className="mt-3 text-[11px] leading-5 text-slate-500">
-            Timeline auto-sorts by start time. Drag only affects items with the same start time.
-          </div>
-
-          {weatherDisplay ? (
-            isMobilePortrait ? (
-              <div className="mt-3 flex items-center gap-3 rounded-[0.9rem] bg-white px-3 py-2.5">
-                <div className="rounded-xl bg-slate-100 p-2 text-slate-700">
-                  <weatherDisplay.icon className="h-4 w-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[12px] font-semibold text-slate-900">
-                    {weatherDisplay.compact || weatherDisplay.headline}
-                  </div>
-                  <div className="mt-0.5 truncate text-[10px] text-slate-500">{weatherDisplay.detail}</div>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-4 flex items-center justify-between gap-4 rounded-[1rem] bg-white px-4 py-3">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Weather</p>
-                  <div className="mt-1 text-[15px] font-semibold text-slate-900">{weatherDisplay.headline}</div>
-                  <div className="mt-1 text-[13px] text-slate-500">{weatherDisplay.detail}</div>
-                </div>
-                <div className="rounded-[1rem] bg-slate-100 p-3 text-slate-700">
-                  <weatherDisplay.icon className="h-5 w-5" />
-                </div>
-              </div>
-            )
-          ) : null}
         </div>
-      </div>
+      ) : null}
 
       <div className="space-y-2.5 browse-ui">
         {timelineEntries.map((entry, index) => {
@@ -2713,7 +2704,7 @@ function PlannerPanel({
                 />
               ) : null}
               <article
-                className={`timeline-card relative rounded-[1.25rem] px-4 py-4 transition hover:bg-white/90 active:bg-white/95 sm:px-5 ${
+                className={`timeline-card relative rounded-[1.08rem] px-4 py-4 transition hover:bg-white active:bg-white sm:px-5 ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
                 }`}
                 role="button"
@@ -2733,7 +2724,7 @@ function PlannerPanel({
               >
                 <div className="flex gap-4 sm:gap-5">
                   <div className="w-[3.55rem] shrink-0 pt-0.5 text-right">
-                    <div className="text-[13px] font-semibold tracking-[-0.01em] text-slate-900">{item.startTime}</div>
+                    <div className="text-[13px] font-bold tracking-[-0.01em] text-slate-900">{item.startTime}</div>
                     {item.endTime ? <div className="mt-1 text-[10px] font-medium tracking-[-0.01em] text-slate-400">{item.endTime}</div> : null}
                   </div>
                   <div className="timeline-rail shrink-0">
@@ -2742,7 +2733,7 @@ function PlannerPanel({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <h3 className="text-[0.98rem] font-semibold leading-6 tracking-[-0.015em] text-slate-900">{item.title}</h3>
+                        <h3 className="text-[0.98rem] font-bold leading-6 tracking-[-0.02em] text-slate-950">{item.title}</h3>
                         <p className="mt-1 truncate text-[12px] text-slate-500">{item.locationName || item.address}</p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -2756,13 +2747,13 @@ function PlannerPanel({
                                 [entry.id]: !current[entry.id],
                               }))
                             }}
-                            className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600"
+                            className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600"
                           >
                             {entry.items.length} options
                           </button>
                         ) : null}
                         {item.generated ? (
-                          <div className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+                          <div className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">
                             Linked
                           </div>
                         ) : canEdit ? (
@@ -2771,7 +2762,7 @@ function PlannerPanel({
                             onPointerDown={(event) => onDragStart(event, item)}
                             onClick={(event) => event.stopPropagation()}
                             data-drag-handle="true"
-                            className="touch-none rounded-full bg-slate-100 p-2 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 active:scale-95"
+                            className="touch-none rounded-full bg-slate-50 p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 active:scale-95"
                             aria-label={`Drag ${item.title}`}
                           >
                             <GripVertical className="h-4 w-4" />
@@ -2803,7 +2794,7 @@ function PlannerPanel({
                       </button>
                     ) : null}
                     {isMonitoredCancellationItem(item) && item.cancellationDeadline ? (
-                      <div className="mt-3 rounded-[0.9rem] bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-600">
+                      <div className="mt-3 rounded-[0.8rem] bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-600">
                         <span className="font-semibold text-slate-800">{itemStatusLabel(item.status)}</span>
                         <span className="block">
                           Cancellation deadline: {formatBookingDateTime(item.cancellationDeadline)}
@@ -2831,7 +2822,7 @@ function PlannerPanel({
                             onOpenNotes(stackItem)
                           }
                         }}
-                        className="rounded-[1.05rem] border border-slate-200/70 bg-white/78 px-3.5 py-3 transition hover:bg-white"
+                        className="rounded-[0.95rem] border border-slate-200/70 bg-white/82 px-3.5 py-3 transition hover:bg-white"
                       >
                         <div className="flex items-start gap-3">
                           <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${stackMeta.tone}`} />
@@ -2865,7 +2856,7 @@ function PlannerPanel({
                   })}
                 </div>
               ) : isStack ? (
-                <div className="ml-[4.85rem] h-3 rounded-b-[1rem] bg-white/45 shadow-[0_8px_16px_rgba(15,23,42,0.035)] sm:ml-[5.9rem]" />
+                <div className="ml-[4.85rem] h-2.5 rounded-b-[0.9rem] bg-white/55 shadow-[0_8px_16px_rgba(15,23,42,0.025)] sm:ml-[5.9rem]" />
               ) : null}
 
               {nextSegment ? (
@@ -2931,17 +2922,17 @@ function PlannerPanel({
         ) : null}
       </div>
 
-      <div className="glass-panel rounded-[1.35rem] border border-white/60 px-4 py-4 sm:px-5 browse-ui">
+      <div className="glass-panel rounded-[1.08rem] px-4 py-4 sm:px-5 browse-ui">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h3 className="headline text-[1.66rem] leading-none tracking-[-0.025em] text-slate-900">Add stop</h3>
+            <h3 className="headline text-[1.35rem] leading-none text-slate-950">Add stop</h3>
             <p className="mt-1 text-[13px] text-slate-500">Open the composer only when you need it.</p>
           </div>
           {canEdit ? (
             <button
               type="button"
               onClick={() => setIsComposerOpen((open) => !open)}
-              className={`rounded-[0.95rem] px-4 py-2.5 text-[13px] font-semibold transition ${
+              className={`rounded-[0.85rem] px-4 py-2.5 text-[13px] font-bold transition ${
                 isComposerOpen ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'
               }`}
             >
@@ -3137,10 +3128,10 @@ function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, map
 
   return (
     <div className="browse-ui">
-      <div className="glass-panel rounded-[1.35rem] border border-white/60 px-4 py-4 sm:px-5">
+      <div className="glass-panel rounded-[1.08rem] px-4 py-4 sm:px-5">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="headline text-[1.66rem] leading-none tracking-[-0.025em] text-slate-900">Map</h2>
+            <h2 className="headline text-[1.35rem] leading-none text-slate-950">Map</h2>
             <p className="mt-1 text-[13px] text-slate-500">
               {activeDayId === DAY_VIEW_ALL ? 'Whole trip view' : 'Selected day route'}
             </p>
@@ -3148,7 +3139,7 @@ function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, map
         </div>
 
         <div
-          className={`mt-4 overflow-hidden rounded-[1.35rem] border border-slate-200/80 bg-slate-100 ${
+          className={`mt-4 overflow-hidden rounded-[0.95rem] border border-slate-200/80 bg-slate-100 ${
             isMobilePortrait ? 'h-[260px]' : 'h-[320px]'
           }`}
         >
@@ -3204,6 +3195,7 @@ export default function App() {
   const [showDayManager, setShowDayManager] = useState(false)
   const [showCollaborators, setShowCollaborators] = useState(false)
   const [showDeadlines, setShowDeadlines] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
   const [dragState, setDragState] = useState(null)
   const [tripMembers, setTripMembers] = useState([])
 
@@ -3368,8 +3360,11 @@ export default function App() {
     let active = true
 
     if (!firebaseEnabled) {
-      setAuthReady(true)
-      setFirestoreState({ status: 'disabled', error: 'Firebase env vars missing' })
+      queueMicrotask(() => {
+        if (!active) return
+        setAuthReady(true)
+        setFirestoreState({ status: 'disabled', error: 'Firebase env vars missing' })
+      })
       return () => {
         active = false
       }
@@ -3569,7 +3564,7 @@ export default function App() {
 
   useEffect(() => {
     if (!firebaseEnabled || !authReady || !resolvedTripId || !canViewTrip(activeRole)) {
-      setTripMembers([])
+      queueMicrotask(() => setTripMembers([]))
       return undefined
     }
 
@@ -4234,49 +4229,45 @@ export default function App() {
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl overflow-x-clip px-3 py-4 pb-8 text-slate-900 sm:px-6 sm:py-5 sm:pb-10 lg:px-8">
-      <UserBar
+    <main className="mx-auto min-h-screen max-w-7xl overflow-x-clip px-3 py-4 pb-24 pt-14 text-slate-900 sm:px-6 sm:py-5 sm:pb-24 sm:pt-16 lg:px-8">
+      <MenuButton onClick={() => setShowMenu(true)} />
+      <AppDrawer
+        activeTripSummary={activeTripSummary}
+        availableTrips={availableTrips}
+        canManageCurrentTrip={canManageCurrentTrip}
         canShare={canViewTrip(activeRole)}
-        user={currentUser}
-        onShare={() => setShowCollaborators(true)}
-        onSignOut={() => void handleSignOut()}
+        currentUser={currentUser}
+        deletedTrips={deletedTrips}
+        disabled={!currentUser?.uid}
+        isMobilePortrait={isMobilePortrait}
+        onClose={() => setShowMenu(false)}
+        onCreateTrip={() => void createTrip()}
+        onDeleteTrip={() => void deleteTrip()}
+        onOpenDeadlines={() => {
+          setShowMenu(false)
+          setShowDeadlines(true)
+        }}
+        onRenameTrip={() => void renameTrip()}
+        onRestoreTrip={(tripId) => void restoreTrip(tripId)}
+        onSelectTrip={(tripId) => {
+          selectTrip(tripId)
+          setShowMenu(false)
+        }}
+        onShare={() => {
+          setShowMenu(false)
+          setShowCollaborators(true)
+        }}
+        onSignOut={() => {
+          setShowMenu(false)
+          void handleSignOut()
+        }}
+        open={showMenu}
+        urgentDeadlineCount={urgentDeadlineCount}
       />
-      <div className={isMobilePortrait ? 'mx-auto mb-4 max-w-[28rem]' : 'mb-4 max-w-md'}>
-        <TripSwitcher
-          activeTripId={activeTripSummary.id}
-          canManageTrip={canManageCurrentTrip}
-          deletedTrips={deletedTrips}
-          disabled={!currentUser?.uid}
-          isMobilePortrait={isMobilePortrait}
-          onCreateTrip={() => void createTrip()}
-          onDeleteTrip={() => void deleteTrip()}
-          onRenameTrip={() => void renameTrip()}
-          onRestoreTrip={(tripId) => void restoreTrip(tripId)}
-          onSelectTrip={selectTrip}
-          tripSummaries={availableTrips}
-        />
-        {availableTrips.length ? (
-          <button
-            type="button"
-            onClick={() => setShowDeadlines(true)}
-            className="mt-2 flex w-full items-center justify-between rounded-[1rem] border border-white/70 bg-[rgba(255,252,247,0.96)] px-3.5 py-3 text-left text-slate-800 shadow-[0_10px_24px_rgba(35,56,64,0.03)]"
-          >
-            <span>
-              <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                Cancellation deadlines
-              </span>
-              <span className="mt-1 block text-[13px] font-semibold">
-                {urgentDeadlineCount ? `${urgentDeadlineCount} urgent` : 'Monitor items'}
-              </span>
-            </span>
-            <CalendarDays className="h-4 w-4 text-slate-500" />
-          </button>
-        ) : null}
-      </div>
       {!availableTrips.length ? (
-        <div className="glass-panel max-w-md rounded-[1.35rem] border border-white/60 px-5 py-5">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Trips</div>
-          <h2 className="mt-2 text-[1.45rem] font-bold tracking-[-0.02em] text-slate-900">No trips yet</h2>
+        <div className="glass-panel max-w-md rounded-[1.08rem] px-5 py-5">
+          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Trips</div>
+          <h2 className="mt-2 text-[1.35rem] font-extrabold tracking-[-0.03em] text-slate-950">No trips yet</h2>
           <p className="mt-2 text-[13px] leading-6 text-slate-600">
             Create your first trip, or ask the trip owner to add you as a collaborator.
           </p>
@@ -4284,7 +4275,7 @@ export default function App() {
             type="button"
             onClick={() => void createTrip()}
             disabled={!firebaseEnabled || !authReady || !currentUser?.uid}
-            className="mt-4 rounded-[1rem] bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-300"
+            className="mt-4 rounded-[0.9rem] bg-slate-950 px-4 py-3 text-sm font-bold text-white shadow-[0_10px_22px_rgba(15,23,42,0.10)] transition hover:bg-slate-800 disabled:bg-slate-300"
           >
             Create trip
           </button>
@@ -4310,13 +4301,7 @@ export default function App() {
             getFlightRecord={getFlightRecord}
             isMobilePortrait={isMobilePortrait}
             mapsReady={googleMapsState.ready}
-            onDayChange={(dayId) => {
-              startTransition(() => {
-                setActiveDayId(dayId)
-              })
-            }}
             onDragStart={beginItemDrag}
-            onManageDays={() => setShowDayManager(true)}
             onOpenDetails={{
               startPress,
               movePress,
@@ -4343,6 +4328,21 @@ export default function App() {
           />
         </div>
       </section>
+      ) : null}
+
+      {availableTrips.length ? (
+        <BottomDayNav
+          activeDayId={resolvedActiveDayId}
+          canEdit={canEditCurrentTrip}
+          dayOptions={dayOptions}
+          dragState={dragState}
+          onDayChange={(dayId) => {
+            startTransition(() => {
+              setActiveDayId(dayId)
+            })
+          }}
+          onManageDays={() => setShowDayManager(true)}
+        />
       ) : null}
 
       {showDayManager ? (
