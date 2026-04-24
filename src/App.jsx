@@ -4139,6 +4139,11 @@ export default function App() {
           .filter((item) => item.dayId === dayId && !item.generated)
           .map((item) => [item.id, { hidden: true }]),
       ),
+      bookingOptions: Object.fromEntries(
+        tripState.bookingOptions
+          .filter((booking) => booking.dayId === dayId)
+          .map((booking) => [booking.id, { hidden: true }]),
+      ),
     })
     setActiveDayId(remaining[0]?.id || DAY_VIEW_ALL)
   }
