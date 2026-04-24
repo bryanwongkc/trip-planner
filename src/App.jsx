@@ -3407,7 +3407,7 @@ export default function App() {
   }
 
   async function createTrip() {
-    if (!firestoreReady || !currentUser?.uid) return
+    if (!firebaseEnabled || !authReady || !currentUser?.uid) return
 
     const nextIndex = availableTrips.length + 1
     const suggestedTitle = `Trip ${nextIndex}`
@@ -3784,7 +3784,7 @@ export default function App() {
           activeTripId={activeTripSummary.id}
           canManageTrip={canManageCurrentTrip}
           deletedTrips={deletedTrips}
-          disabled={!firestoreReady}
+          disabled={!currentUser?.uid}
           onClaimTrip={() => void claimExistingTrip()}
           isMobilePortrait={isMobilePortrait}
           onCreateTrip={() => void createTrip()}
@@ -3805,7 +3805,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => void createTrip()}
-            disabled={!firestoreReady}
+            disabled={!firebaseEnabled || !authReady || !currentUser?.uid}
             className="mt-4 rounded-[1rem] bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-300"
           >
             Create trip
