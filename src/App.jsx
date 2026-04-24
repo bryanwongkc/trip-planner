@@ -86,6 +86,7 @@ import {
   sortBookingOptionsByDeadline,
   slugId,
   stripFlightLocationFields,
+  timeToMinutes,
 } from './utils/trip'
 
 const LONG_PRESS_MS = 600
@@ -208,6 +209,93 @@ function typeMeta(category) {
 function categoryOptionsForValue(category) {
   if (!category || CATEGORY_OPTIONS.includes(category)) return CATEGORY_OPTIONS
   return [category, ...CATEGORY_OPTIONS]
+}
+
+function isStackableStayOrMeal(item) {
+  return ['Hotel', 'Restaurant'].includes(item?.category)
+}
+
+function itemInterval(item) {
+  const start = timeToMinutes(item?.startTime || '23:59')
+  const rawEnd = item?.endTime ? timeToMinutes(item.endTime) : start + 1
+  return {
+    start,
+    end: rawEnd > start ? rawEnd : start + 1,
+  }
+}
+
+function intervalsOverlap(a, b) {
+  return a.start < b.end && b.start < a.end
+}
+
+function hasActiveBooking(item, bookingOptions) {
+  return (
+    item?.status === 'active' ||
+    bookingsForItem(bookingOptions, item?.id, { includeCancelled: true }).some(
+      (booking) => booking.status === 'active',
+    )
+  )
+}
+
+function chooseStackLead(items, bookingOptions) {
+  return [...items].sort((a, b) => {
+    const activeCompare = Number(hasActiveBooking(b, bookingOptions)) - Number(hasActiveBooking(a, bookingOptions))
+    if (activeCompare !== 0) return activeCompare
+    return itemInterval(a).start - itemInterval(b).start
+  })[0]
+}
+
+function buildTimelineEntries(items, bookingOptions) {
+  const stackByItemId = new Map()
+
+  Object.values(
+    items.filter(isStackableStayOrMeal).reduce((groups, item) => {
+      const key = `${item.dayId}:${item.category}`
+      groups[key] = groups[key] || []
+      groups[key].push(item)
+      return groups
+    }, {}),
+  ).forEach((groupItems) => {
+    const ordered = [...groupItems].sort((a, b) => itemInterval(a).start - itemInterval(b).start)
+    const clusters = []
+
+    ordered.forEach((item) => {
+      const interval = itemInterval(item)
+      const cluster = clusters.find((entry) =>
+        entry.items.some((candidate) => intervalsOverlap(interval, itemInterval(candidate))),
+      )
+
+      if (cluster) {
+        cluster.items.push(item)
+        return
+      }
+
+      clusters.push({ items: [item] })
+    })
+
+    clusters
+      .filter((cluster) => cluster.items.length > 1)
+      .forEach((cluster) => {
+        const leadItem = chooseStackLead(cluster.items, bookingOptions)
+        const stack = {
+          id: `stack:${leadItem.dayId}:${leadItem.category}:${cluster.items.map((item) => item.id).sort().join(':')}`,
+          type: 'stack',
+          dayId: leadItem.dayId,
+          item: leadItem,
+          items: [leadItem, ...cluster.items.filter((item) => item.id !== leadItem.id)],
+        }
+        cluster.items.forEach((item) => stackByItemId.set(item.id, stack))
+      })
+  })
+
+  const emittedStacks = new Set()
+  return items.flatMap((item) => {
+    const stack = stackByItemId.get(item.id)
+    if (!stack) return [{ id: item.id, type: 'item', dayId: item.dayId, item, items: [item] }]
+    if (emittedStacks.has(stack.id)) return []
+    emittedStacks.add(stack.id)
+    return [stack]
+  })
 }
 
 function routeLabel(mode) {
@@ -2622,6 +2710,7 @@ function PlannerPanel({
       ? activeDayId
       : dayOptions[0]?.id || ''
   const [draft, setDraft] = useState(() => buildEmptyDraft(defaultDayId))
+  const [expandedStacks, setExpandedStacks] = useState({})
   const draftConflictId = '__draft__'
   const effectiveDraftDayId =
     activeDayId !== DAY_VIEW_ALL && dayOptions.some((day) => day.id === activeDayId)
@@ -2657,6 +2746,10 @@ function PlannerPanel({
   }, [filteredItems])
   const visibleManualCount =
     activeDayId === DAY_VIEW_ALL ? 0 : manualOrderLookup.counts[activeDayId] || 0
+  const timelineEntries = useMemo(
+    () => buildTimelineEntries(filteredItems, bookingOptions),
+    [bookingOptions, filteredItems],
+  )
   const draftScheduleConflict = useMemo(() => {
     if (!effectiveDraftDayId) return null
     const existingItems = dayMap[effectiveDraftDayId]?.items || []
@@ -2880,25 +2973,29 @@ function PlannerPanel({
       </div>
 
       <div className="space-y-2.5 browse-ui">
-        {filteredItems.map((item, index) => {
+        {timelineEntries.map((entry, index) => {
+          const item = entry.item
           const meta = typeMeta(item.category)
           const linkedBookings = bookingsForItem(bookingOptions, item.id)
           const nextBookingDeadline = nextCancellationDeadline(linkedBookings)
           const nextSegment = routeSegmentMap[item.id]
           const isOverview = activeDayId === DAY_VIEW_ALL
-          const previousItem = filteredItems[index - 1]
-          const nextItem = filteredItems[index + 1]
+          const previousItem = timelineEntries[index - 1]?.item
+          const nextItem = timelineEntries[index + 1]?.item
           const showDayDivider = isOverview && (!previousItem || previousItem.dayId !== item.dayId)
           const dayContext = dayOptions.find((day) => day.id === item.dayId)
           const manualIndex = manualOrderLookup.positions[item.id]
           const isManual = !item.generated
+          const isStack = entry.type === 'stack'
+          const isExpandedStack = Boolean(expandedStacks[entry.id])
+          const stackAlternatives = isStack ? entry.items.filter((stackItem) => stackItem.id !== item.id) : []
           const showBeforeSlot = Boolean(dragState && isManual)
           const showAfterSlot =
             Boolean(dragState && isManual) &&
             (!nextItem || nextItem.dayId !== item.dayId || nextItem.generated)
           const isDraggingItem = dragState?.itemId === item.id
           return (
-            <div key={item.id} className="space-y-2">
+            <div key={entry.id} className="space-y-2">
               {showDayDivider ? (
                 <div className="flex items-center gap-3 px-1 py-4 first:pt-0">
                   <div className="min-w-0">
@@ -2959,6 +3056,21 @@ function PlannerPanel({
                         <p className="mt-1 truncate text-[12px] text-slate-500">{item.locationName || item.address}</p>
                       </div>
                       <div className="flex items-center gap-2">
+                        {isStack ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setExpandedStacks((current) => ({
+                                ...current,
+                                [entry.id]: !current[entry.id],
+                              }))
+                            }}
+                            className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600"
+                          >
+                            {entry.items.length} options
+                          </button>
+                        ) : null}
                         {item.generated ? (
                           <div className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-700">
                             Linked
@@ -2985,6 +3097,21 @@ function PlannerPanel({
                         {item.generated ? 'Auto-carried from the previous day hotel stay.' : item.description}
                       </p>
                     ) : null}
+                    {isStack ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setExpandedStacks((current) => ({
+                            ...current,
+                            [entry.id]: !current[entry.id],
+                          }))
+                        }}
+                        className="mt-2 text-[11px] font-semibold text-slate-500"
+                      >
+                        {isExpandedStack ? 'Hide overlapping options' : `Show ${stackAlternatives.length} overlapping option${stackAlternatives.length === 1 ? '' : 's'}`}
+                      </button>
+                    ) : null}
                     {linkedBookings.length ? (
                       <button
                         type="button"
@@ -3007,6 +3134,61 @@ function PlannerPanel({
                   </div>
                 </div>
               </article>
+
+              {isExpandedStack ? (
+                <div className="ml-[4.85rem] space-y-2 sm:ml-[5.9rem]">
+                  {stackAlternatives.map((stackItem) => {
+                    const stackMeta = typeMeta(stackItem.category)
+                    const stackBookings = bookingsForItem(bookingOptions, stackItem.id)
+                    const stackHasActive = hasActiveBooking(stackItem, bookingOptions)
+                    return (
+                      <article
+                        key={stackItem.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => onOpenNotes(stackItem)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            onOpenNotes(stackItem)
+                          }
+                        }}
+                        className="rounded-[1.05rem] border border-slate-200/70 bg-white/78 px-3.5 py-3 transition hover:bg-white"
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${stackMeta.tone}`} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-[13px] font-semibold tracking-[-0.01em] text-slate-900">
+                                  {stackItem.title}
+                                </div>
+                                <div className="mt-1 text-[11px] text-slate-500">
+                                  {stackItem.startTime}
+                                  {stackItem.endTime ? `-${stackItem.endTime}` : ''}
+                                  {stackItem.locationName ? ` · ${stackItem.locationName}` : ''}
+                                </div>
+                              </div>
+                              {stackHasActive ? (
+                                <div className="rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                                  Active
+                                </div>
+                              ) : null}
+                            </div>
+                            {stackBookings.length ? (
+                              <div className="mt-2 text-[11px] text-slate-500">
+                                {stackBookings.length} booking option{stackBookings.length === 1 ? '' : 's'}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+              ) : isStack ? (
+                <div className="ml-[4.85rem] h-3 rounded-b-[1rem] bg-white/45 shadow-[0_8px_16px_rgba(15,23,42,0.035)] sm:ml-[5.9rem]" />
+              ) : null}
 
               {nextSegment ? (
                 <div
