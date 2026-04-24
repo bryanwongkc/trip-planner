@@ -57,17 +57,20 @@ import {
   DAY_VIEW_ALL,
   buildDayLabel,
   compareTime,
+  deriveEndTimeFromDuration,
   deriveTripState,
   formatDayDate,
   formatFullDayDate,
+  getDurationMinutes,
   movementItemsForDay,
   nextDayDate,
+  normalizeDayTimelineOrder,
+  normalizeItemTimeFields,
   reorderTripItems,
   renumberDays,
   slugId,
 } from './utils/trip'
 
-const SAVE_DEBOUNCE_MS = 1000
 const LONG_PRESS_MS = 600
 const MOVE_THRESHOLD = 10
 const DROP_DAY_SWITCH_MS = 240
@@ -81,6 +84,14 @@ const TRAVEL_MODE_OPTIONS = [
 const ROUTE_MODE_OPTIONS = [
   { value: '', label: 'Auto' },
   ...TRAVEL_MODE_OPTIONS,
+]
+const DURATION_PRESETS = [
+  { label: '30m', value: 30 },
+  { label: '45m', value: 45 },
+  { label: '1h', value: 60 },
+  { label: '1h30', value: 90 },
+  { label: '2h', value: 120 },
+  { label: '3h', value: 180 },
 ]
 
 function useResponsiveMode() {
@@ -282,6 +293,8 @@ function buildEmptyDraft(dayId = '') {
     address: '',
     startTime: '10:00',
     endTime: '11:00',
+    endTimeMode: 'time',
+    durationMinutes: null,
     description: '',
     bookingRef: '',
     travelModeToNext: '',
@@ -338,6 +351,10 @@ function serializeTripState(tripState) {
             category: item.category,
             startTime: item.startTime,
             endTime: item.endTime,
+            endTimeMode: item.endTimeMode || 'time',
+            durationMinutes: Number.isFinite(Number(item.durationMinutes))
+              ? Number(item.durationMinutes)
+              : null,
             description: item.description,
             bookingRef: item.bookingRef,
             travelModeToNext: item.travelModeToNext || '',
@@ -358,6 +375,10 @@ function generatedItemPatch(item) {
     flightCode: item.flightCode || '',
     startTime: item.startTime,
     endTime: item.endTime,
+    endTimeMode: item.endTimeMode || 'time',
+    durationMinutes: Number.isFinite(Number(item.durationMinutes))
+      ? Number(item.durationMinutes)
+      : null,
     description: item.description,
     bookingRef: item.bookingRef,
     travelModeToNext: item.travelModeToNext || '',
@@ -584,23 +605,48 @@ function resolveTravelPoint(item, direction, adjacentItem = null) {
 }
 
 function assignItemOrder(items) {
-  return [...items]
-    .sort((a, b) => {
-      if (typeof a.order === 'number' && typeof b.order === 'number' && a.order !== b.order) {
-        return a.order - b.order
-      }
-      const timeCompare = compareTime(a.startTime, b.startTime)
-      if (timeCompare !== 0) return timeCompare
-      return (a.order ?? 0) - (b.order ?? 0)
-    })
-    .map((item, index) => ({
-      ...item,
-      order: index,
-    }))
+  const normalizedItems = items.map((item) => normalizeItemTimeFields(item))
+  return normalizeDayTimelineOrder(normalizedItems, normalizedItems[0]?.dayId || '')
 }
 
 function mergeItemsForDay(currentItems, nextItem) {
-  return assignItemOrder([...currentItems.filter((item) => item.id !== nextItem.id), nextItem])
+  const mergedItems = [...currentItems.filter((item) => item.id !== nextItem.id), normalizeItemTimeFields(nextItem)]
+  return normalizeDayTimelineOrder(mergedItems, nextItem.dayId)
+}
+
+function createItemDraft(item) {
+  const normalized = normalizeItemTimeFields(item)
+  return {
+    ...normalized,
+    durationMinutes:
+      normalized.endTimeMode === 'duration'
+        ? normalized.durationMinutes ?? getDurationMinutes(normalized.startTime, normalized.endTime)
+        : normalized.durationMinutes,
+  }
+}
+
+function applyItemDraftPatch(item, patch) {
+  const nextItem = { ...item, ...patch }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'endTimeMode') && patch.endTimeMode === 'duration') {
+    const derivedDuration =
+      nextItem.durationMinutes ?? getDurationMinutes(nextItem.startTime, nextItem.endTime)
+
+    return normalizeItemTimeFields({
+      ...nextItem,
+      endTimeMode: 'duration',
+      durationMinutes: derivedDuration,
+    })
+  }
+
+  return normalizeItemTimeFields(nextItem)
+}
+
+function getEndTimeWarning(item) {
+  if (!item?.startTime || !item?.endTime) return ''
+  return compareTime(item.endTime, item.startTime) < 0
+    ? 'End time is earlier than start time. For overnight items, split into two items.'
+    : ''
 }
 
 function getScheduleConflictMeta(items) {
@@ -975,6 +1021,105 @@ function TimeField({ conflict, disabled, label, onChange, value }) {
         }`}
       />
     </label>
+  )
+}
+
+function EndTimeModeField({ conflict = false, disabled, draft, onChange }) {
+  const derivedEndTime =
+    draft.endTimeMode === 'duration'
+      ? deriveEndTimeFromDuration(draft.startTime, draft.durationMinutes)
+      : draft.endTime
+
+  return (
+    <div className="space-y-3 sm:col-span-2">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange({ endTimeMode: 'time' })}
+          className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${
+            draft.endTimeMode === 'time'
+              ? 'bg-slate-900 text-white'
+              : 'bg-slate-100 text-slate-600'
+          } disabled:bg-slate-100 disabled:text-slate-400`}
+        >
+          End time
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() =>
+            onChange({
+              endTimeMode: 'duration',
+              durationMinutes:
+                draft.durationMinutes ?? getDurationMinutes(draft.startTime, draft.endTime) ?? 60,
+            })
+          }
+          className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${
+            draft.endTimeMode === 'duration'
+              ? 'bg-slate-900 text-white'
+              : 'bg-slate-100 text-slate-600'
+          } disabled:bg-slate-100 disabled:text-slate-400`}
+        >
+          Duration
+        </button>
+      </div>
+
+      {draft.endTimeMode === 'time' ? (
+        <TimeField
+          label="End time"
+          value={draft.endTime}
+          onChange={(event) => onChange({ endTime: event.target.value })}
+          disabled={disabled}
+          conflict={conflict}
+        />
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+          <Field label="Duration">
+            <input
+              type="number"
+              min="0"
+              step="5"
+              value={draft.durationMinutes ?? ''}
+              onChange={(event) =>
+                onChange({
+                  durationMinutes: event.target.value === '' ? null : Number(event.target.value),
+                })
+              }
+              disabled={disabled}
+              className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-[14px] tracking-[-0.01em] disabled:bg-slate-100"
+            />
+          </Field>
+          <Field label="Derived end">
+            <div className="w-full rounded-[1.15rem] border border-slate-200/90 bg-slate-50 px-4 py-3 text-[14px] font-semibold tracking-[-0.01em] text-slate-700">
+              {derivedEndTime || '--:--'}
+            </div>
+          </Field>
+          <div className="sm:col-span-2">
+            <div className="text-[11px] leading-5 text-slate-500">
+              Use duration when you know how long the stop takes. The app will calculate the end time.
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {DURATION_PRESETS.map((preset) => (
+                <button
+                  key={preset.value}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onChange({ durationMinutes: preset.value })}
+                  className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${
+                    Number(draft.durationMinutes) === preset.value
+                      ? 'bg-slate-900 text-white'
+                      : 'bg-slate-100 text-slate-600'
+                  } disabled:bg-slate-100 disabled:text-slate-400`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -1358,9 +1503,9 @@ function NoteModal({ item, isMobilePortrait, onClose, onDelete, onOpenDetails })
 }
 
 function DetailModal({
-  autosaveStatus,
   dayOptions,
   detailItem,
+  endTimeWarning,
   firestoreReady,
   isGenerated,
   isMobilePortrait,
@@ -1368,6 +1513,7 @@ function DetailModal({
   onChange,
   onClose,
   onDelete,
+  onSave,
   scheduleConflict,
 }) {
   const fieldReadOnly = !firestoreReady
@@ -1401,20 +1547,8 @@ function DetailModal({
           <div>
             <h3 className="text-[1.45rem] font-bold tracking-[-0.025em] text-slate-900">{detailItem.title}</h3>
             <div className="mt-1.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-              {autosaveStatus === 'saving' ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Check className="h-3.5 w-3.5" />
-              )}
-              {isGenerated
-                ? 'Linked hotel item'
-                : autosaveStatus === 'saving'
-                  ? 'Autosaving...'
-                  : autosaveStatus === 'conflict'
-                    ? 'Schedule conflict'
-                  : autosaveStatus === 'error'
-                    ? 'Save failed'
-                    : 'All changes synced'}
+              <Check className="h-3.5 w-3.5" />
+              {isGenerated ? 'Linked hotel item' : 'Editing draft'}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1499,14 +1633,19 @@ function DetailModal({
             disabled={fieldReadOnly}
             conflict={Boolean(scheduleConflict?.nextId === detailItem.id)}
           />
-          <TimeField
-            label="End time"
-            value={detailItem.endTime}
-            onChange={(event) => onChange({ endTime: event.target.value })}
+          <EndTimeModeField
             disabled={fieldReadOnly}
+            draft={detailItem}
+            onChange={onChange}
             conflict={Boolean(scheduleConflict?.currentId === detailItem.id)}
           />
         </div>
+
+        {endTimeWarning ? (
+          <div className="mt-3 rounded-[0.95rem] bg-amber-50/90 px-4 py-3 text-[13px] leading-6 text-amber-700">
+            {endTimeWarning}
+          </div>
+        ) : null}
 
         <div className="mt-3.5 space-y-3">
           {detailItem.category !== 'Flight' ? (
@@ -1554,6 +1693,24 @@ function DetailModal({
           Open in Google Maps
           <ExternalLink className="h-4 w-4" />
         </a>
+
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void onSave()}
+            disabled={!firestoreReady}
+            className="rounded-[1rem] bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-300"
+          >
+            Save
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -1697,10 +1854,10 @@ function PlannerPanel({
   async function saveNewItem() {
     if (!firestoreReady || !effectiveDraftDayId) return
 
-    let nextDraft = {
+    let nextDraft = normalizeItemTimeFields({
       ...draft,
       dayId: effectiveDraftDayId,
-    }
+    })
 
     if (nextDraft.category === 'Flight' && draftFlightLookup?.flightNumber && draftFlightLookup.date) {
       try {
@@ -1724,7 +1881,7 @@ function PlannerPanel({
     }
 
     await onSaveNewItem({
-      ...nextDraft,
+      ...normalizeItemTimeFields(nextDraft),
       dayId: effectiveDraftDayId,
       id: slugId('item'),
     })
@@ -1805,6 +1962,10 @@ function PlannerPanel({
                 ))}
               </div>
             </div>
+          </div>
+
+          <div className="mt-3 text-[11px] leading-5 text-slate-500">
+            Timeline auto-sorts by start time. Drag only affects items with the same start time.
           </div>
 
           {weatherDisplay ? (
@@ -2043,6 +2204,8 @@ function PlannerPanel({
                           category: nextCategory,
                           startTime: '',
                           endTime: '',
+                          endTimeMode: 'time',
+                          durationMinutes: null,
                         }
                       }
 
@@ -2051,6 +2214,7 @@ function PlannerPanel({
                         category: nextCategory,
                         startTime: current.startTime || '10:00',
                         endTime: current.endTime || '11:00',
+                        endTimeMode: current.endTimeMode || 'time',
                       }
                     })
                   }
@@ -2080,18 +2244,35 @@ function PlannerPanel({
               <TimeField
                 label="Start time"
                 value={draft.startTime}
-                onChange={(event) => setDraft((current) => ({ ...current, startTime: event.target.value }))}
+                onChange={(event) =>
+                  setDraft((current) => applyItemDraftPatch(current, { startTime: event.target.value }))
+                }
                 disabled={draft.category === 'Flight'}
                 conflict={Boolean(draftScheduleConflict?.nextId === draftConflictId)}
               />
-              <TimeField
-                label="End time"
-                value={draft.endTime}
-                onChange={(event) => setDraft((current) => ({ ...current, endTime: event.target.value }))}
-                disabled={draft.category === 'Flight'}
-                conflict={Boolean(draftScheduleConflict?.currentId === draftConflictId)}
-              />
+              {draft.category === 'Flight' ? (
+                <TimeField
+                  label="End time"
+                  value={draft.endTime}
+                  onChange={() => {}}
+                  disabled
+                  conflict={Boolean(draftScheduleConflict?.currentId === draftConflictId)}
+                />
+              ) : (
+                <EndTimeModeField
+                  disabled={false}
+                  draft={draft}
+                  onChange={(changes) => setDraft((current) => applyItemDraftPatch(current, changes))}
+                  conflict={Boolean(draftScheduleConflict?.currentId === draftConflictId)}
+                />
+              )}
             </div>
+
+            {getEndTimeWarning(draft) ? (
+              <div className="mt-3 rounded-[0.95rem] bg-amber-50/90 px-4 py-3 text-[13px] leading-6 text-amber-700">
+                {getEndTimeWarning(draft)}
+              </div>
+            ) : null}
 
             <div className="mt-4 space-y-3">
               {draft.category !== 'Flight' ? (
@@ -2208,7 +2389,6 @@ export default function App() {
   })
   const [noteItem, setNoteItem] = useState(null)
   const [detailItem, setDetailItem] = useState(null)
-  const [autosaveStatus, setAutosaveStatus] = useState(firebaseEnabled ? 'saved' : 'offline')
   const [routeMap, setRouteMap] = useState({})
   const [showDayManager, setShowDayManager] = useState(false)
   const [dragState, setDragState] = useState(null)
@@ -2216,7 +2396,6 @@ export default function App() {
   const isMobilePortrait = useResponsiveMode()
   const routeCacheRef = useRef(new Map())
   const flightLookupCacheRef = useRef(new Map())
-  const debounceRef = useRef(null)
   const dragDaySwitchRef = useRef(null)
   const dragAutoScrollFrameRef = useRef(null)
   const dragPointerRef = useRef({ x: 0, y: 0 })
@@ -2316,6 +2495,7 @@ export default function App() {
     )
     return getScheduleConflictMeta([...existingItems, detailItem])
   }, [detailItem, tripState.dayMap])
+  const detailEndTimeWarning = useMemo(() => getEndTimeWarning(detailItem), [detailItem])
 
   const getFlightRecord = useMemo(
     () =>
@@ -2556,42 +2736,7 @@ export default function App() {
     tripState.dayMap,
   ])
 
-  useEffect(() => {
-    if (!detailItem || !firestoreReady) return
-
-    if (debounceRef.current) window.clearTimeout(debounceRef.current)
-
-    debounceRef.current = window.setTimeout(async () => {
-      try {
-        if (detailItem.generated) {
-          await mergeTripPatch(resolvedTripId, {
-            items: {
-              [detailItem.id]: generatedItemPatch(detailItem),
-            },
-          })
-        } else {
-          const sameDayItems = tripState.items.filter(
-            (item) => item.dayId === detailItem.dayId && !item.generated && item.id !== detailItem.id,
-          )
-          const patchItems = Object.fromEntries(
-            mergeItemsForDay(sameDayItems, detailItem).map((item) => [item.id, item]),
-          )
-          await mergeTripPatch(resolvedTripId, { items: patchItems })
-        }
-        setAutosaveStatus('saved')
-      } catch (error) {
-        console.error(error)
-        setAutosaveStatus('error')
-      }
-    }, SAVE_DEBOUNCE_MS)
-
-    return () => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current)
-    }
-  }, [detailItem, firestoreReady, resolvedTripId, tripState.items])
-
   const routePairs = useMemo(() => makeMovementPairs(deferredItems), [deferredItems])
-  const detailAutosaveStatus = detailScheduleConflict ? 'conflict' : autosaveStatus
 
   function selectTrip(tripId) {
     setOverrides({ days: {}, items: {} })
@@ -2600,7 +2745,6 @@ export default function App() {
     setDragState(null)
     setRouteMap({})
     setActiveDayId(DAY_VIEW_ALL)
-    setAutosaveStatus(firebaseEnabled ? 'saved' : 'offline')
     setActiveTripId(tripId)
   }
 
@@ -2819,10 +2963,11 @@ export default function App() {
   )
 
   async function saveItem(item) {
+    const normalizedItem = normalizeItemTimeFields(item)
     const sameDayItems = (tripState.dayMap[item.dayId]?.items || []).filter((existing) => existing.id !== item.id)
     const manualItems = sameDayItems.filter((existing) => !existing.generated)
     const patchItems = Object.fromEntries(
-      mergeItemsForDay(manualItems, item).map((entry) => [entry.id, entry]),
+      mergeItemsForDay(manualItems, normalizedItem).map((entry) => [entry.id, entry]),
     )
     await mergeTripPatch(resolvedTripId, { items: patchItems })
   }
@@ -3000,13 +3145,29 @@ export default function App() {
   }
 
   function openDetails(item) {
-    setAutosaveStatus('saved')
-    setDetailItem({ ...item })
+    setDetailItem(createItemDraft(item))
   }
 
   function updateDetail(changes) {
-    setAutosaveStatus('saving')
-    setDetailItem((current) => (current ? { ...current, ...changes } : current))
+    setDetailItem((current) => (current ? applyItemDraftPatch(current, changes) : current))
+  }
+
+  async function saveDetailItem() {
+    if (!detailItem || !firestoreReady) return
+
+    const nextItem = normalizeItemTimeFields(detailItem)
+
+    if (nextItem.generated) {
+      await mergeTripPatch(resolvedTripId, {
+        items: {
+          [nextItem.id]: generatedItemPatch(nextItem),
+        },
+      })
+    } else {
+      await saveItem(nextItem)
+    }
+
+    setDetailItem(null)
   }
 
   function clearPressState() {
@@ -3167,15 +3328,16 @@ export default function App() {
 
       {detailItem ? (
         <DetailModal
-          autosaveStatus={detailAutosaveStatus}
           dayOptions={dayOptions}
           detailItem={detailItem}
+          endTimeWarning={detailEndTimeWarning}
           firestoreReady={firestoreReady}
           isGenerated={Boolean(detailItem.generated)}
           isMobilePortrait={isMobilePortrait}
           mapsReady={googleMapsState.ready}
           onChange={updateDetail}
           onClose={() => setDetailItem(null)}
+          onSave={saveDetailItem}
           scheduleConflict={detailScheduleConflict}
           onDelete={async () => {
             const id = detailItem.id

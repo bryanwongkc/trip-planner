@@ -10,6 +10,68 @@ export function compareTime(a = '00:00', b = '00:00') {
   return a.localeCompare(b)
 }
 
+export function timeToMinutes(time = '00:00') {
+  const [hours = 0, minutes = 0] = String(time || '00:00').split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+export function minutesToTime(totalMinutes) {
+  const normalized = ((Number(totalMinutes || 0) % 1440) + 1440) % 1440
+  const hours = Math.floor(normalized / 60)
+  const minutes = normalized % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+export function deriveEndTimeFromDuration(startTime, durationMinutes) {
+  const duration = Number(durationMinutes || 0)
+  if (!startTime || !duration) return startTime || '00:00'
+  return minutesToTime(timeToMinutes(startTime) + duration)
+}
+
+export function getDurationMinutes(startTime, endTime) {
+  if (!startTime || !endTime) return null
+  const diff = timeToMinutes(endTime) - timeToMinutes(startTime)
+  return diff >= 0 ? diff : null
+}
+
+export function normalizeItemTimeFields(item) {
+  const endTimeMode = item.endTimeMode === 'duration' ? 'duration' : 'time'
+  const parsedDuration = Number(item.durationMinutes)
+  const durationMinutes = Number.isFinite(parsedDuration) ? parsedDuration : null
+
+  if (endTimeMode === 'duration' && durationMinutes) {
+    return {
+      ...item,
+      endTimeMode,
+      durationMinutes,
+      endTime: deriveEndTimeFromDuration(item.startTime, durationMinutes),
+    }
+  }
+
+  return {
+    ...item,
+    endTimeMode,
+    durationMinutes,
+  }
+}
+
+export function sortItemsByTimeline(items) {
+  return [...items]
+    .filter((item) => !item.hidden)
+    .sort((a, b) => {
+      const timeCompare = compareTime(a.startTime || '23:59', b.startTime || '23:59')
+      if (timeCompare !== 0) return timeCompare
+      return (a.order ?? 0) - (b.order ?? 0)
+    })
+}
+
+export function normalizeDayTimelineOrder(items, dayId) {
+  return sortItemsByTimeline(items.filter((item) => item.dayId === dayId)).map((item, index) => ({
+    ...normalizeItemTimeFields(item),
+    order: index,
+  }))
+}
+
 export function formatDayDate(date) {
   return new Intl.DateTimeFormat('en-HK', {
     day: 'numeric',
@@ -58,16 +120,14 @@ function sortDays(days) {
 }
 
 export function sortItems(items) {
-  return [...items]
-    .filter((item) => !item.hidden)
+  return sortItemsByTimeline(
+    items.map((item) => normalizeItemTimeFields(item)),
+  )
     .sort((a, b) => {
       if ((a.generated ? 0 : 1) !== (b.generated ? 0 : 1)) {
         return (a.generated ? 0 : 1) - (b.generated ? 0 : 1)
       }
-      if (typeof a.order === 'number' && typeof b.order === 'number' && a.order !== b.order) {
-        return a.order - b.order
-      }
-      const timeCompare = compareTime(a.startTime, b.startTime)
+      const timeCompare = compareTime(a.startTime || '23:59', b.startTime || '23:59')
       if (timeCompare !== 0) return timeCompare
       return (a.order ?? 0) - (b.order ?? 0)
     })
