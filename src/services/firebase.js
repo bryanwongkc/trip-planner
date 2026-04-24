@@ -303,64 +303,6 @@ export async function createTripRecordWithOwner(tripId, payload, ownerUser) {
   )
 }
 
-export async function claimLegacyTrip(tripId, user, fallbackMeta = {}) {
-  const { collection, db, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc } =
-    await loadFirebaseServices()
-  if (!db || !tripId || !user?.uid) return false
-
-  const tripDoc = doc(db, 'trips', tripId)
-  const memberDoc = doc(db, 'trips', tripId, 'members', user.uid)
-  const membershipIndexDoc = doc(db, 'users', user.uid, 'tripMemberships', tripId)
-  const membersQuery = query(collection(db, 'trips', tripId, 'members'), limit(1))
-  const [tripSnapshot, memberSnapshot, membersSnapshot] = await Promise.all([
-    getDoc(tripDoc),
-    getDoc(memberDoc),
-    getDocs(membersQuery),
-  ])
-
-  const tripData = tripSnapshot.exists() ? tripSnapshot.data() : {}
-  if (tripData?.ownerId || memberSnapshot.exists() || !membersSnapshot.empty) {
-    return false
-  }
-
-  const tripMeta = {
-    title: tripData?.title || fallbackMeta.title || 'My trip',
-    startDate: tripData?.startDate || fallbackMeta.startDate || '',
-    endDate: tripData?.endDate || fallbackMeta.endDate || '',
-    ownerId: user.uid,
-    createdBy: tripData?.createdBy || user.uid,
-    hidden: Boolean(tripData?.hidden),
-  }
-
-  await setDoc(
-    tripDoc,
-    stripUndefined({
-      ...tripMeta,
-      createdAt: tripData?.createdAt || serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    }),
-    { merge: true },
-  )
-  await setDoc(
-    memberDoc,
-    stripUndefined({
-      ...serializeUserProfile(user),
-      role: 'owner',
-      invitedBy: user.uid,
-      joinedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    }),
-    { merge: true },
-  )
-  await setDoc(
-    membershipIndexDoc,
-    buildTripIndexPayload(tripId, 'owner', tripMeta, serverTimestamp),
-    { merge: true },
-  )
-
-  return true
-}
-
 export async function upsertTripMeta(tripId, payload) {
   const { db, doc, serverTimestamp, setDoc, writeBatch } = await loadFirebaseServices()
   if (!db || !tripId) return

@@ -21,10 +21,6 @@ service cloud.firestore {
       request.resource.data.uid == request.auth.uid;
     }
 
-    function isUnclaimedLegacyTrip(tripId) {
-      return !(resource.data.ownerId is string) || resource.data.ownerId == '';
-    }
-
     function isTripMember(tripId) {
       return isSignedIn() &&
         exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid));
@@ -108,22 +104,17 @@ service cloud.firestore {
     }
 
     match /trips/{tripId} {
-      allow read: if canViewTrip(tripId) || (isSignedIn() && isUnclaimedLegacyTrip(tripId));
+      allow read: if canViewTrip(tripId);
       allow create: if isSignedIn() &&
         isTripMetaDoc() &&
         request.resource.data.ownerId == request.auth.uid &&
         request.resource.data.createdBy == request.auth.uid;
-      allow update: if isTripMetaDoc() && (
-        isTripOwner(tripId) ||
-        (isSignedIn() && isUnclaimedLegacyTrip(tripId) &&
-          request.resource.data.ownerId == request.auth.uid &&
-          request.resource.data.createdBy == request.auth.uid)
-      );
+      allow update: if isTripMetaDoc() && isTripOwner(tripId);
       allow delete: if false;
     }
 
     match /trips/{tripId}/members/{uid} {
-      allow read: if canViewTrip(tripId) || (isSignedIn() && isUnclaimedLegacyTrip(tripId));
+      allow read: if canViewTrip(tripId);
       allow create: if validTripMember(uid) && (
         (isTripOwner(tripId) && request.resource.data.role in ['owner', 'editor', 'viewer']) ||
         (isSignedIn() &&
