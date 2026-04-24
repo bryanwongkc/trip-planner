@@ -1156,6 +1156,7 @@ function EndTimeModeField({ conflict = false, disabled, draft, onChange }) {
 
 function TripSwitcher({
   activeTripId,
+  canManageTrip,
   deletedTrips,
   disabled,
   isMobilePortrait,
@@ -1273,7 +1274,7 @@ function TripSwitcher({
                 <button
                   type="button"
                   onClick={() => void onRenameTrip()}
-                  disabled={disabled || !activeTrip}
+                  disabled={disabled || !activeTrip || !canManageTrip}
                   className="flex items-center justify-center gap-2 rounded-[0.8rem] px-3 py-2 text-[12px] font-semibold text-slate-600 transition hover:bg-white/80 disabled:text-slate-400"
                 >
                   <Pencil className="h-3.5 w-3.5" />
@@ -1282,14 +1283,14 @@ function TripSwitcher({
                 <button
                   type="button"
                   onClick={() => void onDeleteTrip()}
-                  disabled={disabled || !activeTrip || activeTrip.id === TRIP_ID}
+                  disabled={disabled || !activeTrip || !canManageTrip || activeTrip.id === TRIP_ID}
                   className="flex items-center justify-center gap-2 rounded-[0.8rem] px-3 py-2 text-[12px] font-semibold text-rose-600 transition hover:bg-rose-50 disabled:text-slate-300"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   Delete
                 </button>
               </div>
-              {deletedTrips.length ? (
+              {canManageTrip && deletedTrips.length ? (
                 <div className="border-t border-slate-200/70 px-1 pt-1.5">
                   <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400">
                     Recently deleted
@@ -1338,7 +1339,7 @@ function TripSwitcher({
   )
 }
 
-function UserBar({ user, onShare, onSignOut }) {
+function UserBar({ canShare, user, onShare, onSignOut }) {
   return (
     <div className="glass-panel flex items-center justify-between gap-3 rounded-[1rem] border border-white/60 px-3 py-2.5">
       <div className="flex min-w-0 items-center gap-3">
@@ -1360,7 +1361,8 @@ function UserBar({ user, onShare, onSignOut }) {
         <button
           type="button"
           onClick={onShare}
-          className="rounded-full bg-white px-3 py-2 text-[12px] font-semibold text-slate-700"
+          disabled={!canShare}
+          className="rounded-full bg-white px-3 py-2 text-[12px] font-semibold text-slate-700 disabled:bg-slate-100 disabled:text-slate-400"
         >
           <span className="inline-flex items-center gap-1.5">
             <Users className="h-3.5 w-3.5" />
@@ -1412,8 +1414,147 @@ function SignInScreen({ configured, error, onSignIn }) {
   )
 }
 
+function CollaboratorsModal({
+  currentRole,
+  currentUser,
+  isMobilePortrait,
+  members,
+  onAddMember,
+  onClose,
+  onRemoveMember,
+  onUpdateRole,
+}) {
+  const [email, setEmail] = useState('')
+  const [role, setRole] = useState('editor')
+  const [busy, setBusy] = useState(false)
+  const ownerCount = members.filter((member) => member.role === 'owner').length
+  const canManage = canManageMembers(currentRole)
+
+  async function handleAddMember() {
+    if (!email.trim()) return
+    setBusy(true)
+    try {
+      await onAddMember(email.trim(), role)
+      setEmail('')
+      setRole('editor')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        className={`glass-panel w-full max-h-[82svh] overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+          isMobilePortrait ? 'rounded-[1.5rem] sm:max-w-md' : 'max-w-2xl rounded-[1.8rem]'
+        }`}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Collaborators</div>
+            <h3 className="mt-1 text-[1.6rem] font-bold tracking-[-0.02em] text-slate-900">Share this trip</h3>
+            <p className="mt-1 text-[13px] leading-6 text-slate-600">
+              Owners can add collaborators and assign editor or viewer access.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {canManage ? (
+          <div className="mt-5 rounded-[1.2rem] bg-slate-50/90 p-4">
+            <div className="grid gap-3 sm:grid-cols-[1fr_11rem_auto] sm:items-end">
+              <Field label="Google account email">
+                <input
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="name@example.com"
+                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                />
+              </Field>
+              <Field label="Role">
+                <select
+                  value={role}
+                  onChange={(event) => setRole(event.target.value)}
+                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                >
+                  <option value="editor">Editor</option>
+                  <option value="viewer">Viewer</option>
+                </select>
+              </Field>
+              <button
+                type="button"
+                onClick={() => void handleAddMember()}
+                disabled={busy || !email.trim()}
+                className="rounded-[1rem] bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-300"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="mt-5 space-y-2.5">
+          {members.map((member) => {
+            const isCurrentUser = member.uid === currentUser?.uid
+            const isOnlyOwner = member.role === 'owner' && ownerCount === 1
+            return (
+              <div
+                key={member.uid}
+                className="rounded-[1.15rem] bg-white px-4 py-3.5 shadow-[0_2px_10px_rgba(15,23,42,0.03)]"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-[13px] font-semibold tracking-[-0.01em] text-slate-900">
+                      {member.displayName || member.email || member.uid}
+                    </div>
+                    <div className="truncate pt-0.5 text-[11px] text-slate-500">{member.email || member.uid}</div>
+                  </div>
+                  {canManage ? (
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={member.role}
+                        onChange={(event) => void onUpdateRole(member, event.target.value)}
+                        disabled={busy || (isCurrentUser && isOnlyOwner)}
+                        className="rounded-full border border-slate-200/90 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-700 disabled:bg-slate-100"
+                      >
+                        <option value="owner">Owner</option>
+                        <option value="editor">Editor</option>
+                        <option value="viewer">Viewer</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => void onRemoveMember(member)}
+                        disabled={busy || isOnlyOwner}
+                        className="rounded-full bg-rose-50 p-2 text-rose-600 disabled:bg-slate-100 disabled:text-slate-300"
+                        aria-label={`Remove ${member.displayName || member.email || member.uid}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="rounded-full bg-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                      {member.role}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function DayManagerModal({
   activeDayId,
+  canEdit,
   days,
   firestoreReady,
   isMobilePortrait,
@@ -1464,7 +1605,7 @@ function DayManagerModal({
                   <input
                     value={day.name || ''}
                     onChange={(event) => onUpdateDay(day.id, { name: event.target.value })}
-                    disabled={!firestoreReady}
+                    disabled={!firestoreReady || !canEdit}
                     placeholder="Optional label"
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
                   />
@@ -1474,7 +1615,7 @@ function DayManagerModal({
                     type="date"
                     value={day.date}
                     onChange={(event) => onUpdateDay(day.id, { date: event.target.value })}
-                    disabled={!firestoreReady}
+                    disabled={!firestoreReady || !canEdit}
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
                   />
                 </Field>
@@ -1482,7 +1623,7 @@ function DayManagerModal({
                   <button
                     type="button"
                     onClick={() => onMoveDay(day.id, -1)}
-                    disabled={!firestoreReady || index === 0}
+                    disabled={!firestoreReady || !canEdit || index === 0}
                     className="rounded-2xl bg-slate-100 p-3 text-slate-700 disabled:text-slate-300"
                   >
                     <ArrowUp className="h-4 w-4" />
@@ -1490,7 +1631,7 @@ function DayManagerModal({
                   <button
                     type="button"
                     onClick={() => onMoveDay(day.id, 1)}
-                    disabled={!firestoreReady || index === days.length - 1}
+                    disabled={!firestoreReady || !canEdit || index === days.length - 1}
                     className="rounded-2xl bg-slate-100 p-3 text-slate-700 disabled:text-slate-300"
                   >
                     <ArrowDown className="h-4 w-4" />
@@ -1498,7 +1639,7 @@ function DayManagerModal({
                   <button
                     type="button"
                     onClick={() => onDeleteDay(day.id)}
-                    disabled={!firestoreReady}
+                    disabled={!firestoreReady || !canEdit}
                     className="rounded-2xl bg-rose-50 p-3 text-rose-600 disabled:text-slate-300"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -1532,7 +1673,7 @@ function DayManagerModal({
             <button
               type="button"
               onClick={() => onAddDay(newDay)}
-              disabled={!firestoreReady}
+              disabled={!firestoreReady || !canEdit}
               className="rounded-[1.2rem] bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:bg-slate-300"
             >
               Add day
@@ -1544,7 +1685,7 @@ function DayManagerModal({
   )
 }
 
-function NoteModal({ item, isMobilePortrait, onClose, onDelete, onOpenDetails }) {
+function NoteModal({ canEdit, item, isMobilePortrait, onClose, onDelete, onOpenDetails }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
@@ -1562,7 +1703,7 @@ function NoteModal({ item, isMobilePortrait, onClose, onDelete, onOpenDetails })
             <p className="mt-1 text-[12px] leading-5 text-slate-600">{item.locationName || item.address}</p>
           </div>
           <div className="flex items-center gap-2">
-            {!item.generated ? (
+            {!item.generated && canEdit ? (
               <button
                 type="button"
                 onClick={() => void onDelete()}
@@ -1595,19 +1736,21 @@ function NoteModal({ item, isMobilePortrait, onClose, onDelete, onOpenDetails })
           ) : null}
         </div>
 
-        <button
-          type="button"
-          onClick={onOpenDetails}
-          className="mt-3.5 w-full rounded-[0.95rem] bg-slate-900 px-4 py-3.5 text-sm font-bold text-white"
-        >
-          {item.generated ? 'View linked details' : 'Open details'}
-        </button>
+        {canEdit ? (
+          <button
+            type="button"
+            onClick={onOpenDetails}
+            className="mt-3.5 w-full rounded-[0.95rem] bg-slate-900 px-4 py-3.5 text-sm font-bold text-white"
+          >
+            {item.generated ? 'View linked details' : 'Open details'}
+          </button>
+        ) : null}
       </div>
     </div>
   )
 }
 
-function ItemQuickActionsModal({ item, isMobilePortrait, onClose, onOpenDetails }) {
+function ItemQuickActionsModal({ canEdit, item, isMobilePortrait, onClose, onOpenDetails }) {
   const mapsUrl = item.category === 'Flight' ? '' : getGoogleMapsUrl(item)
 
   return (
@@ -1632,14 +1775,16 @@ function ItemQuickActionsModal({ item, isMobilePortrait, onClose, onOpenDetails 
         </div>
 
         <div className="mt-4 space-y-2">
-          <button
-            type="button"
-            onClick={onOpenDetails}
-            className="flex w-full items-center justify-between rounded-[1rem] bg-white px-4 py-3.5 text-left text-sm font-semibold text-slate-800"
-          >
-            <span>Edit details</span>
-            <Pencil className="h-4 w-4 text-slate-400" />
-          </button>
+          {canEdit ? (
+            <button
+              type="button"
+              onClick={onOpenDetails}
+              className="flex w-full items-center justify-between rounded-[1rem] bg-white px-4 py-3.5 text-left text-sm font-semibold text-slate-800"
+            >
+              <span>Edit details</span>
+              <Pencil className="h-4 w-4 text-slate-400" />
+            </button>
+          ) : null}
           {mapsUrl ? (
             <a
               href={mapsUrl}
@@ -1666,6 +1811,7 @@ function ItemQuickActionsModal({ item, isMobilePortrait, onClose, onOpenDetails 
 }
 
 function DetailModal({
+  canEdit,
   dayOptions,
   detailItem,
   endTimeWarning,
@@ -1679,7 +1825,7 @@ function DetailModal({
   onSave,
   scheduleConflict,
 }) {
-  const fieldReadOnly = !firestoreReady
+  const fieldReadOnly = !firestoreReady || !canEdit
   const linkedLocked = isGenerated
   const effectiveFlightCode = detailItem.flightCode || extractFlightNumber(detailItem.title || '')
   const mapsUrl = detailItem.category === 'Flight' ? '' : getGoogleMapsUrl(detailItem)
@@ -1716,7 +1862,7 @@ function DetailModal({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {!isGenerated ? (
+            {!isGenerated && canEdit ? (
               <button
                 type="button"
                 onClick={() => void onDelete()}
@@ -1863,7 +2009,7 @@ function DetailModal({
           <button
             type="button"
             onClick={() => void onSave()}
-            disabled={!firestoreReady}
+            disabled={!firestoreReady || !canEdit}
             className="rounded-[1rem] bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-300"
           >
             Save
@@ -1876,6 +2022,7 @@ function DetailModal({
 
 function PlannerPanel({
   activeDayId,
+  canEdit,
   dayOptions,
   dayMap,
   dragState,
@@ -1946,6 +2093,7 @@ function PlannerPanel({
   }, [dayMap, draft, effectiveDraftDayId])
 
   useEffect(() => {
+    if (!canEdit) return undefined
     if (draft.category !== 'Flight' || !draftFlightLookup?.flightNumber || !draftFlightLookup.date) return undefined
     if (!isCurrentDate(draftDayDate) && draftAppliedLookupKey === draftLookupKey) {
       return undefined
@@ -1996,6 +2144,7 @@ function PlannerPanel({
       active = false
     }
   }, [
+    canEdit,
     dayMap,
     dayOptions,
     draft.category,
@@ -2010,7 +2159,7 @@ function PlannerPanel({
   ])
 
   async function saveNewItem() {
-    if (!firestoreReady || !effectiveDraftDayId) return
+    if (!firestoreReady || !effectiveDraftDayId || !canEdit) return
 
     let nextDraft = stripFlightLocationFields(normalizeItemTimeFields({
       ...draft,
@@ -2071,7 +2220,8 @@ function PlannerPanel({
             <button
               type="button"
               onClick={onManageDays}
-              className={`shrink-0 rounded-full border border-slate-200/90 bg-white text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 ${
+              disabled={!canEdit}
+              className={`shrink-0 rounded-full border border-slate-200/90 bg-white text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400 ${
                 isMobilePortrait ? 'p-2.5' : 'flex items-center gap-2 px-3.5 py-2'
               }`}
               aria-label="Manage days"
@@ -2237,7 +2387,7 @@ function PlannerPanel({
                           <div className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-700">
                             Linked
                           </div>
-                        ) : (
+                        ) : canEdit ? (
                           <button
                             type="button"
                             onPointerDown={(event) => onDragStart(event, item)}
@@ -2248,7 +2398,7 @@ function PlannerPanel({
                           >
                             <GripVertical className="h-4 w-4" />
                           </button>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                     {item.address && item.address !== item.locationName ? (
@@ -2285,10 +2435,12 @@ function PlannerPanel({
                       </span>
                     ) : null}
                   </div>
-                  <RouteModeControl
-                    currentMode={nextSegment.from.travelModeToNext || ''}
-                    onSelect={(mode) => onUpdateTravelMode(nextSegment.from.id, mode)}
-                  />
+                  {canEdit ? (
+                    <RouteModeControl
+                      currentMode={nextSegment.from.travelModeToNext || ''}
+                      onSelect={(mode) => onUpdateTravelMode(nextSegment.from.id, mode)}
+                    />
+                  ) : null}
                 </div>
               ) : null}
               {showAfterSlot ? (
@@ -2330,18 +2482,20 @@ function PlannerPanel({
             <h3 className="headline text-[1.66rem] leading-none tracking-[-0.025em] text-slate-900">Add stop</h3>
             <p className="mt-1 text-[13px] text-slate-500">Open the composer only when you need it.</p>
           </div>
-          <button
-            type="button"
-            onClick={() => setIsComposerOpen((open) => !open)}
-            className={`rounded-[0.95rem] px-4 py-2.5 text-[13px] font-semibold transition ${
-              isComposerOpen ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'
-            }`}
-          >
-            {isComposerOpen ? 'Hide form' : 'New stop'}
-          </button>
+          {canEdit ? (
+            <button
+              type="button"
+              onClick={() => setIsComposerOpen((open) => !open)}
+              className={`rounded-[0.95rem] px-4 py-2.5 text-[13px] font-semibold transition ${
+                isComposerOpen ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'
+              }`}
+            >
+              {isComposerOpen ? 'Hide form' : 'New stop'}
+            </button>
+          ) : null}
         </div>
 
-        {isComposerOpen ? (
+        {isComposerOpen && canEdit ? (
           <>
             <div className={`mt-5 grid gap-3.5 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
               <Field label="Day">
@@ -2481,7 +2635,9 @@ function PlannerPanel({
           </>
         ) : (
           <div className="mt-4 rounded-[0.95rem] bg-white px-4 py-3 text-[13px] leading-6 text-slate-500">
-            Open the composer only when you need to add a new stop.
+            {canEdit
+              ? 'Open the composer only when you need to add a new stop.'
+              : 'You have view-only access on this trip.'}
           </div>
         )}
       </div>
@@ -2877,6 +3033,7 @@ export default function App() {
   }, [authReady, currentUser, defaultTripSummary, tripSummaries.length])
 
   useEffect(() => {
+    if (!canEditCurrentTrip) return undefined
     if (!detailItemId || detailCategory !== 'Flight' || !detailFlightCode || !detailDayDate) {
       return undefined
     }
@@ -2928,6 +3085,7 @@ export default function App() {
       active = false
     }
   }, [
+    canEditCurrentTrip,
     detailDayDate,
     detailFlightCode,
     detailFlightLookupKey,
@@ -3417,6 +3575,7 @@ export default function App() {
   }
 
   function openDetails(item) {
+    if (!canEditCurrentTrip) return
     setActionItem(null)
     setNoteItem(null)
     setDetailItem(createItemDraft(item))
@@ -3442,6 +3601,72 @@ export default function App() {
     }
 
     setDetailItem(null)
+  }
+
+  async function addCollaborator(email, role) {
+    if (!canManageCurrentTrip || !currentUser?.uid) return
+
+    const match = await lookupUserByEmail(email)
+    if (!match) {
+      window.alert('This person needs to sign in once before they can be added.')
+      return
+    }
+    if (match.uid === currentUser.uid) {
+      window.alert('You already have access to this trip.')
+      return
+    }
+    if (tripMembers.some((member) => member.uid === match.uid)) {
+      window.alert('This person is already a collaborator on the trip.')
+      return
+    }
+
+    await addTripMember(
+      resolvedTripId,
+      currentUser,
+      match,
+      role,
+      {
+        title: activeTripSummary.title,
+        startDate: activeTripSummary.startDate,
+        endDate: activeTripSummary.endDate,
+        hidden: false,
+      },
+    )
+  }
+
+  async function changeCollaboratorRole(member, role) {
+    if (!canManageCurrentTrip) return
+
+    const ownerCount = tripMembers.filter((entry) => entry.role === 'owner').length
+    if (member.uid === currentUser?.uid && member.role === 'owner' && role !== 'owner' && ownerCount === 1) {
+      window.alert('You cannot demote yourself as the only owner.')
+      return
+    }
+
+    await updateTripMemberRole(
+      resolvedTripId,
+      member.uid,
+      role,
+      {
+        title: activeTripSummary.title,
+        startDate: activeTripSummary.startDate,
+        endDate: activeTripSummary.endDate,
+        hidden: false,
+      },
+    )
+  }
+
+  async function removeCollaborator(member) {
+    if (!canManageCurrentTrip) return
+
+    const ownerCount = tripMembers.filter((entry) => entry.role === 'owner').length
+    if (member.role === 'owner' && ownerCount === 1) {
+      window.alert('You cannot remove the last owner.')
+      return
+    }
+
+    if (!window.confirm(`Remove ${member.displayName || member.email || member.uid} from this trip?`)) return
+    await removeTripMember(resolvedTripId, member.uid)
   }
 
   function clearPressState() {
@@ -3518,6 +3743,7 @@ export default function App() {
     <main className="mx-auto min-h-screen max-w-7xl overflow-x-clip px-3 py-4 pb-8 text-slate-900 sm:px-6 sm:py-5 sm:pb-10 lg:px-8">
       <div className={isMobilePortrait ? 'mx-auto mb-3 max-w-[28rem]' : 'mb-3 max-w-xl'}>
         <UserBar
+          canShare={canViewTrip(activeRole)}
           user={currentUser}
           onShare={() => setShowCollaborators(true)}
           onSignOut={() => void handleSignOut()}
@@ -3526,6 +3752,7 @@ export default function App() {
       <div className={isMobilePortrait ? 'mx-auto mb-4 max-w-[28rem]' : 'mb-4 max-w-md'}>
         <TripSwitcher
           activeTripId={activeTripSummary.id}
+          canManageTrip={canManageCurrentTrip}
           deletedTrips={deletedTrips}
           disabled={!firestoreReady}
           isMobilePortrait={isMobilePortrait}
@@ -3565,6 +3792,7 @@ export default function App() {
         <div className="space-y-4">
           <PlannerPanel
             activeDayId={resolvedActiveDayId}
+            canEdit={canEditCurrentTrip}
             dayOptions={dayOptions}
             dayMap={tripState.dayMap}
             dragState={dragState}
@@ -3611,6 +3839,7 @@ export default function App() {
       {showDayManager ? (
         <DayManagerModal
           activeDayId={resolvedActiveDayId}
+          canEdit={canEditCurrentTrip}
           days={visibleDays}
           firestoreReady={firestoreReady}
           isMobilePortrait={isMobilePortrait}
@@ -3624,6 +3853,7 @@ export default function App() {
 
       {noteItem ? (
         <NoteModal
+          canEdit={canEditCurrentTrip}
           item={noteItem}
           isMobilePortrait={isMobilePortrait}
           onClose={() => setNoteItem(null)}
@@ -3642,6 +3872,7 @@ export default function App() {
 
       {actionItem ? (
         <ItemQuickActionsModal
+          canEdit={canEditCurrentTrip}
           item={actionItem}
           isMobilePortrait={isMobilePortrait}
           onClose={() => setActionItem(null)}
@@ -3651,6 +3882,7 @@ export default function App() {
 
       {detailItem ? (
         <DetailModal
+          canEdit={canEditCurrentTrip}
           dayOptions={dayOptions}
           detailItem={detailItem}
           endTimeWarning={detailEndTimeWarning}
@@ -3667,6 +3899,19 @@ export default function App() {
             setDetailItem(null)
             await deleteItem(id)
           }}
+        />
+      ) : null}
+
+      {showCollaborators && canViewTrip(activeRole) ? (
+        <CollaboratorsModal
+          currentRole={activeRole}
+          currentUser={currentUser}
+          isMobilePortrait={isMobilePortrait}
+          members={tripMembers}
+          onAddMember={(email, role) => addCollaborator(email, role)}
+          onClose={() => setShowCollaborators(false)}
+          onRemoveMember={(member) => removeCollaborator(member)}
+          onUpdateRole={(member, role) => changeCollaboratorRole(member, role)}
         />
       ) : null}
     </main>
