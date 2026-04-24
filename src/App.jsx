@@ -75,9 +75,12 @@ import {
   getDurationMinutes,
   movementItemsForDay,
   nextDayDate,
+  bookingsForItem,
+  deriveBookingDeadlineState,
   normalizeBookingOption,
   normalizeDayTimelineOrder,
   normalizeItemTimeFields,
+  nextCancellationDeadline,
   reorderTripItems,
   renumberDays,
   slugId,
@@ -439,6 +442,70 @@ function buildBlankTripSnapshot(date = localTodayIso()) {
     items: Object.fromEntries(SEED_ITEMS.map((item) => [item.id, { ...item, hidden: true }])),
     bookingOptions: {},
   }
+}
+
+function isBookingEligibleItem(item) {
+  return ['Hotel', 'Wedding', 'Activity', 'Shopping'].includes(item?.category)
+}
+
+function defaultBookingType(item) {
+  return item?.category === 'Hotel' ? 'hotel' : 'meal'
+}
+
+function formatBookingDateTime(value) {
+  if (!value) return 'No deadline'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('en-HK', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function formatDateTimeInputValue(value) {
+  if (!value) return ''
+  return String(value).slice(0, 16)
+}
+
+function bookingDeadlineLabel(booking) {
+  const state = deriveBookingDeadlineState(booking)
+  if (state === 'overdue') return 'Deadline passed'
+  if (state === 'due_soon') return 'Due within 24h'
+  if (state === 'upcoming') return 'Due this week'
+  if (state === 'later') return 'Later'
+  if (state === 'cancelled') return 'Cancelled'
+  return 'No deadline'
+}
+
+function bookingStatusLabel(status) {
+  if (status === 'active') return 'Active'
+  if (status === 'cancelled') return 'Cancelled'
+  return 'Considering'
+}
+
+function createBookingDraft(item, option = null) {
+  const base = option || {}
+  return normalizeBookingOption({
+    id: base.id || '',
+    linkedItemId: item?.id || base.linkedItemId || '',
+    dayId: item?.dayId || base.dayId || '',
+    type: base.type || defaultBookingType(item),
+    title: base.title || item?.locationName || item?.title || '',
+    provider: base.provider || '',
+    bookingRef: base.bookingRef || '',
+    status: base.status || 'tentative',
+    startDate: base.startDate || item?.dayDate || '',
+    endDate: base.endDate || item?.dayDate || '',
+    reservationTime: base.reservationTime || '',
+    partySize: base.partySize ?? null,
+    cancellationDeadline: formatDateTimeInputValue(base.cancellationDeadline || ''),
+    cancellationPolicy: base.cancellationPolicy || '',
+    price: base.price ?? null,
+    currency: base.currency || 'JPY',
+    notes: base.notes || '',
+  })
 }
 
 function generatedItemPatch(item) {
@@ -1718,7 +1785,16 @@ function DayManagerModal({
   )
 }
 
-function NoteModal({ canEdit, item, isMobilePortrait, onClose, onDelete, onOpenDetails }) {
+function NoteModal({
+  bookingCount,
+  canEdit,
+  item,
+  isMobilePortrait,
+  onClose,
+  onDelete,
+  onOpenBookings,
+  onOpenDetails,
+}) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
@@ -1767,6 +1843,23 @@ function NoteModal({ canEdit, item, isMobilePortrait, onClose, onDelete, onOpenD
               <div className="mt-2 text-[13px] font-semibold tracking-[-0.01em] text-slate-900">{item.bookingRef}</div>
             </div>
           ) : null}
+          {isBookingEligibleItem(item) ? (
+            <button
+              type="button"
+              onClick={onOpenBookings}
+              className="flex w-full items-center justify-between rounded-[1rem] bg-white px-4 py-3.5 text-left"
+            >
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Booking options
+                </div>
+                <div className="mt-2 text-[13px] font-semibold tracking-[-0.01em] text-slate-900">
+                  {bookingCount ? `${bookingCount} linked option${bookingCount === 1 ? '' : 's'}` : 'No linked options'}
+                </div>
+              </div>
+              <ChevronDown className="-rotate-90 h-4 w-4 text-slate-400" />
+            </button>
+          ) : null}
         </div>
 
         {canEdit ? (
@@ -1783,7 +1876,7 @@ function NoteModal({ canEdit, item, isMobilePortrait, onClose, onDelete, onOpenD
   )
 }
 
-function ItemQuickActionsModal({ canEdit, item, isMobilePortrait, onClose, onOpenDetails }) {
+function ItemQuickActionsModal({ canEdit, item, isMobilePortrait, onClose, onOpenBookings, onOpenDetails }) {
   const mapsUrl = item.category === 'Flight' ? '' : getGoogleMapsUrl(item)
 
   return (
@@ -1818,6 +1911,16 @@ function ItemQuickActionsModal({ canEdit, item, isMobilePortrait, onClose, onOpe
               <Pencil className="h-4 w-4 text-slate-400" />
             </button>
           ) : null}
+          {isBookingEligibleItem(item) ? (
+            <button
+              type="button"
+              onClick={onOpenBookings}
+              className="flex w-full items-center justify-between rounded-[1rem] bg-white px-4 py-3.5 text-left text-sm font-semibold text-slate-800"
+            >
+              <span>Manage booking options</span>
+              <CalendarDays className="h-4 w-4 text-slate-400" />
+            </button>
+          ) : null}
           {mapsUrl ? (
             <a
               href={mapsUrl}
@@ -1838,6 +1941,297 @@ function ItemQuickActionsModal({ canEdit, item, isMobilePortrait, onClose, onOpe
             Cancel
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function BookingOptionsModal({
+  bookings,
+  canEdit,
+  firestoreReady,
+  isMobilePortrait,
+  item,
+  onClose,
+  onDelete,
+  onMarkActive,
+  onMarkCancelled,
+  onSave,
+}) {
+  const [draft, setDraft] = useState(null)
+  const activeBookings = bookings.filter((booking) => booking.status !== 'cancelled')
+  const cancelledBookings = bookings.filter((booking) => booking.status === 'cancelled')
+
+  function openDraft(option = null) {
+    setDraft(createBookingDraft(item, option))
+  }
+
+  async function saveDraft() {
+    if (!draft?.title?.trim()) return
+    await onSave({
+      ...draft,
+      title: draft.title.trim(),
+      cancellationDeadline: draft.cancellationDeadline || '',
+      reservationTime: draft.reservationTime || '',
+    })
+    setDraft(null)
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        className={`glass-panel browse-ui w-full max-h-[82svh] overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+          isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-2xl rounded-[1.65rem]'
+        }`}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+              Booking options
+            </div>
+            <h3 className="mt-1 text-[1.45rem] font-bold tracking-[-0.025em] text-slate-900">{item.title}</h3>
+            <p className="mt-1 text-[12px] leading-5 text-slate-600">
+              Hold multiple hotel or meal options and track free-cancellation deadlines.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {draft ? (
+          <div className="mt-4 rounded-[1.2rem] bg-white p-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Type">
+                <select
+                  value={draft.type}
+                  onChange={(event) => setDraft((current) => ({ ...current, type: event.target.value }))}
+                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                >
+                  <option value="hotel">Hotel</option>
+                  <option value="meal">Meal</option>
+                </select>
+              </Field>
+              <Field label="Status">
+                <select
+                  value={draft.status}
+                  onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))}
+                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                >
+                  <option value="tentative">Considering</option>
+                  <option value="active">Active</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </Field>
+              <Field label="Title">
+                <input
+                  value={draft.title}
+                  onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                />
+              </Field>
+              <Field label="Provider">
+                <input
+                  value={draft.provider}
+                  onChange={(event) => setDraft((current) => ({ ...current, provider: event.target.value }))}
+                  placeholder="Booking.com, TableCheck..."
+                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                />
+              </Field>
+              <Field label="Booking reference">
+                <input
+                  value={draft.bookingRef}
+                  onChange={(event) => setDraft((current) => ({ ...current, bookingRef: event.target.value }))}
+                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                />
+              </Field>
+              <Field label="Free-cancel deadline">
+                <input
+                  type="datetime-local"
+                  value={formatDateTimeInputValue(draft.cancellationDeadline)}
+                  onChange={(event) => setDraft((current) => ({ ...current, cancellationDeadline: event.target.value }))}
+                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                />
+              </Field>
+              <Field label={draft.type === 'hotel' ? 'Check-in date' : 'Reservation date'}>
+                <input
+                  type="date"
+                  value={draft.startDate}
+                  onChange={(event) => setDraft((current) => ({ ...current, startDate: event.target.value }))}
+                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                />
+              </Field>
+              {draft.type === 'hotel' ? (
+                <Field label="Check-out date">
+                  <input
+                    type="date"
+                    value={draft.endDate}
+                    onChange={(event) => setDraft((current) => ({ ...current, endDate: event.target.value }))}
+                    className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                  />
+                </Field>
+              ) : (
+                <Field label="Reservation time">
+                  <input
+                    type="datetime-local"
+                    value={formatDateTimeInputValue(draft.reservationTime)}
+                    onChange={(event) => setDraft((current) => ({ ...current, reservationTime: event.target.value }))}
+                    className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                  />
+                </Field>
+              )}
+              <Field label="Price">
+                <input
+                  type="number"
+                  value={draft.price ?? ''}
+                  onChange={(event) => setDraft((current) => ({ ...current, price: event.target.value }))}
+                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                />
+              </Field>
+              <Field label="Currency">
+                <input
+                  value={draft.currency}
+                  onChange={(event) => setDraft((current) => ({ ...current, currency: event.target.value.toUpperCase() }))}
+                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                />
+              </Field>
+            </div>
+            <Field label="Cancellation policy">
+              <textarea
+                rows={2}
+                value={draft.cancellationPolicy}
+                onChange={(event) => setDraft((current) => ({ ...current, cancellationPolicy: event.target.value }))}
+                className="mt-1 w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+              />
+            </Field>
+            <Field label="Notes">
+              <textarea
+                rows={3}
+                value={draft.notes}
+                onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))}
+                className="mt-1 w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+              />
+            </Field>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDraft(null)}
+                className="rounded-[1rem] border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveDraft()}
+                disabled={!firestoreReady || !canEdit || !draft.title.trim()}
+                className="rounded-[1rem] bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-300"
+              >
+                Save booking
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="mt-4 space-y-2.5">
+              {[...activeBookings, ...cancelledBookings].map((booking) => {
+                const deadlineState = deriveBookingDeadlineState(booking)
+                return (
+                  <div
+                    key={booking.id}
+                    className={`rounded-[1.1rem] bg-white px-4 py-3.5 ${
+                      booking.status === 'cancelled' ? 'opacity-55' : ''
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[14px] font-semibold tracking-[-0.01em] text-slate-900">
+                          {booking.title}
+                        </div>
+                        <div className="mt-1 text-[12px] text-slate-500">
+                          {booking.provider || booking.type} {booking.bookingRef ? `· ${booking.bookingRef}` : ''}
+                        </div>
+                      </div>
+                      <div
+                        className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          deadlineState === 'overdue'
+                            ? 'bg-rose-50 text-rose-700'
+                            : booking.status === 'active'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        {deadlineState === 'overdue' ? 'Deadline passed' : bookingStatusLabel(booking.status)}
+                      </div>
+                    </div>
+                    <div className="mt-2 text-[12px] leading-5 text-slate-500">
+                      Free cancel: {formatBookingDateTime(booking.cancellationDeadline)}
+                    </div>
+                    {booking.price ? (
+                      <div className="mt-1 text-[12px] text-slate-500">
+                        {booking.currency} {Number(booking.price).toLocaleString()}
+                      </div>
+                    ) : null}
+                    {canEdit ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openDraft(booking)}
+                          className="rounded-full bg-slate-100 px-3 py-1.5 text-[12px] font-semibold text-slate-700"
+                        >
+                          Edit
+                        </button>
+                        {booking.status !== 'active' && booking.status !== 'cancelled' ? (
+                          <button
+                            type="button"
+                            onClick={() => void onMarkActive(booking)}
+                            className="rounded-full bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700"
+                          >
+                            Mark active
+                          </button>
+                        ) : null}
+                        {booking.status !== 'cancelled' ? (
+                          <button
+                            type="button"
+                            onClick={() => void onMarkCancelled(booking)}
+                            className="rounded-full bg-amber-50 px-3 py-1.5 text-[12px] font-semibold text-amber-700"
+                          >
+                            Mark cancelled
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void onDelete(booking)}
+                          className="rounded-full bg-rose-50 px-3 py-1.5 text-[12px] font-semibold text-rose-700"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
+              {!bookings.length ? (
+                <div className="rounded-[1rem] bg-white px-4 py-5 text-center text-[13px] text-slate-500">
+                  No booking options linked yet.
+                </div>
+              ) : null}
+            </div>
+            {canEdit ? (
+              <button
+                type="button"
+                onClick={() => openDraft()}
+                disabled={!firestoreReady}
+                className="mt-4 w-full rounded-[1rem] bg-slate-900 px-4 py-3.5 text-sm font-bold text-white disabled:bg-slate-300"
+              >
+                Add booking option
+              </button>
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   )
@@ -2055,6 +2449,7 @@ function DetailModal({
 
 function PlannerPanel({
   activeDayId,
+  bookingOptions,
   canEdit,
   dayOptions,
   dayMap,
@@ -2066,6 +2461,7 @@ function PlannerPanel({
   mapsReady,
   onDayChange,
   onDragStart,
+  onOpenBookings,
   onManageDays,
   onOpenDetails,
   onOpenNotes,
@@ -2341,6 +2737,8 @@ function PlannerPanel({
       <div className="space-y-2.5 browse-ui">
         {filteredItems.map((item, index) => {
           const meta = typeMeta(item.category)
+          const linkedBookings = bookingsForItem(bookingOptions, item.id)
+          const nextBookingDeadline = nextCancellationDeadline(linkedBookings)
           const nextSegment = routeSegmentMap[item.id]
           const isOverview = activeDayId === DAY_VIEW_ALL
           const previousItem = filteredItems[index - 1]
@@ -2441,6 +2839,25 @@ function PlannerPanel({
                       <p className="mt-2 line-clamp-2 text-[12px] leading-6 text-slate-500">
                         {item.generated ? 'Auto-carried from the previous day hotel stay.' : item.description}
                       </p>
+                    ) : null}
+                    {linkedBookings.length ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onOpenBookings(item)
+                        }}
+                        className="mt-3 rounded-[0.9rem] bg-slate-50 px-3 py-2 text-left text-[11px] leading-5 text-slate-600 transition hover:bg-slate-100"
+                      >
+                        <span className="font-semibold text-slate-800">
+                          {linkedBookings.length} booking option{linkedBookings.length === 1 ? '' : 's'}
+                        </span>
+                        {nextBookingDeadline ? (
+                          <span className="block">
+                            Next free-cancel deadline: {formatBookingDateTime(nextBookingDeadline.cancellationDeadline)}
+                          </span>
+                        ) : null}
+                      </button>
                     ) : null}
                   </div>
                 </div>
@@ -2746,6 +3163,7 @@ export default function App() {
   const [actionItem, setActionItem] = useState(null)
   const [noteItem, setNoteItem] = useState(null)
   const [detailItem, setDetailItem] = useState(null)
+  const [bookingItem, setBookingItem] = useState(null)
   const [routeMap, setRouteMap] = useState({})
   const [showDayManager, setShowDayManager] = useState(false)
   const [showCollaborators, setShowCollaborators] = useState(false)
@@ -3141,6 +3559,7 @@ export default function App() {
     setActionItem(null)
     setNoteItem(null)
     setDetailItem(null)
+    setBookingItem(null)
     setDragState(null)
     setRouteMap({})
     setActiveDayId(DAY_VIEW_ALL)
@@ -3382,6 +3801,7 @@ export default function App() {
       setActionItem(null)
       setNoteItem(null)
       setDetailItem(null)
+      setBookingItem(null)
       setTripMembers([])
     } catch (error) {
       console.error(error)
@@ -3398,6 +3818,45 @@ export default function App() {
       mergeItemsForDay(manualItems, normalizedItem).map((entry) => [entry.id, entry]),
     )
     await mergeTripPatch(resolvedTripId, { items: patchItems })
+  }
+
+  async function saveBookingOption(option) {
+    if (!firestoreReady || !canEditCurrentTrip) return
+    const normalized = normalizeBookingOption({
+      ...option,
+      id: option.id || slugId('booking'),
+      linkedItemId: option.linkedItemId || bookingItem?.id || '',
+      dayId: option.dayId || bookingItem?.dayId || '',
+    })
+    const patch = { [normalized.id]: normalized }
+
+    if (normalized.status === 'active') {
+      tripState.bookingOptions
+        .filter(
+          (booking) =>
+            booking.linkedItemId === normalized.linkedItemId &&
+            booking.id !== normalized.id &&
+            booking.status !== 'cancelled',
+        )
+        .forEach((booking) => {
+          patch[booking.id] = { ...booking, status: 'tentative' }
+        })
+    }
+
+    await mergeTripPatch(resolvedTripId, { bookingOptions: patch })
+  }
+
+  async function markBookingActive(option) {
+    await saveBookingOption({ ...option, status: 'active' })
+  }
+
+  async function markBookingCancelled(option) {
+    await saveBookingOption({ ...option, status: 'cancelled' })
+  }
+
+  async function deleteBookingOption(option) {
+    if (!firestoreReady || !canEditCurrentTrip || !option?.id) return
+    await mergeTripPatch(resolvedTripId, { bookingOptions: { [option.id]: { hidden: true } } })
   }
 
   async function createTrip() {
@@ -3560,10 +4019,18 @@ export default function App() {
 
   async function deleteItem(itemId) {
     if (!canEditCurrentTrip) return
-    await mergeTripPatch(resolvedTripId, { items: { [itemId]: { hidden: true } } })
+    await mergeTripPatch(resolvedTripId, {
+      items: { [itemId]: { hidden: true } },
+      bookingOptions: Object.fromEntries(
+        tripState.bookingOptions
+          .filter((booking) => booking.linkedItemId === itemId)
+          .map((booking) => [booking.id, { hidden: true }]),
+      ),
+    })
     setActionItem((current) => (current?.id === itemId ? null : current))
     setNoteItem((current) => (current?.id === itemId ? null : current))
     setDetailItem((current) => (current?.id === itemId ? null : current))
+    setBookingItem((current) => (current?.id === itemId ? null : current))
   }
 
   async function updateTravelMode(itemId, travelModeToNext) {
@@ -3812,6 +4279,7 @@ export default function App() {
         <div className="space-y-4">
           <PlannerPanel
             activeDayId={resolvedActiveDayId}
+            bookingOptions={tripState.bookingOptions}
             canEdit={canEditCurrentTrip}
             dayOptions={dayOptions}
             dayMap={tripState.dayMap}
@@ -3827,6 +4295,11 @@ export default function App() {
               })
             }}
             onDragStart={beginItemDrag}
+            onOpenBookings={(item) => {
+              setActionItem(null)
+              setNoteItem(null)
+              setBookingItem(item)
+            }}
             onManageDays={() => setShowDayManager(true)}
             onOpenDetails={{
               startPress,
@@ -3873,6 +4346,7 @@ export default function App() {
 
       {noteItem ? (
         <NoteModal
+          bookingCount={bookingsForItem(tripState.bookingOptions, noteItem.id, { includeCancelled: true }).length}
           canEdit={canEditCurrentTrip}
           item={noteItem}
           isMobilePortrait={isMobilePortrait}
@@ -3887,6 +4361,11 @@ export default function App() {
             setNoteItem(null)
             openDetails(match)
           }}
+          onOpenBookings={() => {
+            const match = tripState.items.find((item) => item.id === noteItem.id) || noteItem
+            setNoteItem(null)
+            setBookingItem(match)
+          }}
         />
       ) : null}
 
@@ -3896,7 +4375,27 @@ export default function App() {
           item={actionItem}
           isMobilePortrait={isMobilePortrait}
           onClose={() => setActionItem(null)}
+          onOpenBookings={() => {
+            const match = tripState.items.find((item) => item.id === actionItem.id) || actionItem
+            setActionItem(null)
+            setBookingItem(match)
+          }}
           onOpenDetails={() => openDetails(actionItem)}
+        />
+      ) : null}
+
+      {bookingItem ? (
+        <BookingOptionsModal
+          bookings={bookingsForItem(tripState.bookingOptions, bookingItem.id, { includeCancelled: true })}
+          canEdit={canEditCurrentTrip}
+          firestoreReady={firestoreReady}
+          isMobilePortrait={isMobilePortrait}
+          item={tripState.items.find((item) => item.id === bookingItem.id) || bookingItem}
+          onClose={() => setBookingItem(null)}
+          onDelete={deleteBookingOption}
+          onMarkActive={markBookingActive}
+          onMarkCancelled={markBookingCancelled}
+          onSave={saveBookingOption}
         />
       ) : null}
 
