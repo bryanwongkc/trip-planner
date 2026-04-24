@@ -83,6 +83,7 @@ import {
   nextCancellationDeadline,
   reorderTripItems,
   renumberDays,
+  sortBookingOptionsByDeadline,
   slugId,
   stripFlightLocationFields,
 } from './utils/trip'
@@ -2237,6 +2238,119 @@ function BookingOptionsModal({
   )
 }
 
+function CancellationDeadlinesModal({
+  bookings,
+  canEdit,
+  dayMap,
+  firestoreReady,
+  isMobilePortrait,
+  itemMap,
+  onClose,
+  onEditBooking,
+  onMarkCancelled,
+}) {
+  const trackedBookings = sortBookingOptionsByDeadline(
+    bookings.filter((booking) => booking.status !== 'cancelled' && booking.cancellationDeadline),
+  )
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 pt-10 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        className={`glass-panel browse-ui w-full max-h-[82svh] overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+          isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-3xl rounded-[1.65rem]'
+        }`}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+              Cancellation deadlines
+            </div>
+            <h3 className="mt-1 text-[1.45rem] font-bold tracking-[-0.025em] text-slate-900">
+              Free-cancel tracker
+            </h3>
+            <p className="mt-1 text-[12px] leading-5 text-slate-600">
+              Non-cancelled booking options sorted by the nearest deadline.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-2.5">
+          {trackedBookings.map((booking) => {
+            const state = deriveBookingDeadlineState(booking)
+            const item = itemMap[booking.linkedItemId]
+            const day = dayMap[booking.dayId || item?.dayId]
+            return (
+              <div key={booking.id} className="rounded-[1.15rem] bg-white px-4 py-3.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[14px] font-semibold tracking-[-0.01em] text-slate-900">
+                      {booking.title}
+                    </div>
+                    <div className="mt-1 text-[12px] leading-5 text-slate-500">
+                      {booking.type === 'hotel' ? 'Hotel' : 'Meal'}
+                      {day ? ` · ${day.label}` : ''}
+                      {item ? ` · ${item.title}` : ''}
+                    </div>
+                  </div>
+                  <div
+                    className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                      state === 'overdue'
+                        ? 'bg-rose-50 text-rose-700'
+                        : state === 'due_soon'
+                          ? 'bg-amber-50 text-amber-700'
+                          : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    {bookingDeadlineLabel(booking)}
+                  </div>
+                </div>
+                <div className="mt-2 text-[13px] font-semibold text-slate-800">
+                  {formatBookingDateTime(booking.cancellationDeadline)}
+                </div>
+                <div className="mt-1 text-[12px] text-slate-500">
+                  {bookingStatusLabel(booking.status)}
+                  {booking.bookingRef ? ` · ${booking.bookingRef}` : ''}
+                </div>
+                {canEdit ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onEditBooking(booking)}
+                      className="rounded-full bg-slate-100 px-3 py-1.5 text-[12px] font-semibold text-slate-700"
+                    >
+                      Open details
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onMarkCancelled(booking)}
+                      disabled={!firestoreReady}
+                      className="rounded-full bg-amber-50 px-3 py-1.5 text-[12px] font-semibold text-amber-700 disabled:text-slate-400"
+                    >
+                      Mark cancelled
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            )
+          })}
+          {!trackedBookings.length ? (
+            <div className="rounded-[1.15rem] bg-white px-4 py-6 text-center text-[13px] leading-6 text-slate-500">
+              No active cancellation deadlines yet.
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function DetailModal({
   canEdit,
   dayOptions,
@@ -3167,6 +3281,7 @@ export default function App() {
   const [routeMap, setRouteMap] = useState({})
   const [showDayManager, setShowDayManager] = useState(false)
   const [showCollaborators, setShowCollaborators] = useState(false)
+  const [showDeadlines, setShowDeadlines] = useState(false)
   const [dragState, setDragState] = useState(null)
   const [tripMembers, setTripMembers] = useState([])
 
@@ -3271,6 +3386,17 @@ export default function App() {
     return getScheduleConflictMeta([...existingItems, detailItem])
   }, [detailItem, tripState.dayMap])
   const detailEndTimeWarning = useMemo(() => getEndTimeWarning(detailItem), [detailItem])
+  const itemMap = useMemo(
+    () => Object.fromEntries(tripState.items.map((item) => [item.id, item])),
+    [tripState.items],
+  )
+  const urgentDeadlineCount = useMemo(
+    () =>
+      tripState.bookingOptions.filter((booking) =>
+        ['overdue', 'due_soon'].includes(deriveBookingDeadlineState(booking)),
+      ).length,
+    [tripState.bookingOptions],
+  )
 
   const getFlightRecord = useMemo(
     () =>
@@ -4250,6 +4376,23 @@ export default function App() {
           onSelectTrip={selectTrip}
           tripSummaries={availableTrips}
         />
+        {availableTrips.length ? (
+          <button
+            type="button"
+            onClick={() => setShowDeadlines(true)}
+            className="mt-2 flex w-full items-center justify-between rounded-[1rem] border border-white/70 bg-[rgba(255,252,247,0.96)] px-3.5 py-3 text-left text-slate-800 shadow-[0_10px_24px_rgba(35,56,64,0.03)]"
+          >
+            <span>
+              <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                Cancellation deadlines
+              </span>
+              <span className="mt-1 block text-[13px] font-semibold">
+                {urgentDeadlineCount ? `${urgentDeadlineCount} urgent` : 'Review bookings'}
+              </span>
+            </span>
+            <CalendarDays className="h-4 w-4 text-slate-500" />
+          </button>
+        ) : null}
       </div>
       {!availableTrips.length ? (
         <div className="glass-panel max-w-md rounded-[1.35rem] border border-white/60 px-5 py-5">
@@ -4396,6 +4539,25 @@ export default function App() {
           onMarkActive={markBookingActive}
           onMarkCancelled={markBookingCancelled}
           onSave={saveBookingOption}
+        />
+      ) : null}
+
+      {showDeadlines ? (
+        <CancellationDeadlinesModal
+          bookings={tripState.bookingOptions}
+          canEdit={canEditCurrentTrip}
+          dayMap={tripState.dayMap}
+          firestoreReady={firestoreReady}
+          isMobilePortrait={isMobilePortrait}
+          itemMap={itemMap}
+          onClose={() => setShowDeadlines(false)}
+          onEditBooking={(booking) => {
+            const item = itemMap[booking.linkedItemId]
+            if (!item) return
+            setShowDeadlines(false)
+            setBookingItem(item)
+          }}
+          onMarkCancelled={markBookingCancelled}
         />
       ) : null}
 
