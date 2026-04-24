@@ -126,6 +126,58 @@ function isSameHotel(a, b) {
   )
 }
 
+function itemInterval(item) {
+  const start = timeToMinutes(item?.startTime || '23:59')
+  const rawEnd = item?.endTime ? timeToMinutes(item.endTime) : start + 1
+  return {
+    start,
+    end: rawEnd > start ? rawEnd : start + 1,
+  }
+}
+
+function intervalsOverlap(a, b) {
+  return a.start < b.end && b.start < a.end
+}
+
+function hasActiveStayStatus(item) {
+  return item?.status === 'active'
+}
+
+function chooseHotelStackLead(items) {
+  return [...items].sort((a, b) => {
+    const activeCompare = Number(hasActiveStayStatus(b)) - Number(hasActiveStayStatus(a))
+    if (activeCompare !== 0) return activeCompare
+    const timeCompare = itemInterval(a).start - itemInterval(b).start
+    if (timeCompare !== 0) return timeCompare
+    return (a.order ?? 0) - (b.order ?? 0)
+  })[0]
+}
+
+function selectContinuityHotel(dayItems, fallbackHotel) {
+  if (!fallbackHotel) return null
+
+  const hotels = dayItems.filter((item) => item.category === 'Hotel' && !item.generated)
+  const cluster = [fallbackHotel]
+  const seen = new Set([fallbackHotel.id])
+
+  let expanded = true
+  while (expanded) {
+    expanded = false
+    hotels.forEach((hotel) => {
+      if (seen.has(hotel.id)) return
+      const overlapsCluster = cluster.some((candidate) =>
+        intervalsOverlap(itemInterval(hotel), itemInterval(candidate)),
+      )
+      if (!overlapsCluster) return
+      seen.add(hotel.id)
+      cluster.push(hotel)
+      expanded = true
+    })
+  }
+
+  return cluster.length > 1 ? chooseHotelStackLead(cluster) : fallbackHotel
+}
+
 function sortDays(days) {
   return [...days]
     .filter((day) => !day.hidden)
@@ -238,7 +290,10 @@ export function deriveTripState(overrides) {
     const nextDay = days[index + 1]
     const dayItems = itemBuckets[day.id] || []
     const nextDayItems = itemBuckets[nextDay.id] || []
-    const trailingHotel = [...dayItems].reverse().find((item) => item.category === 'Hotel' && !item.generated)
+    const trailingHotel = selectContinuityHotel(
+      dayItems,
+      [...dayItems].reverse().find((item) => item.category === 'Hotel' && !item.generated),
+    )
 
     if (!trailingHotel) continue
 

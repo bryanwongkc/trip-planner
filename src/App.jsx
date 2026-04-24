@@ -290,7 +290,7 @@ function buildTimelineEntries(items) {
 }
 
 function isMonitoredCancellationItem(item) {
-  return ['Hotel', 'Restaurant'].includes(item?.category)
+  return !item?.generated && ['Hotel', 'Restaurant'].includes(item?.category)
 }
 
 function cancellationStateForItem(item, now = new Date()) {
@@ -2700,21 +2700,24 @@ function PlannerPanel({
                     <span className={`timeline-dot ${meta.tone}`} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-3">
+                    <div className={`flex gap-3 ${isMobilePortrait ? 'flex-col items-stretch' : 'items-start justify-between'}`}>
                       <div className="min-w-0">
-                        <h3 className="text-[0.98rem] font-bold leading-6 tracking-[-0.02em] text-slate-950">{item.title}</h3>
+                        <h3 className={`${isMobilePortrait ? 'line-clamp-2' : ''} text-[0.98rem] font-bold leading-6 tracking-[-0.02em] text-slate-950`}>{item.title}</h3>
                         <p className="mt-1 truncate text-[12px] text-slate-500">{item.locationName || item.address}</p>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className={`flex items-center gap-2 ${isMobilePortrait ? 'justify-between' : ''}`}>
                         {isStack ? (
                           <button
                             type="button"
                             onPointerDown={(event) => event.stopPropagation()}
                             onClick={toggleStack}
                             aria-expanded={isExpandedStack}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600 transition hover:bg-slate-50"
+                            className={`inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-200/80 bg-white text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600 transition hover:bg-slate-50 ${
+                              isMobilePortrait ? 'min-w-[7.3rem] px-3 py-2' : 'px-2.5 py-1'
+                            }`}
                           >
-                            {entry.items.length} options
+                            <span>{entry.items.length}</span>
+                            <span>Options</span>
                             <ChevronDown className={`h-3 w-3 transition ${isExpandedStack ? 'rotate-180' : ''}`} />
                           </button>
                         ) : null}
@@ -2728,7 +2731,7 @@ function PlannerPanel({
                             onPointerDown={(event) => onDragStart(event, item)}
                             onClick={(event) => event.stopPropagation()}
                             data-drag-handle="true"
-                            className="touch-none rounded-full bg-slate-50 p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 active:scale-95"
+                            className={`touch-none rounded-full bg-slate-50 p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 active:scale-95 ${isMobilePortrait ? 'ml-auto' : ''}`}
                             aria-label={`Drag ${item.title}`}
                           >
                             <GripVertical className="h-4 w-4" />
@@ -2758,8 +2761,8 @@ function PlannerPanel({
                               ? `Hide ${stackAlternatives.length} other ${stackAlternatives.length === 1 ? 'option' : 'options'}`
                               : `Compare ${stackAlternatives.length} other ${stackAlternatives.length === 1 ? 'option' : 'options'}`}
                           </span>
-                          <span className="mt-0.5 block truncate text-[11px] text-slate-500">
-                            {entry.items.length} overlapping {stackChoiceLabel}; active or earliest is shown first.
+                          <span className="mt-0.5 block text-[11px] leading-4 text-slate-500">
+                            {entry.items.length} overlapping {stackChoiceLabel}
                           </span>
                         </span>
                         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-slate-500">
@@ -2800,11 +2803,19 @@ function PlannerPanel({
                         onPointerUp={(event) => onOpenDetails.endPress(event, stackItem)}
                         onPointerCancel={onOpenDetails.cancelPress}
                         onPointerLeave={onOpenDetails.cancelPress}
-                        className="rounded-[0.95rem] border border-slate-200/70 bg-white/86 px-3.5 py-3 shadow-[0_10px_22px_rgba(15,23,42,0.035)] transition hover:bg-white"
-                        style={{
-                          transform: `translateX(${Math.min((stackIndex + 1) * 10, 28)}px) rotate(${Math.min((stackIndex + 1) * 0.35, 1)}deg)`,
-                          width: `calc(100% - ${Math.min((stackIndex + 1) * 10, 28)}px)`,
-                        }}
+                        className={`rounded-[0.95rem] border border-slate-200/70 bg-white/86 px-3.5 py-3 shadow-[0_10px_22px_rgba(15,23,42,0.035)] transition hover:bg-white ${
+                          isMobilePortrait ? 'border-l-4' : ''
+                        }`}
+                        style={
+                          isMobilePortrait
+                            ? {
+                                borderLeftColor: stackHasActive ? '#10b981' : '#cbd5e1',
+                              }
+                            : {
+                                transform: `translateX(${Math.min((stackIndex + 1) * 10, 28)}px) rotate(${Math.min((stackIndex + 1) * 0.35, 1)}deg)`,
+                                width: `calc(100% - ${Math.min((stackIndex + 1) * 10, 28)}px)`,
+                              }
+                        }
                       >
                         <div className="flex items-start gap-3">
                           <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${stackMeta.tone}`} />
@@ -2814,7 +2825,7 @@ function PlannerPanel({
                                 <div className="text-[13px] font-semibold tracking-[-0.01em] text-slate-900">
                                   {stackItem.title}
                                 </div>
-                                <div className="mt-1 text-[11px] text-slate-500">
+                                <div className="mt-1 text-[11px] leading-5 text-slate-500">
                                   {stackItem.startTime}
                                   {stackItem.endTime ? `-${stackItem.endTime}` : ''}
                                   {stackItem.locationName ? ` · ${stackItem.locationName}` : ''}
@@ -2841,7 +2852,7 @@ function PlannerPanel({
                 <button
                   type="button"
                   onClick={toggleStack}
-                  className="ml-[4.85rem] flex w-[calc(100%-4.85rem)] items-center justify-center rounded-b-[0.9rem] border border-t-0 border-slate-200/65 bg-white/62 px-3 py-2 text-[11px] font-semibold text-slate-500 shadow-[0_8px_16px_rgba(15,23,42,0.025)] transition hover:bg-white sm:ml-[5.9rem] sm:w-[calc(100%-5.9rem)]"
+                  className="ml-[4.85rem] hidden w-[calc(100%-4.85rem)] items-center justify-center rounded-b-[0.9rem] border border-t-0 border-slate-200/65 bg-white/62 px-3 py-2 text-[11px] font-semibold text-slate-500 shadow-[0_8px_16px_rgba(15,23,42,0.025)] transition hover:bg-white sm:ml-[5.9rem] sm:flex sm:w-[calc(100%-5.9rem)]"
                 >
                   + {stackAlternatives.length} more overlapping {stackAlternatives.length === 1 ? 'option' : 'options'}
                 </button>
