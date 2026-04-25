@@ -354,6 +354,10 @@ function getOverbookingCountsByDay({ bookingOptions = [], items = [] }) {
   )
 }
 
+function formatBadgeCount(count) {
+  return count > 9 ? '9+' : String(count)
+}
+
 function cancellationStateForItem(item, now = new Date()) {
   if (!item?.cancellationDeadline) return 'no_deadline'
   const deadline = new Date(item.cancellationDeadline)
@@ -1767,11 +1771,6 @@ function BottomDayNav({
   canEdit,
   overbookingCountsByDay = {},
 }) {
-  const totalOverbookingCount = Object.values(overbookingCountsByDay).reduce(
-    (total, count) => total + Number(count || 0),
-    0,
-  )
-
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 px-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] sm:px-4">
       <div className="mx-auto flex max-w-5xl items-center gap-1 rounded-[1rem] border border-white/80 bg-[rgba(255,253,249,0.98)] p-1 shadow-[0_-10px_24px_rgba(15,23,42,0.075)]">
@@ -1783,11 +1782,6 @@ function BottomDayNav({
           }`}
         >
           Overview
-          {totalOverbookingCount > 0 ? (
-            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold leading-none text-white shadow-[0_2px_8px_rgba(190,18,60,0.28)]">
-              {totalOverbookingCount}
-            </span>
-          ) : null}
         </button>
         <div className="no-scrollbar flex min-w-0 flex-1 gap-1 overflow-x-auto">
           {dayOptions.map((day, index) => {
@@ -1812,7 +1806,7 @@ function BottomDayNav({
                 </span>
                 {overbookingCount > 0 ? (
                   <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold leading-none text-white shadow-[0_2px_8px_rgba(190,18,60,0.28)]">
-                    {overbookingCount}
+                    {formatBadgeCount(overbookingCount)}
                   </span>
                 ) : null}
               </button>
