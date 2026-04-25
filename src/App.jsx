@@ -293,6 +293,67 @@ function isMonitoredCancellationItem(item) {
   return !item?.generated && ['Hotel', 'Restaurant'].includes(item?.category)
 }
 
+function isHeldBookingOption(booking) {
+  return booking && !booking.hidden && booking.status !== 'cancelled'
+}
+
+function fallbackBookingGroupKey(booking) {
+  return [
+    booking.dayId || 'day',
+    booking.type || 'booking',
+    booking.reservationTime || booking.startDate || '',
+    booking.endDate || '',
+    (booking.title || '').trim().toLowerCase(),
+  ].join('|')
+}
+
+function getOverbookingMetaForItem({ bookingOptions = [], itemId }) {
+  const heldBookings = bookingOptions.filter(
+    (booking) => booking.linkedItemId === itemId && isHeldBookingOption(booking),
+  )
+  const activeCount = heldBookings.length
+
+  return {
+    activeCount,
+    excessCount: Math.max(0, activeCount - 1),
+    isOverbooked: activeCount > 1,
+    nextDeadline:
+      heldBookings
+        .filter((booking) => booking.cancellationDeadline)
+        .sort((a, b) => new Date(a.cancellationDeadline).getTime() - new Date(b.cancellationDeadline).getTime())[0] ||
+      null,
+  }
+}
+
+function getOverbookingCountForDay({ bookingOptions = [], items = [], dayId }) {
+  const itemDayLookup = Object.fromEntries(items.map((item) => [item.id, item.dayId]))
+  const groups = new Map()
+
+  bookingOptions.forEach((booking) => {
+    if (!isHeldBookingOption(booking)) return
+    const bookingDayId = booking.linkedItemId ? itemDayLookup[booking.linkedItemId] || booking.dayId : booking.dayId
+    if (bookingDayId !== dayId) return
+    const groupKey = booking.linkedItemId || fallbackBookingGroupKey(booking)
+    groups.set(groupKey, (groups.get(groupKey) || 0) + 1)
+  })
+
+  return [...groups.values()].reduce((total, count) => total + Math.max(0, count - 1), 0)
+}
+
+function getOverbookingCountsByDay({ bookingOptions = [], items = [] }) {
+  const dayIds = new Set([
+    ...items.map((item) => item.dayId).filter(Boolean),
+    ...bookingOptions.map((booking) => booking.dayId).filter(Boolean),
+  ])
+
+  return Object.fromEntries(
+    [...dayIds].map((dayId) => [
+      dayId,
+      getOverbookingCountForDay({ bookingOptions, items, dayId }),
+    ]),
+  )
+}
+
 function cancellationStateForItem(item, now = new Date()) {
   if (!item?.cancellationDeadline) return 'no_deadline'
   const deadline = new Date(item.cancellationDeadline)
@@ -1697,40 +1758,66 @@ function MenuButton({ onClick }) {
   )
 }
 
-function BottomDayNav({ activeDayId, dayOptions, dragState, onDayChange, onManageDays, canEdit }) {
+function BottomDayNav({
+  activeDayId,
+  dayOptions,
+  dragState,
+  onDayChange,
+  onManageDays,
+  canEdit,
+  overbookingCountsByDay = {},
+}) {
+  const totalOverbookingCount = Object.values(overbookingCountsByDay).reduce(
+    (total, count) => total + Number(count || 0),
+    0,
+  )
+
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 px-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] sm:px-4">
       <div className="mx-auto flex max-w-5xl items-center gap-1 rounded-[1rem] border border-white/80 bg-[rgba(255,253,249,0.98)] p-1 shadow-[0_-10px_24px_rgba(15,23,42,0.075)]">
         <button
           type="button"
           onClick={() => onDayChange(DAY_VIEW_ALL)}
-          className={`shrink-0 rounded-[0.8rem] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.06em] transition ${
+          className={`relative shrink-0 rounded-[0.8rem] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.06em] transition ${
             activeDayId === DAY_VIEW_ALL ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-white'
           }`}
         >
           Overview
+          {totalOverbookingCount > 0 ? (
+            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold leading-none text-white shadow-[0_2px_8px_rgba(190,18,60,0.28)]">
+              {totalOverbookingCount}
+            </span>
+          ) : null}
         </button>
         <div className="no-scrollbar flex min-w-0 flex-1 gap-1 overflow-x-auto">
-          {dayOptions.map((day, index) => (
-            <button
-              key={day.id}
-              type="button"
-              data-day-drop-id={day.id}
-              onClick={() => onDayChange(day.id)}
-              className={`shrink-0 rounded-[0.8rem] px-2.5 py-2 text-[10px] font-bold uppercase tracking-[0.05em] transition ${
-                dragState?.overDayId === day.id
-                  ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200'
-                  : activeDayId === day.id
-                    ? 'bg-slate-900 text-white'
-                    : 'text-slate-600 hover:bg-white'
-              }`}
-            >
-              Day {index + 1}
-              <span className={`ml-1 font-semibold normal-case tracking-normal ${activeDayId === day.id ? 'text-white/68' : 'text-slate-400'}`}>
-                {formatDayDate(day.date)}
-              </span>
-            </button>
-          ))}
+          {dayOptions.map((day, index) => {
+            const overbookingCount = Number(overbookingCountsByDay[day.id] || 0)
+            return (
+              <button
+                key={day.id}
+                type="button"
+                data-day-drop-id={day.id}
+                onClick={() => onDayChange(day.id)}
+                className={`relative shrink-0 rounded-[0.8rem] px-2.5 py-2 text-[10px] font-bold uppercase tracking-[0.05em] transition ${
+                  dragState?.overDayId === day.id
+                    ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200'
+                    : activeDayId === day.id
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-600 hover:bg-white'
+                }`}
+              >
+                Day {index + 1}
+                <span className={`ml-1 font-semibold normal-case tracking-normal ${activeDayId === day.id ? 'text-white/68' : 'text-slate-400'}`}>
+                  {formatDayDate(day.date)}
+                </span>
+                {overbookingCount > 0 ? (
+                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold leading-none text-white shadow-[0_2px_8px_rgba(190,18,60,0.28)]">
+                    {overbookingCount}
+                  </span>
+                ) : null}
+              </button>
+            )
+          })}
         </div>
         <button
           type="button"
@@ -2527,6 +2614,7 @@ function DetailModal({
 
 function PlannerPanel({
   activeDayId,
+  bookingOptions = [],
   canEdit,
   dayOptions,
   dayMap,
@@ -2739,6 +2827,37 @@ function PlannerPanel({
           const isExpandedStack = Boolean(expandedStacks[entry.id])
           const stackAlternatives = isStack ? entry.items.filter((stackItem) => stackItem.id !== item.id) : []
           const stackChoiceLabel = item.category === 'Hotel' ? 'hotel options' : 'restaurant options'
+          const itemBookingOptions = bookingOptions.filter(
+            (booking) => booking.linkedItemId === item.id && isHeldBookingOption(booking),
+          )
+          const linkedBookingMeta = item.generated
+            ? { activeCount: 0, excessCount: 0, isOverbooked: false, nextDeadline: null }
+            : getOverbookingMetaForItem({
+                bookingOptions,
+                itemId: item.id,
+              })
+          const stackHeldCount = isStack
+            ? entry.items.filter((stackItem) => stackItem.status !== 'cancelled').length
+            : 0
+          const stackExcessCount = item.generated ? 0 : Math.max(0, stackHeldCount - 1)
+          const excessCount = linkedBookingMeta.isOverbooked
+            ? linkedBookingMeta.excessCount
+            : stackExcessCount
+          const isOverbooked = excessCount > 0
+          const comparisonCount = linkedBookingMeta.isOverbooked
+            ? linkedBookingMeta.activeCount
+            : entry.items.length
+          const comparisonAltCount = Math.max(0, comparisonCount - 1)
+          const nextCancelDeadline =
+            linkedBookingMeta.nextDeadline?.cancellationDeadline ||
+            [...entry.items]
+              .filter((candidate) => candidate.cancellationDeadline)
+              .sort(
+                (a, b) =>
+                  new Date(a.cancellationDeadline).getTime() - new Date(b.cancellationDeadline).getTime(),
+              )[0]?.cancellationDeadline ||
+            ''
+          const showOptionsRow = isStack || linkedBookingMeta.isOverbooked
           const toggleStack = (event) => {
             event?.stopPropagation?.()
             setExpandedStacks((current) => ({
@@ -2813,21 +2932,6 @@ function PlannerPanel({
                         <p className="mt-0.5 truncate text-[12px] text-slate-500 sm:mt-1">{item.locationName || item.address}</p>
                       </div>
                       <div className={`flex items-center gap-2 ${isMobilePortrait ? 'justify-between' : ''}`}>
-                        {isStack ? (
-                          <button
-                            type="button"
-                            onPointerDown={(event) => event.stopPropagation()}
-                            onClick={toggleStack}
-                            aria-expanded={isExpandedStack}
-                            className={`inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-200/80 bg-white text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600 transition hover:bg-slate-50 ${
-                              isMobilePortrait ? 'min-w-[6.6rem] px-2.5 py-1.5' : 'px-2.5 py-1'
-                            }`}
-                          >
-                            <span>{entry.items.length}</span>
-                            <span>Options</span>
-                            <ChevronDown className={`h-3 w-3 transition ${isExpandedStack ? 'rotate-180' : ''}`} />
-                          </button>
-                        ) : null}
                         {item.generated ? (
                           <div className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">
                             Linked
@@ -2854,7 +2958,7 @@ function PlannerPanel({
                         {item.generated ? 'Auto-carried from the previous day hotel stay.' : item.description}
                       </p>
                     ) : null}
-                    {isStack ? (
+                    {showOptionsRow ? (
                       <button
                         type="button"
                         onPointerDown={(event) => event.stopPropagation()}
@@ -2865,12 +2969,22 @@ function PlannerPanel({
                         <span className="min-w-0">
                           <span className="block text-[12px] font-bold tracking-[-0.01em] text-slate-800">
                             {isExpandedStack
-                              ? `Hide ${stackAlternatives.length} other ${stackAlternatives.length === 1 ? 'option' : 'options'}`
-                              : `Compare ${stackAlternatives.length} other ${stackAlternatives.length === 1 ? 'option' : 'options'}`}
+                              ? `Hide ${comparisonAltCount} other ${comparisonAltCount === 1 ? 'option' : 'options'}`
+                              : `Compare ${comparisonAltCount} other ${comparisonAltCount === 1 ? 'option' : 'options'}`}
                           </span>
                           <span className="mt-0.5 block text-[11px] leading-4 text-slate-500">
-                            {entry.items.length} overlapping {stackChoiceLabel}
+                            {comparisonCount} overlapping {stackChoiceLabel}
                           </span>
+                          {nextCancelDeadline ? (
+                            <span className="mt-1 block text-[11px] font-semibold leading-4 text-slate-600">
+                              Next cancel deadline: {formatBookingDateTime(nextCancelDeadline)}
+                            </span>
+                          ) : null}
+                          {isOverbooked ? (
+                            <span className="mt-1.5 inline-flex rounded-full bg-rose-50 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-rose-700">
+                              Overbooked · {excessCount} {excessCount === 1 ? 'extra' : 'extras'} to cancel
+                            </span>
+                          ) : null}
                         </span>
                         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-slate-500">
                           <ChevronDown className={`h-4 w-4 transition ${isExpandedStack ? 'rotate-180' : ''}`} />
@@ -2889,7 +3003,7 @@ function PlannerPanel({
                 </div>
               </article>
 
-              {isExpandedStack ? (
+              {isExpandedStack && isStack ? (
                 <div className="ml-[4.45rem] space-y-1.5 overflow-visible sm:ml-[5.9rem] sm:space-y-2.5">
                   {stackAlternatives.map((stackItem, stackIndex) => {
                     const stackMeta = typeMeta(stackItem.category)
@@ -2955,14 +3069,38 @@ function PlannerPanel({
                     )
                   })}
                 </div>
-              ) : isStack ? (
-                <button
-                  type="button"
-                  onClick={toggleStack}
-                  className="ml-[4.45rem] hidden w-[calc(100%-4.45rem)] items-center justify-center rounded-b-[0.9rem] border border-t-0 border-slate-200/65 bg-white/62 px-3 py-2 text-[11px] font-semibold text-slate-500 shadow-[0_8px_16px_rgba(15,23,42,0.025)] transition hover:bg-white sm:ml-[5.9rem] sm:flex sm:w-[calc(100%-5.9rem)]"
-                >
-                  + {stackAlternatives.length} more overlapping {stackAlternatives.length === 1 ? 'option' : 'options'}
-                </button>
+              ) : isExpandedStack && linkedBookingMeta.isOverbooked ? (
+                <div className="ml-[4.45rem] space-y-1.5 overflow-visible sm:ml-[5.9rem] sm:space-y-2">
+                  {itemBookingOptions.map((booking) => {
+                    const bookingDeadline = booking.cancellationDeadline
+                      ? formatBookingDateTime(booking.cancellationDeadline)
+                      : 'No deadline set'
+                    return (
+                      <article
+                        key={booking.id}
+                        className="rounded-[0.95rem] border border-slate-200/70 bg-white/90 px-3 py-2.5 shadow-[0_8px_16px_rgba(15,23,42,0.025)]"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-[13px] font-semibold tracking-[-0.01em] text-slate-900">
+                              {booking.title || item.locationName || item.title}
+                            </div>
+                            <div className="mt-1 text-[11px] leading-5 text-slate-500">
+                              {booking.provider ? `${booking.provider} · ` : ''}
+                              {booking.bookingRef || 'No booking ref'}
+                            </div>
+                            <div className="mt-1 text-[11px] font-semibold text-slate-600">
+                              Cancel by {bookingDeadline}
+                            </div>
+                          </div>
+                          <span className="rounded-full bg-slate-100 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-slate-600">
+                            {booking.status}
+                          </span>
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
               ) : null}
 
               {nextSegment ? (
@@ -3359,6 +3497,14 @@ export default function App() {
         label: day.label,
       })),
     [visibleDays],
+  )
+  const overbookingCountsByDay = useMemo(
+    () =>
+      getOverbookingCountsByDay({
+        bookingOptions: tripState.bookingOptions,
+        items: tripState.items,
+      }),
+    [tripState.bookingOptions, tripState.items],
   )
   const filteredItems = useMemo(
     () => movementItemsForDay(resolvedActiveDayId, tripState),
@@ -4392,6 +4538,7 @@ export default function App() {
         <div className={isMobilePortrait ? 'space-y-2.5' : 'space-y-4'}>
           <PlannerPanel
             activeDayId={resolvedActiveDayId}
+            bookingOptions={tripState.bookingOptions}
             canEdit={canEditCurrentTrip}
             dayOptions={dayOptions}
             dayMap={tripState.dayMap}
@@ -4436,6 +4583,7 @@ export default function App() {
           canEdit={canEditCurrentTrip}
           dayOptions={dayOptions}
           dragState={dragState}
+          overbookingCountsByDay={overbookingCountsByDay}
           onDayChange={(dayId) => {
             startTransition(() => {
               setActiveDayId(dayId)
