@@ -265,6 +265,10 @@ function buildTransitSummary(item) {
   return [primary.join(' · '), route, duration].filter(Boolean).join(' · ')
 }
 
+function itemLocationSummary(item) {
+  return item?.locationName || item?.address || ''
+}
+
 function isStackableStayOrMeal(item) {
   return ['Hotel', 'Restaurant'].includes(item?.category)
 }
@@ -2639,6 +2643,7 @@ function DayManagerModal({
 
 function NoteModal({ canEdit, item, isMobilePortrait, onClose, onDelete, onOpenDetails }) {
   const mapsUrl = item.category === 'Flight' ? '' : getGoogleMapsUrl(item)
+  const locationSummary = itemLocationSummary(item)
 
   return (
     <div
@@ -2654,7 +2659,9 @@ function NoteModal({ canEdit, item, isMobilePortrait, onClose, onDelete, onOpenD
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-[1.45rem] font-bold tracking-[-0.025em] text-slate-900">{item.title}</h3>
-            <p className="mt-1 text-[12px] leading-5 text-slate-600">{item.locationName || item.address}</p>
+            {locationSummary ? (
+              <p className="mt-1 text-[12px] leading-5 text-slate-600">{locationSummary}</p>
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             {!item.generated && canEdit ? (
@@ -3333,6 +3340,7 @@ function PlannerPanel({
           const dayContext = dayOptions.find((day) => day.id === item.dayId)
           const manualIndex = manualOrderLookup.positions[item.id]
           const isManual = !item.generated
+          const locationSummary = itemLocationSummary(item)
           const transitSummary = buildTransitSummary(item)
           const isStack = entry.type === 'stack'
           const isExpandedStack = Boolean(expandedStacks[entry.id])
@@ -3440,7 +3448,9 @@ function PlannerPanel({
                     <div className={`flex ${isMobilePortrait ? 'flex-col items-stretch gap-2' : 'items-start justify-between gap-3'}`}>
                       <div className="min-w-0">
                         <h3 className={`${isMobilePortrait ? 'line-clamp-2 leading-5' : 'leading-6'} text-[0.98rem] font-bold tracking-[-0.02em] text-slate-950`}>{item.title}</h3>
-                        <p className="mt-0.5 truncate text-[12px] text-slate-500 sm:mt-1">{item.locationName || item.address}</p>
+                        {locationSummary ? (
+                          <p className="mt-0.5 truncate text-[12px] text-slate-500 sm:mt-1">{locationSummary}</p>
+                        ) : null}
                       </div>
                       <div className={`flex items-center gap-2 ${isMobilePortrait ? 'justify-between' : ''}`}>
                         {item.generated ? (
