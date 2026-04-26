@@ -1,3 +1,5 @@
+import { buildDemoTripForUser } from '../data/demoTrip'
+
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -106,6 +108,7 @@ function buildTripIndexPayload(tripId, role, tripMeta, serverTimestamp) {
     startDate: tripMeta?.startDate || '',
     endDate: tripMeta?.endDate || '',
     hidden: Boolean(tripMeta?.hidden),
+    isDemo: Boolean(tripMeta?.isDemo),
     updatedAt: serverTimestamp(),
   })
 }
@@ -166,6 +169,17 @@ export async function ensureUserProfile(user) {
   )
 
   return serializeUserProfile(user)
+}
+
+export async function subscribeToUserProfile(uid, onValue, onError) {
+  const { db, doc, onSnapshot } = await loadFirebaseServices()
+  if (!db || !uid) return () => {}
+
+  return onSnapshot(
+    doc(db, 'users', uid),
+    (snapshot) => onValue(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null),
+    onError,
+  )
 }
 
 export async function subscribeToUserTripDirectory(uid, onValue, onError) {
@@ -269,6 +283,7 @@ export async function createTripRecordWithOwner(tripId, payload, ownerUser) {
     ownerId: ownerUser.uid,
     createdBy: ownerUser.uid,
     hidden: false,
+    isDemo: Boolean(payload.isDemo),
   }
 
   await setDoc(
@@ -306,6 +321,98 @@ export async function createTripRecordWithOwner(tripId, payload, ownerUser) {
     },
     { merge: true },
   )
+}
+
+export async function ensureDemoTripForNewUser(user) {
+  const { db, doc, getDoc, serverTimestamp, writeBatch } = await loadFirebaseServices()
+  if (!db || !user?.uid) return null
+
+  const demo = buildDemoTripForUser(user)
+  const tripDoc = doc(db, 'trips', demo.tripId)
+  const memberDoc = doc(db, 'trips', demo.tripId, 'members', user.uid)
+  const membershipIndexDoc = doc(db, 'users', user.uid, 'tripMemberships', demo.tripId)
+  const overridesDoc = doc(db, 'trips', demo.tripId, 'overrides', 'shared')
+  const profileDoc = doc(db, 'users', user.uid)
+  const existingTrip = await getDoc(tripDoc)
+  const timestamp = serverTimestamp()
+  const batch = writeBatch(db)
+
+  batch.set(
+    profileDoc,
+    stripUndefined({
+      ...serializeUserProfile(user),
+      onboardingDemoCreated: true,
+      updatedAt: timestamp,
+    }),
+    { merge: true },
+  )
+
+  if (existingTrip.exists()) {
+    const existingTripData = existingTrip.data()
+    if (existingTripData?.ownerId !== user.uid && existingTripData?.createdBy !== user.uid) {
+      throw new Error('A demo trip with this user id already exists but is not owned by this user.')
+    }
+
+    const repairedTripMeta = {
+      ...demo.tripMeta,
+      ...existingTripData,
+      isDemo: true,
+    }
+
+    batch.set(
+      memberDoc,
+      stripUndefined({
+        ...demo.member,
+        joinedAt: timestamp,
+        updatedAt: timestamp,
+      }),
+      { merge: true },
+    )
+    batch.set(
+      membershipIndexDoc,
+      buildTripIndexPayload(demo.tripId, 'owner', repairedTripMeta, serverTimestamp),
+      { merge: true },
+    )
+
+    await batch.commit()
+    return { tripId: demo.tripId, repaired: true }
+  }
+
+  batch.set(
+    tripDoc,
+    stripUndefined({
+      ...demo.tripMeta,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }),
+  )
+  batch.set(
+    memberDoc,
+    stripUndefined({
+      ...demo.member,
+      joinedAt: timestamp,
+      updatedAt: timestamp,
+    }),
+  )
+  batch.set(
+    membershipIndexDoc,
+    stripUndefined({
+      ...demo.userTripMembership,
+      updatedAt: timestamp,
+    }),
+  )
+  batch.set(
+    overridesDoc,
+    {
+      days: stampEntityMap(demo.overrides.days, serverTimestamp),
+      items: stampEntityMap(demo.overrides.items, serverTimestamp),
+      bookingOptions: stampEntityMap(demo.overrides.bookingOptions, serverTimestamp),
+      updatedAt: timestamp,
+    },
+  )
+
+  await batch.commit()
+  return { tripId: demo.tripId, created: true }
 }
 
 export async function upsertTripMeta(tripId, payload) {

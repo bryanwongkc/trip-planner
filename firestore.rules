@@ -15,10 +15,13 @@ service cloud.firestore {
         'displayName',
         'email',
         'photoURL',
+        'onboardingDemoCreated',
         'createdAt',
         'updatedAt'
       ]) &&
-      request.resource.data.uid == request.auth.uid;
+      request.resource.data.uid == request.auth.uid &&
+      (!('onboardingDemoCreated' in request.resource.data) ||
+        request.resource.data.onboardingDemoCreated is bool);
     }
 
     function isTripMember(tripId) {
@@ -39,6 +42,20 @@ service cloud.firestore {
         memberRole(tripId) in ['owner', 'editor'];
     }
 
+    function isTripMemberAfter(tripId) {
+      return isSignedIn() &&
+        existsAfter(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid));
+    }
+
+    function memberRoleAfter(tripId) {
+      return getAfter(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.role;
+    }
+
+    function canEditTripAfter(tripId) {
+      return isTripMemberAfter(tripId) &&
+        memberRoleAfter(tripId) in ['owner', 'editor'];
+    }
+
     function isTripOwner(tripId) {
       return canViewTrip(tripId) && memberRole(tripId) == 'owner';
     }
@@ -57,10 +74,12 @@ service cloud.firestore {
         'endDate',
         'ownerId',
         'createdBy',
+        'isDemo',
         'hidden',
         'createdAt',
         'updatedAt'
-      ]);
+      ]) &&
+      (!('isDemo' in request.resource.data) || request.resource.data.isDemo is bool);
     }
 
     function validTripMember(uid) {
@@ -85,11 +104,13 @@ service cloud.firestore {
         'title',
         'startDate',
         'endDate',
+        'isDemo',
         'hidden',
         'updatedAt'
       ]) &&
       request.resource.data.tripId == tripId &&
-      request.resource.data.role in ['owner', 'editor', 'viewer'];
+      request.resource.data.role in ['owner', 'editor', 'viewer'] &&
+      (!('isDemo' in request.resource.data) || request.resource.data.isDemo is bool);
     }
 
     match /users/{uid} {
@@ -120,7 +141,8 @@ service cloud.firestore {
         (isTripOwner(tripId) && request.resource.data.role in ['owner', 'editor', 'viewer']) ||
         (isSignedIn() &&
           request.auth.uid == uid &&
-          get(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid &&
+          getAfter(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid &&
+          getAfter(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid &&
           request.resource.data.role == 'owner')
       );
       allow update: if isTripOwner(tripId) &&
@@ -130,7 +152,7 @@ service cloud.firestore {
 
     match /trips/{tripId}/overrides/shared {
       allow read: if canViewTrip(tripId);
-      allow create, update: if canEditTrip(tripId) && isSharedOverrideDoc();
+      allow create, update: if isSharedOverrideDoc() && (canEditTrip(tripId) || canEditTripAfter(tripId));
       allow delete: if false;
     }
 

@@ -47,6 +47,7 @@ import {
 import {
   addTripMember,
   createTripRecordWithOwner,
+  ensureDemoTripForNewUser,
   ensureUserProfile,
   firebaseEnabled,
   lookupUserByEmail,
@@ -56,6 +57,7 @@ import {
   signOutUser,
   subscribeToAuthState,
   subscribeToTripMembers,
+  subscribeToUserProfile,
   subscribeToTripState,
   subscribeToUserTripDirectory,
   updateTripMemberRole,
@@ -524,15 +526,41 @@ function formatItemBookingDateTime(item) {
   return `${dateLabel} · ${timeLabel}`
 }
 
-function sortedCancellationItems(items) {
-  return items
-    .filter(isMonitoredCancellationItem)
-    .sort((a, b) => {
-      const aTime = a.cancellationDeadline ? new Date(a.cancellationDeadline).getTime() : Infinity
-      const bTime = b.cancellationDeadline ? new Date(b.cancellationDeadline).getTime() : Infinity
-      if (aTime !== bTime) return aTime - bTime
-      return compareTime(a.startTime || '23:59', b.startTime || '23:59')
-    })
+function bookingOptionToCancellationEntry(booking, linkedItem) {
+  const reservationDate = booking.reservationTime?.slice(0, 10) || linkedItem?.dayDate || ''
+  const reservationTime = booking.reservationTime?.slice(11, 16) || linkedItem?.startTime || ''
+
+  return {
+    id: `booking-option:${booking.id}`,
+    sourceBookingId: booking.id,
+    sourceItemId: booking.linkedItemId || '',
+    dayId: booking.dayId || linkedItem?.dayId || '',
+    dayDate: reservationDate,
+    dayLabel: reservationDate ? formatDayDate(reservationDate) : linkedItem?.dayLabel || '',
+    category: booking.type === 'meal' ? 'Restaurant' : 'Hotel',
+    title: booking.title || linkedItem?.title || 'Untitled booking',
+    locationName: booking.title || linkedItem?.locationName || '',
+    startTime: reservationTime,
+    endTime: '',
+    status: booking.status === 'active' ? 'active' : 'considering',
+    cancellationDeadline: booking.cancellationDeadline || '',
+    bookingRef: booking.bookingRef || '',
+    isBookingOption: true,
+  }
+}
+
+function sortedCancellationEntries(items, bookingOptions = []) {
+  const itemLookup = Object.fromEntries(items.map((item) => [item.id, item]))
+  const bookingEntries = bookingOptions
+    .filter((booking) => !booking.hidden && booking.status !== 'cancelled')
+    .map((booking) => bookingOptionToCancellationEntry(booking, itemLookup[booking.linkedItemId]))
+
+  return [...items.filter(isMonitoredCancellationItem), ...bookingEntries].sort((a, b) => {
+    const aTime = a.cancellationDeadline ? new Date(a.cancellationDeadline).getTime() : Infinity
+    const bTime = b.cancellationDeadline ? new Date(b.cancellationDeadline).getTime() : Infinity
+    if (aTime !== bTime) return aTime - bTime
+    return compareTime(a.startTime || '23:59', b.startTime || '23:59')
+  })
 }
 
 function routeLabel(mode) {
@@ -1990,8 +2018,15 @@ function TripSwitcher({
         } disabled:bg-slate-100`}
       >
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-semibold tracking-[-0.01em] text-slate-900 sm:text-[14px]">
-            {activeTrip?.title || 'Select trip'}
+          <div className="flex min-w-0 items-center gap-1.5">
+            <div className="truncate text-[13px] font-semibold tracking-[-0.01em] text-slate-900 sm:text-[14px]">
+              {activeTrip?.title || 'Select trip'}
+            </div>
+            {activeTrip?.isDemo ? (
+              <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                Demo
+              </span>
+            ) : null}
           </div>
           <div className="truncate pt-0.5 text-[9px] font-medium text-slate-500 sm:text-[10px]">
             {activeTrip ? formatTripDateRange(activeTrip.startDate, activeTrip.endDate) : 'No trip'}
@@ -2018,7 +2053,18 @@ function TripSwitcher({
                     }`}
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[13px] font-semibold tracking-[-0.01em]">{trip.title}</div>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <div className="truncate text-[13px] font-semibold tracking-[-0.01em]">{trip.title}</div>
+                        {trip.isDemo ? (
+                          <span
+                            className={`shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.14em] ${
+                              selected ? 'bg-white/12 text-slate-200' : 'bg-slate-100 text-slate-500'
+                            }`}
+                          >
+                            Demo
+                          </span>
+                        ) : null}
+                      </div>
                       <div
                         className={`truncate pt-0.5 text-[11px] ${
                           selected ? 'text-slate-300' : 'text-slate-500'
@@ -2817,13 +2863,14 @@ function NoteModal({ canEdit, item, isMobilePortrait, onClose, onDelete, onOpenD
 }
 
 function CancellationDeadlinesModal({
+  bookingOptions,
   canEdit,
   isMobilePortrait,
   items,
   onClose,
   onOpenDetails,
 }) {
-  const monitoredItems = sortedCancellationItems(items)
+  const monitoredItems = sortedCancellationEntries(items, bookingOptions)
   const urgentCount = monitoredItems.filter((item) =>
     ['overdue', 'within_3_days'].includes(cancellationStateForItem(item)),
   ).length
@@ -2885,6 +2932,9 @@ function CancellationDeadlinesModal({
           {monitoredItems.map((item) => {
             const meta = cancellationUrgencyMeta(item)
             const name = item.locationName || item.title
+            const editableItem = item.isBookingOption
+              ? items.find((candidate) => candidate.id === item.sourceItemId)
+              : item
             return (
               <div
                 key={item.id}
@@ -2927,10 +2977,10 @@ function CancellationDeadlinesModal({
                       </div>
                       <div className="mt-1 text-[10px] font-medium text-slate-500 sm:text-right">{meta.note}</div>
                     </div>
-                    {canEdit ? (
+                    {canEdit && editableItem ? (
                       <button
                         type="button"
-                        onClick={() => onOpenDetails(item)}
+                        onClick={() => onOpenDetails(editableItem)}
                         className="rounded-full bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 shadow-[0_4px_12px_rgba(15,23,42,0.035)]"
                       >
                         Details
@@ -4026,9 +4076,12 @@ export default function App() {
     if (typeof window === 'undefined') return TRIP_ID
     return window.localStorage.getItem(ACTIVE_TRIP_STORAGE_KEY) || TRIP_ID
   })
-  const [overrides, setOverrides] = useState({ days: {}, items: {} })
+  const [overrides, setOverrides] = useState({ days: {}, items: {}, bookingOptions: {} })
   const [tripSummaries, setTripSummaries] = useState([])
+  const [tripDirectoryLoaded, setTripDirectoryLoaded] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
+  const [userProfile, setUserProfile] = useState(null)
+  const [userProfileLoaded, setUserProfileLoaded] = useState(false)
   const [authReady, setAuthReady] = useState(false)
   const [authError, setAuthError] = useState('')
   const [firestoreState, setFirestoreState] = useState({
@@ -4060,6 +4113,7 @@ export default function App() {
   const dragAutoScrollFrameRef = useRef(null)
   const dragPointerRef = useRef({ x: 0, y: 0 })
   const dragStateRef = useRef(null)
+  const demoCreationGuardRef = useRef(new Set())
   const pressStateRef = useRef({
     timer: null,
     pointerId: null,
@@ -4164,10 +4218,10 @@ export default function App() {
   const detailEndTimeWarning = useMemo(() => getEndTimeWarning(detailItem), [detailItem])
   const urgentDeadlineCount = useMemo(
     () =>
-      tripState.items.filter((item) =>
-        ['overdue', 'within_3_days'].includes(cancellationStateForItem(item)),
+      sortedCancellationEntries(tripState.items, tripState.bookingOptions).filter((entry) =>
+        ['overdue', 'within_3_days'].includes(cancellationStateForItem(entry)),
       ).length,
-    [tripState.items],
+    [tripState.bookingOptions, tripState.items],
   )
 
   const getFlightRecord = useMemo(
@@ -4250,7 +4304,10 @@ export default function App() {
             }
           } else {
             setTripSummaries([])
-            setOverrides({ days: {}, items: {} })
+            setTripDirectoryLoaded(false)
+            setUserProfile(null)
+            setUserProfileLoaded(false)
+            setOverrides({ days: {}, items: {}, bookingOptions: {} })
             setFirestoreState({ status: 'connecting', error: '' })
           }
         },
@@ -4277,6 +4334,7 @@ export default function App() {
 
     let active = true
     let unsubscribe = () => {}
+    setTripDirectoryLoaded(false)
 
     async function connectDirectory() {
       unsubscribe = await subscribeToUserTripDirectory(
@@ -4284,10 +4342,12 @@ export default function App() {
         (payload) => {
           if (!active) return
           setTripSummaries(payload || [])
+          setTripDirectoryLoaded(true)
         },
         (error) => {
           console.error(error)
           if (active) {
+            setTripDirectoryLoaded(true)
             setFirestoreState({ status: 'error', error: error?.message || 'Trip list failed' })
           }
         },
@@ -4300,6 +4360,80 @@ export default function App() {
       unsubscribe()
     }
   }, [authReady, currentUser?.uid])
+
+  useEffect(() => {
+    if (!authReady || !firebaseEnabled || !currentUser?.uid) return undefined
+
+    let active = true
+    let unsubscribe = () => {}
+    setUserProfile(null)
+    setUserProfileLoaded(false)
+
+    async function connectUserProfile() {
+      unsubscribe = await subscribeToUserProfile(
+        currentUser.uid,
+        (payload) => {
+          if (!active) return
+          setUserProfile(payload)
+          setUserProfileLoaded(true)
+        },
+        (error) => {
+          console.error(error)
+          if (!active) return
+          setUserProfile(null)
+          setUserProfileLoaded(true)
+        },
+      )
+    }
+
+    void connectUserProfile()
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [authReady, currentUser?.uid])
+
+  useEffect(() => {
+    if (!authReady || !firebaseEnabled || !currentUser?.uid) return undefined
+    if (!tripDirectoryLoaded || !userProfileLoaded) return undefined
+    if (tripSummaries.length > 0 || userProfile?.onboardingDemoCreated === true) return undefined
+
+    const uid = currentUser.uid
+    if (demoCreationGuardRef.current.has(uid)) return undefined
+    demoCreationGuardRef.current.add(uid)
+
+    let active = true
+
+    async function createInitialDemoTrip() {
+      try {
+        const result = await ensureDemoTripForNewUser(currentUser)
+        if (!active || !result?.tripId) return
+        selectTrip(result.tripId)
+        setFirestoreState((current) => ({ ...current, error: '' }))
+      } catch (error) {
+        console.error(error)
+        if (active) {
+          setFirestoreState((current) => ({
+            ...current,
+            status: 'error',
+            error: error?.message || 'Demo trip creation failed',
+          }))
+        }
+      }
+    }
+
+    void createInitialDemoTrip()
+    return () => {
+      active = false
+    }
+  }, [
+    authReady,
+    currentUser,
+    tripDirectoryLoaded,
+    tripSummaries.length,
+    userProfile?.onboardingDemoCreated,
+    userProfileLoaded,
+  ])
 
   useEffect(() => {
     if (!authReady || !firebaseEnabled || !currentUser?.uid || !resolvedTripId) return undefined
@@ -4315,6 +4449,7 @@ export default function App() {
           setOverrides({
             days: payload?.days || {},
             items: payload?.items || {},
+            bookingOptions: payload?.bookingOptions || {},
           })
           setFirestoreState({ status: 'ready', error: '' })
         },
@@ -4456,7 +4591,7 @@ export default function App() {
   const routePairs = useMemo(() => makeMovementPairs(deferredItems), [deferredItems])
 
   function selectTrip(tripId) {
-    setOverrides({ days: {}, items: {} })
+    setOverrides({ days: {}, items: {}, bookingOptions: {} })
     setNoteItem(null)
     setDetailItem(null)
     setDragState(null)
@@ -5298,6 +5433,7 @@ export default function App() {
 
       {showDeadlines ? (
         <CancellationDeadlinesModal
+          bookingOptions={tripState.bookingOptions}
           canEdit={canEditCurrentTrip}
           isMobilePortrait={isMobilePortrait}
           items={tripState.items}
