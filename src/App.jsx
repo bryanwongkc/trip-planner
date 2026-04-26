@@ -1794,7 +1794,7 @@ function BottomDayNav({
         <button
           type="button"
           onClick={() => onDayChange(DAY_VIEW_ALL)}
-                className={`relative shrink-0 rounded-[0.8rem] px-3 pb-2 pt-2.5 text-[10px] font-bold uppercase tracking-[0.06em] transition ${
+                className={`relative flex shrink-0 items-center rounded-[0.8rem] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.06em] transition ${
             activeDayId === DAY_VIEW_ALL ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-white'
           }`}
         >
@@ -1822,7 +1822,7 @@ function BottomDayNav({
                   {formatDayDate(day.date)}
                 </span>
                 {overbookingCount > 0 ? (
-                  <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold leading-none text-white shadow-[0_2px_8px_rgba(190,18,60,0.28)]">
+                  <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold leading-none text-white shadow-[0_2px_8px_rgba(190,18,60,0.28)]">
                     {formatBadgeCount(overbookingCount)}
                   </span>
                 ) : null}
