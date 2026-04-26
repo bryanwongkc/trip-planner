@@ -37,6 +37,10 @@ service cloud.firestore {
       return isTripMember(tripId);
     }
 
+    function isOwnDemoTripId(tripId) {
+      return isSignedIn() && tripId == ('demo-' + request.auth.uid);
+    }
+
     function canEditTrip(tripId) {
       return canViewTrip(tripId) &&
         memberRole(tripId) in ['owner', 'editor'];
@@ -126,7 +130,7 @@ service cloud.firestore {
     }
 
     match /trips/{tripId} {
-      allow read: if canViewTrip(tripId);
+      allow read: if canViewTrip(tripId) || isOwnDemoTripId(tripId);
       allow create: if isSignedIn() &&
         isTripMetaDoc() &&
         request.resource.data.ownerId == request.auth.uid &&
