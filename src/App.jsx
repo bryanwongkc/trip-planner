@@ -1678,7 +1678,7 @@ function PlaceFields({ draft, disabled, mapsReady, onChange }) {
           value={draft.address}
           onChange={(event) => onChange({ address: event.target.value })}
           disabled={disabled}
-          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+          className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
         />
       </Field>
     </div>
@@ -1727,7 +1727,7 @@ function TransitFields({ disabled, isMobilePortrait, transit, onChange }) {
   const updateTransit = (changes) => onChange({ transit: normalizeTransitDetails({ ...value, ...changes }) })
 
   return (
-    <div className="rounded-[1rem] border border-slate-200/80 bg-slate-50/70 p-3.5">
+    <div className="rounded-[1.15rem] border border-slate-200/80 bg-slate-50/70 p-3.5">
       <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
         Transit details
       </div>
@@ -1737,7 +1737,7 @@ function TransitFields({ disabled, isMobilePortrait, transit, onChange }) {
             value={value.mode}
             onChange={(event) => updateTransit({ mode: event.target.value })}
             disabled={disabled}
-            className="w-full rounded-[1.05rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+            className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
           >
             {TRANSIT_MODE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -1755,7 +1755,7 @@ function TransitFields({ disabled, isMobilePortrait, transit, onChange }) {
             onChange={(event) => updateTransit({ approxDurationMinutes: event.target.value })}
             disabled={disabled}
             placeholder="45 min"
-            className="w-full rounded-[1.05rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+            className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
           />
         </Field>
         <Field label="From station / stop">
@@ -1763,7 +1763,7 @@ function TransitFields({ disabled, isMobilePortrait, transit, onChange }) {
             value={value.from}
             onChange={(event) => updateTransit({ from: event.target.value })}
             disabled={disabled}
-            className="w-full rounded-[1.05rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+            className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
           />
         </Field>
         <Field label="To station / stop">
@@ -1771,7 +1771,7 @@ function TransitFields({ disabled, isMobilePortrait, transit, onChange }) {
             value={value.to}
             onChange={(event) => updateTransit({ to: event.target.value })}
             disabled={disabled}
-            className="w-full rounded-[1.05rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+            className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
           />
         </Field>
         <Field label="Line / route">
@@ -1780,7 +1780,7 @@ function TransitFields({ disabled, isMobilePortrait, transit, onChange }) {
             onChange={(event) => updateTransit({ lineName: event.target.value })}
             disabled={disabled}
             placeholder="JR Keiyo Line"
-            className="w-full rounded-[1.05rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+            className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
           />
         </Field>
         <Field label="Number / platform">
@@ -1790,14 +1790,14 @@ function TransitFields({ disabled, isMobilePortrait, transit, onChange }) {
               onChange={(event) => updateTransit({ serviceNumber: event.target.value })}
               disabled={disabled}
               placeholder="No."
-              className="w-full rounded-[1.05rem] border border-slate-200/90 bg-white px-3 py-3 text-sm disabled:bg-slate-100"
+              className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-3 py-3 text-sm disabled:bg-slate-100"
             />
             <input
               value={value.platform}
               onChange={(event) => updateTransit({ platform: event.target.value })}
               disabled={disabled}
               placeholder="Platform"
-              className="w-full rounded-[1.05rem] border border-slate-200/90 bg-white px-3 py-3 text-sm disabled:bg-slate-100"
+              className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-3 py-3 text-sm disabled:bg-slate-100"
             />
           </div>
         </Field>
@@ -1809,7 +1809,7 @@ function TransitFields({ disabled, isMobilePortrait, transit, onChange }) {
           onChange={(event) => updateTransit({ notes: event.target.value })}
           disabled={disabled}
           placeholder="Exit, transfer, luggage notes..."
-          className="w-full rounded-[1.05rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+          className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
         />
       </Field>
     </div>
@@ -2286,7 +2286,7 @@ function BottomDayNav({
         <button
           type="button"
           onClick={() => onDayChange(DAY_VIEW_ALL)}
-                className={`relative flex shrink-0 items-center rounded-[0.8rem] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.06em] transition ${
+          className={`relative flex shrink-0 items-center whitespace-nowrap rounded-[0.8rem] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.06em] transition ${
             activeDayId === DAY_VIEW_ALL ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-white'
           }`}
         >
@@ -2301,7 +2301,7 @@ function BottomDayNav({
                 type="button"
                 data-day-drop-id={day.id}
                 onClick={() => onDayChange(day.id)}
-                className={`relative shrink-0 rounded-[0.8rem] px-2.5 py-2 text-[10px] font-bold uppercase tracking-[0.05em] transition ${
+                className={`relative shrink-0 whitespace-nowrap rounded-[0.8rem] px-2.5 py-2 text-[10px] font-bold uppercase tracking-[0.05em] transition ${
                   dragState?.overDayId === day.id
                     ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200'
                     : activeDayId === day.id
