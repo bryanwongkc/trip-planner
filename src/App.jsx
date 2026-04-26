@@ -297,6 +297,10 @@ function isHeldBookingOption(booking) {
   return booking && !booking.hidden && booking.status !== 'cancelled'
 }
 
+function isHeldStackableItineraryItem(item) {
+  return isStackableStayOrMeal(item) && !item.generated && !item.hidden && item.status !== 'cancelled'
+}
+
 function fallbackBookingGroupKey(booking) {
   return [
     booking.dayId || 'day',
@@ -325,7 +329,7 @@ function getOverbookingMetaForItem({ bookingOptions = [], itemId }) {
   }
 }
 
-function getOverbookingCountForDay({ bookingOptions = [], items = [], dayId }) {
+function getBookingOptionOverbookingCountForDay({ bookingOptions = [], items = [], dayId }) {
   const itemDayLookup = Object.fromEntries(items.map((item) => [item.id, item.dayId]))
   const groups = new Map()
 
@@ -338,6 +342,19 @@ function getOverbookingCountForDay({ bookingOptions = [], items = [], dayId }) {
   })
 
   return [...groups.values()].reduce((total, count) => total + Math.max(0, count - 1), 0)
+}
+
+function getItineraryStackOverbookingCountForDay({ items = [], dayId }) {
+  return buildTimelineEntries(items.filter((item) => item.dayId === dayId && isHeldStackableItineraryItem(item)))
+    .filter((entry) => entry.type === 'stack')
+    .reduce((total, entry) => total + Math.max(0, entry.items.length - 1), 0)
+}
+
+function getOverbookingCountForDay({ bookingOptions = [], items = [], dayId }) {
+  return (
+    getBookingOptionOverbookingCountForDay({ bookingOptions, items, dayId }) +
+    getItineraryStackOverbookingCountForDay({ items, dayId })
+  )
 }
 
 function getOverbookingCountsByDay({ bookingOptions = [], items = [] }) {
