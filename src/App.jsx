@@ -230,12 +230,13 @@ function defaultTransitDetails() {
 }
 
 function normalizeTransitDetails(transit = {}) {
+  const source = transit || {}
   return {
     ...defaultTransitDetails(),
-    ...transit,
+    ...source,
     approxDurationMinutes:
-      transit.approxDurationMinutes === 0 || transit.approxDurationMinutes
-        ? String(transit.approxDurationMinutes)
+      source.approxDurationMinutes === 0 || source.approxDurationMinutes
+        ? String(source.approxDurationMinutes)
         : '',
   }
 }
