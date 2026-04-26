@@ -991,26 +991,25 @@ async function createTripOverviewPdf({ days, items, tripSummary }) {
   }
 }
 
-async function shareTripOverviewPdf({ days, items, tripSummary }) {
+async function shareOrDownloadTripOverviewPdf({ days, items, tripSummary }) {
   const filename = buildTripOverviewFilename(tripSummary.title)
   const blob = await createTripOverviewPdf({ days, items, tripSummary })
   const file = new File([blob], filename, { type: 'application/pdf' })
 
   if (navigator.canShare?.({ files: [file] })) {
-    await navigator.share({
-      files: [file],
-      title: `${tripSummary.title || 'Trip'} overview`,
-      text: 'Trip overview PDF',
-    })
-    return
+    try {
+      await navigator.share({
+        files: [file],
+        title: `${tripSummary.title || 'Trip'} overview`,
+        text: 'Trip overview PDF',
+      })
+      return
+    } catch (error) {
+      if (error?.name === 'AbortError') return
+      console.warn('Native PDF share failed, downloading instead.', error)
+    }
   }
 
-  exportFile(blob, filename)
-}
-
-async function downloadTripOverviewPdf({ days, items, tripSummary }) {
-  const filename = buildTripOverviewFilename(tripSummary.title)
-  const blob = await createTripOverviewPdf({ days, items, tripSummary })
   exportFile(blob, filename)
 }
 
@@ -2163,7 +2162,6 @@ function AppDrawer({
   onClose,
   onCreateTrip,
   onDeleteTrip,
-  onDownloadOverview,
   onExportOverview,
   onOpenDeadlines,
   onRenameTrip,
@@ -2225,26 +2223,10 @@ function AppDrawer({
               >
                 <span>
                   <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                    Overview PDF
+                    Itinerary PDF
                   </span>
                   <span className="mt-1 block text-[13px] font-semibold">
-                    {pdfExporting ? 'Preparing PDF' : 'Share itinerary PDF'}
-                  </span>
-                </span>
-                <ExternalLink className="h-4 w-4 text-slate-500" />
-              </button>
-              <button
-                type="button"
-                onClick={onDownloadOverview}
-                disabled={pdfExporting}
-                className="flex w-full items-center justify-between rounded-[0.95rem] border border-slate-200/70 bg-white/90 px-3.5 py-3 text-left text-slate-800 transition hover:bg-white disabled:cursor-wait disabled:text-slate-400"
-              >
-                <span>
-                  <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                    Download
-                  </span>
-                  <span className="mt-1 block text-[13px] font-semibold">
-                    {pdfExporting ? 'Preparing PDF' : 'Save itinerary PDF'}
+                    {pdfExporting ? 'Preparing PDF' : 'Share or download itinerary'}
                   </span>
                 </span>
                 <Download className="h-4 w-4 text-slate-500" />
@@ -5026,7 +5008,7 @@ export default function App() {
     if (pdfExporting) return
     setPdfExporting(true)
     try {
-      await shareTripOverviewPdf({
+      await shareOrDownloadTripOverviewPdf({
         days: visibleDays,
         items: tripState.items,
         tripSummary: activeTripSummary,
@@ -5037,24 +5019,6 @@ export default function App() {
         console.error('PDF export failed', error)
         window.alert('Could not export the overview PDF. Please try again.')
       }
-    } finally {
-      setPdfExporting(false)
-    }
-  }
-
-  const handleDownloadOverviewPdf = async () => {
-    if (pdfExporting) return
-    setPdfExporting(true)
-    try {
-      await downloadTripOverviewPdf({
-        days: visibleDays,
-        items: tripState.items,
-        tripSummary: activeTripSummary,
-      })
-      setShowMenu(false)
-    } catch (error) {
-      console.error('PDF download failed', error)
-      window.alert('Could not download the overview PDF. Please try again.')
     } finally {
       setPdfExporting(false)
     }
@@ -5089,7 +5053,6 @@ export default function App() {
         onClose={() => setShowMenu(false)}
         onCreateTrip={() => void createTrip()}
         onDeleteTrip={() => void deleteTrip()}
-        onDownloadOverview={() => void handleDownloadOverviewPdf()}
         onExportOverview={() => void handleExportOverviewPdf()}
         onOpenDeadlines={() => {
           setShowMenu(false)
