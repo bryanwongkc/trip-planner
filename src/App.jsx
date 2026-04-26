@@ -27,6 +27,7 @@ import {
   Menu,
   Plus,
   Search,
+  Share2,
   Sun,
   Trash2,
   Users,
@@ -991,25 +992,27 @@ async function createTripOverviewPdf({ days, items, tripSummary }) {
   }
 }
 
-async function shareOrDownloadTripOverviewPdf({ days, items, tripSummary }) {
+async function shareTripOverviewPdf({ days, items, tripSummary }) {
   const filename = buildTripOverviewFilename(tripSummary.title)
   const blob = await createTripOverviewPdf({ days, items, tripSummary })
   const file = new File([blob], filename, { type: 'application/pdf' })
 
-  if (navigator.canShare?.({ files: [file] })) {
-    try {
-      await navigator.share({
-        files: [file],
-        title: `${tripSummary.title || 'Trip'} overview`,
-        text: 'Trip overview PDF',
-      })
-      return
-    } catch (error) {
-      if (error?.name === 'AbortError') return
-      console.warn('Native PDF share failed, downloading instead.', error)
-    }
+  if (!navigator.share || !navigator.canShare?.({ files: [file] })) {
+    const error = new Error('PDF file sharing is not supported in this browser.')
+    error.name = 'NotSupportedError'
+    throw error
   }
 
+  await navigator.share({
+    files: [file],
+    title: `${tripSummary.title || 'Trip'} overview`,
+    text: 'Trip overview PDF',
+  })
+}
+
+async function downloadTripOverviewPdf({ days, items, tripSummary }) {
+  const filename = buildTripOverviewFilename(tripSummary.title)
+  const blob = await createTripOverviewPdf({ days, items, tripSummary })
   exportFile(blob, filename)
 }
 
@@ -2260,6 +2263,69 @@ function AppDrawer({
         </div>
       </aside>
     </>
+  )
+}
+
+function PdfExportSheet({ loading, onClose, onDownload, onShare, open }) {
+  if (!open) return null
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-end bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-[1.45rem] border border-white/70 bg-[rgba(255,253,249,0.98)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.18)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Itinerary PDF</div>
+            <h2 className="mt-1 text-xl font-extrabold tracking-[-0.04em] text-slate-950">
+              Export overview
+            </h2>
+            <p className="mt-1 text-[13px] leading-5 text-slate-500">
+              Choose how to use the generated itinerary PDF.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full bg-white p-2 text-slate-500 shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
+            aria-label="Close export options"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-2">
+          <button
+            type="button"
+            onClick={onShare}
+            disabled={loading}
+            className="flex w-full items-center justify-between rounded-[1rem] border border-slate-200/80 bg-white px-3.5 py-3 text-left transition hover:bg-slate-50 disabled:cursor-wait disabled:text-slate-400"
+          >
+            <span>
+              <span className="block text-sm font-bold text-slate-900">Share</span>
+              <span className="mt-0.5 block text-xs font-medium text-slate-500">Open the device share sheet</span>
+            </span>
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4 text-slate-500" />}
+          </button>
+          <button
+            type="button"
+            onClick={onDownload}
+            disabled={loading}
+            className="flex w-full items-center justify-between rounded-[1rem] border border-slate-200/80 bg-white px-3.5 py-3 text-left transition hover:bg-slate-50 disabled:cursor-wait disabled:text-slate-400"
+          >
+            <span>
+              <span className="block text-sm font-bold text-slate-900">Download</span>
+              <span className="mt-0.5 block text-xs font-medium text-slate-500">Save the PDF to this device</span>
+            </span>
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-slate-500" />}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -3982,6 +4048,7 @@ export default function App() {
   const [showCollaborators, setShowCollaborators] = useState(false)
   const [showDeadlines, setShowDeadlines] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
+  const [showPdfExportOptions, setShowPdfExportOptions] = useState(false)
   const [pdfExporting, setPdfExporting] = useState(false)
   const [dragState, setDragState] = useState(null)
   const [tripMembers, setTripMembers] = useState([])
@@ -5004,20 +5071,47 @@ export default function App() {
     if (shouldHandleTap) onTap?.()
   }
 
-  const handleExportOverviewPdf = async () => {
+  const handleOpenPdfExportOptions = () => {
+    setShowMenu(false)
+    setShowPdfExportOptions(true)
+  }
+
+  const handleShareOverviewPdf = async () => {
     if (pdfExporting) return
     setPdfExporting(true)
     try {
-      await shareOrDownloadTripOverviewPdf({
+      await shareTripOverviewPdf({
         days: visibleDays,
         items: tripState.items,
         tripSummary: activeTripSummary,
       })
-      setShowMenu(false)
+      setShowPdfExportOptions(false)
+    } catch (error) {
+      if (error?.name === 'NotSupportedError') {
+        window.alert('This browser cannot share PDF files directly. Use Download instead.')
+      } else if (error?.name !== 'AbortError') {
+        console.error('PDF share failed', error)
+        window.alert('Could not share the overview PDF. Please try again.')
+      }
+    } finally {
+      setPdfExporting(false)
+    }
+  }
+
+  const handleDownloadOverviewPdf = async () => {
+    if (pdfExporting) return
+    setPdfExporting(true)
+    try {
+      await downloadTripOverviewPdf({
+        days: visibleDays,
+        items: tripState.items,
+        tripSummary: activeTripSummary,
+      })
+      setShowPdfExportOptions(false)
     } catch (error) {
       if (error?.name !== 'AbortError') {
-        console.error('PDF export failed', error)
-        window.alert('Could not export the overview PDF. Please try again.')
+        console.error('PDF download failed', error)
+        window.alert('Could not download the overview PDF. Please try again.')
       }
     } finally {
       setPdfExporting(false)
@@ -5053,7 +5147,7 @@ export default function App() {
         onClose={() => setShowMenu(false)}
         onCreateTrip={() => void createTrip()}
         onDeleteTrip={() => void deleteTrip()}
-        onExportOverview={() => void handleExportOverviewPdf()}
+        onExportOverview={handleOpenPdfExportOptions}
         onOpenDeadlines={() => {
           setShowMenu(false)
           setShowDeadlines(true)
@@ -5075,6 +5169,15 @@ export default function App() {
         open={showMenu}
         pdfExporting={pdfExporting}
         urgentDeadlineCount={urgentDeadlineCount}
+      />
+      <PdfExportSheet
+        loading={pdfExporting}
+        onClose={() => {
+          if (!pdfExporting) setShowPdfExportOptions(false)
+        }}
+        onDownload={() => void handleDownloadOverviewPdf()}
+        onShare={() => void handleShareOverviewPdf()}
+        open={showPdfExportOptions}
       />
       {!availableTrips.length ? (
         <div className="glass-panel max-w-md rounded-[1.08rem] px-5 py-5">
