@@ -100,6 +100,13 @@ const ROUTE_MODE_OPTIONS = [
   { value: '', label: 'Auto' },
   ...TRAVEL_MODE_OPTIONS,
 ]
+const TRANSIT_MODE_OPTIONS = [
+  { value: 'train', label: 'Train' },
+  { value: 'bus', label: 'Bus' },
+  { value: 'ferry', label: 'Ferry' },
+  { value: 'taxi', label: 'Taxi' },
+  { value: 'other', label: 'Other' },
+]
 const DURATION_PRESETS = [
   { label: '30m', value: 30 },
   { label: '45m', value: 45 },
@@ -196,6 +203,7 @@ function useGoogleMapsApi(apiKey) {
 function typeMeta(category) {
   if (category === 'Flight') return { tone: 'bg-sky-50 text-sky-600', card: 'timeline-card--flight' }
   if (category === 'Car') return { tone: 'bg-indigo-50 text-indigo-600', card: 'timeline-card--transport' }
+  if (category === 'Transport') return { tone: 'bg-indigo-50 text-indigo-600', card: 'timeline-card--transport' }
   if (category === 'Hotel') return { tone: 'bg-amber-50 text-amber-600', card: 'timeline-card--hotel' }
   if (category === 'Restaurant') return { tone: 'bg-orange-50 text-orange-600', card: 'timeline-card--restaurant' }
   if (category === 'Wedding') return { tone: 'bg-pink-50 text-pink-600', card: 'timeline-card--event' }
@@ -206,6 +214,54 @@ function typeMeta(category) {
 function categoryOptionsForValue(category) {
   if (!category || CATEGORY_OPTIONS.includes(category)) return CATEGORY_OPTIONS
   return [category, ...CATEGORY_OPTIONS]
+}
+
+function defaultTransitDetails() {
+  return {
+    mode: 'train',
+    from: '',
+    to: '',
+    lineName: '',
+    serviceNumber: '',
+    platform: '',
+    approxDurationMinutes: '',
+    notes: '',
+  }
+}
+
+function normalizeTransitDetails(transit = {}) {
+  return {
+    ...defaultTransitDetails(),
+    ...transit,
+    approxDurationMinutes:
+      transit.approxDurationMinutes === 0 || transit.approxDurationMinutes
+        ? String(transit.approxDurationMinutes)
+        : '',
+  }
+}
+
+function normalizeTransitForItem(item) {
+  if (item?.category !== 'Transport') return { ...item, transit: null }
+  return { ...item, transit: normalizeTransitDetails(item.transit) }
+}
+
+function transitModeLabel(mode) {
+  return TRANSIT_MODE_OPTIONS.find((option) => option.value === mode)?.label || 'Transit'
+}
+
+function buildTransitSummary(item) {
+  if (item?.category !== 'Transport') return ''
+  const transit = normalizeTransitDetails(item.transit)
+  const primary = [
+    transitModeLabel(transit.mode),
+    transit.lineName,
+    transit.serviceNumber,
+    transit.platform ? `Platform ${transit.platform}` : '',
+  ].filter(Boolean)
+  const route = [transit.from, transit.to].filter(Boolean).join(' to ')
+  const duration = transit.approxDurationMinutes ? `~${transit.approxDurationMinutes} min` : ''
+
+  return [primary.join(' · '), route, duration].filter(Boolean).join(' · ')
 }
 
 function isStackableStayOrMeal(item) {
@@ -614,6 +670,7 @@ function buildEmptyDraft(dayId = '') {
     bookingRef: '',
     status: 'considering',
     cancellationDeadline: '',
+    transit: null,
     travelModeToNext: '',
     flightInfo: null,
     lat: null,
@@ -815,6 +872,7 @@ async function createTripOverviewPdf({ days, items, tripSummary }) {
                 ? `${item.startTime || '--:--'}-${item.endTime}`
                 : item.startTime || '--:--'
               const locationLine = [item.category, item.locationName || item.address].filter(Boolean).join(' · ')
+              const transitLine = buildTransitSummary(item)
               const deadlineLine =
                 isMonitoredCancellationItem(item) && item.cancellationDeadline
                   ? `<div class="deadline">Cancellation: ${escapeHtml(itemStatusLabel(item.status))} · ${escapeHtml(formatBookingDateTime(item.cancellationDeadline))}</div>`
@@ -826,6 +884,7 @@ async function createTripOverviewPdf({ days, items, tripSummary }) {
                   <div class="stop-body">
                     <div class="title">${escapeHtml(item.title || 'Untitled stop')}</div>
                     ${locationLine ? `<div class="meta">${escapeHtml(locationLine)}</div>` : ''}
+                    ${transitLine ? `<div class="meta">${escapeHtml(transitLine)}</div>` : ''}
                     ${item.description ? `<div class="notes">${escapeHtml(item.description)}</div>` : ''}
                     ${deadlineLine}
                   </div>
@@ -1243,7 +1302,7 @@ function mergeItemsForDay(currentItems, nextItem) {
 }
 
 function createItemDraft(item) {
-  const normalized = stripFlightLocationFields(normalizeItemTimeFields(item))
+  const normalized = normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields(item)))
   return {
     ...normalized,
     durationMinutes:
@@ -1269,15 +1328,15 @@ function applyItemDraftPatch(item, patch) {
     const derivedDuration =
       nextItem.durationMinutes ?? getDurationMinutes(nextItem.startTime, nextItem.endTime)
 
-    return stripFlightLocationFields(normalizeItemTimeFields({
+    return normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields({
       ...nextItem,
       ...cancellationFields,
       endTimeMode: 'duration',
       durationMinutes: derivedDuration,
-    }))
+    })))
   }
 
-  return stripFlightLocationFields(normalizeItemTimeFields({ ...nextItem, ...cancellationFields }))
+  return normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields({ ...nextItem, ...cancellationFields })))
 }
 
 function getEndTimeWarning(item) {
@@ -1655,6 +1714,100 @@ function TimeField({ conflict, disabled, label, onChange, value }) {
         }`}
       />
     </label>
+  )
+}
+
+function TransitFields({ disabled, isMobilePortrait, transit, onChange }) {
+  const value = normalizeTransitDetails(transit)
+  const updateTransit = (changes) => onChange({ transit: normalizeTransitDetails({ ...value, ...changes }) })
+
+  return (
+    <div className="rounded-[1rem] border border-slate-200/80 bg-slate-50/70 p-3.5">
+      <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+        Transit details
+      </div>
+      <div className={`grid gap-3 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
+        <Field label="Type">
+          <select
+            value={value.mode}
+            onChange={(event) => updateTransit({ mode: event.target.value })}
+            disabled={disabled}
+            className="w-full rounded-[1.05rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+          >
+            {TRANSIT_MODE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Approx duration">
+          <input
+            type="number"
+            min="0"
+            inputMode="numeric"
+            value={value.approxDurationMinutes}
+            onChange={(event) => updateTransit({ approxDurationMinutes: event.target.value })}
+            disabled={disabled}
+            placeholder="45 min"
+            className="w-full rounded-[1.05rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+          />
+        </Field>
+        <Field label="From station / stop">
+          <input
+            value={value.from}
+            onChange={(event) => updateTransit({ from: event.target.value })}
+            disabled={disabled}
+            className="w-full rounded-[1.05rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+          />
+        </Field>
+        <Field label="To station / stop">
+          <input
+            value={value.to}
+            onChange={(event) => updateTransit({ to: event.target.value })}
+            disabled={disabled}
+            className="w-full rounded-[1.05rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+          />
+        </Field>
+        <Field label="Line / route">
+          <input
+            value={value.lineName}
+            onChange={(event) => updateTransit({ lineName: event.target.value })}
+            disabled={disabled}
+            placeholder="JR Keiyo Line"
+            className="w-full rounded-[1.05rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+          />
+        </Field>
+        <Field label="Number / platform">
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              value={value.serviceNumber}
+              onChange={(event) => updateTransit({ serviceNumber: event.target.value })}
+              disabled={disabled}
+              placeholder="No."
+              className="w-full rounded-[1.05rem] border border-slate-200/90 bg-white px-3 py-3 text-sm disabled:bg-slate-100"
+            />
+            <input
+              value={value.platform}
+              onChange={(event) => updateTransit({ platform: event.target.value })}
+              disabled={disabled}
+              placeholder="Platform"
+              className="w-full rounded-[1.05rem] border border-slate-200/90 bg-white px-3 py-3 text-sm disabled:bg-slate-100"
+            />
+          </div>
+        </Field>
+      </div>
+      <Field label="Transit notes" className="mt-3">
+        <textarea
+          rows={2}
+          value={value.notes}
+          onChange={(event) => updateTransit({ notes: event.target.value })}
+          disabled={disabled}
+          placeholder="Exit, transfer, luggage notes..."
+          className="w-full rounded-[1.05rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+        />
+      </Field>
+    </div>
   )
 }
 
@@ -2880,6 +3033,15 @@ function DetailModal({
             />
           ) : null}
 
+          {detailItem.category === 'Transport' ? (
+            <TransitFields
+              disabled={fieldReadOnly}
+              isMobilePortrait={isMobilePortrait}
+              transit={detailItem.transit}
+              onChange={onChange}
+            />
+          ) : null}
+
           <Field label="Booking ref">
             <input
               value={detailItem.bookingRef || ''}
@@ -3102,10 +3264,10 @@ function PlannerPanel({
   async function saveNewItem() {
     if (!firestoreReady || !effectiveDraftDayId || !canEdit) return
 
-    let nextDraft = stripFlightLocationFields(normalizeItemTimeFields({
+    let nextDraft = normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields({
       ...draft,
       dayId: effectiveDraftDayId,
-    }))
+    })))
 
     if (nextDraft.category === 'Flight' && draftFlightLookup?.flightNumber && draftFlightLookup.date) {
       try {
@@ -3129,7 +3291,7 @@ function PlannerPanel({
     }
 
     await onSaveNewItem({
-      ...stripFlightLocationFields(normalizeItemTimeFields(nextDraft)),
+      ...normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields(nextDraft))),
       dayId: effectiveDraftDayId,
       id: slugId('item'),
     })
@@ -3168,6 +3330,7 @@ function PlannerPanel({
           const dayContext = dayOptions.find((day) => day.id === item.dayId)
           const manualIndex = manualOrderLookup.positions[item.id]
           const isManual = !item.generated
+          const transitSummary = buildTransitSummary(item)
           const isStack = entry.type === 'stack'
           const isExpandedStack = Boolean(expandedStacks[entry.id])
           const stackAlternatives = isStack ? entry.items.filter((stackItem) => stackItem.id !== item.id) : []
@@ -3297,6 +3460,12 @@ function PlannerPanel({
                     </div>
                     {item.address && item.address !== item.locationName ? (
                       <p className="mt-0.5 truncate text-[11px] text-slate-400 sm:mt-1">{item.address}</p>
+                    ) : null}
+                    {transitSummary ? (
+                      <div className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700">
+                        <TrainFront className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{transitSummary}</span>
+                      </div>
                     ) : null}
                     {(item.description || item.generated) ? (
                       <p className="mt-1.5 line-clamp-2 text-[12px] leading-5 text-slate-500 sm:mt-2 sm:leading-6">
@@ -3560,12 +3729,14 @@ function PlannerPanel({
                           endTime: '',
                           endTimeMode: 'time',
                           durationMinutes: null,
+                          transit: null,
                         }
                       }
 
                       return {
                         ...current,
                         category: nextCategory,
+                        transit: nextCategory === 'Transport' ? normalizeTransitDetails(current.transit) : null,
                         startTime: current.startTime || '10:00',
                         endTime: current.endTime || '11:00',
                         endTimeMode: current.endTimeMode || 'time',
@@ -3640,6 +3811,15 @@ function PlannerPanel({
                   draft={draft}
                   disabled={!firestoreReady}
                   mapsReady={mapsReady}
+                  onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
+                />
+              ) : null}
+
+              {draft.category === 'Transport' ? (
+                <TransitFields
+                  disabled={!firestoreReady}
+                  isMobilePortrait={isMobilePortrait}
+                  transit={draft.transit}
                   onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
                 />
               ) : null}
@@ -4669,7 +4849,7 @@ export default function App() {
   async function saveDetailItem() {
     if (!detailItem || !firestoreReady || !canEditCurrentTrip) return
 
-    const nextItem = normalizeItemTimeFields(detailItem)
+    const nextItem = normalizeTransitForItem(normalizeItemTimeFields(detailItem))
 
     if (nextItem.generated) {
       await mergeTripPatch(resolvedTripId, {
