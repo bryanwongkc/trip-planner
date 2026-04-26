@@ -635,6 +635,15 @@ function pdfSafeText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim()
 }
 
+function escapeHtml(value) {
+  return pdfSafeText(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
 function exportFile(blob, filename) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -655,7 +664,15 @@ function buildTripOverviewFilename(tripTitle) {
   return `${safeTitle || 'trip-overview'}-overview.pdf`
 }
 
-async function createTripOverviewPdf({ days, items, tripSummary }) {
+function exportItemsForDay(items, dayId) {
+  const dayItems = items
+    .filter((item) => item.dayId === dayId)
+    .sort((a, b) => compareTime(a.startTime || '23:59', b.startTime || '23:59'))
+
+  return buildTimelineEntries(dayItems).map((entry) => entry.item)
+}
+
+async function CREATE_TRIP_OVERVIEW_PDF_LEGACY({ days, items, tripSummary }) {
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const page = {
@@ -779,6 +796,135 @@ async function createTripOverviewPdf({ days, items, tripSummary }) {
   }
 
   return doc.output('blob')
+}
+
+async function createTripOverviewPdf({ days, items, tripSummary }) {
+  const { jsPDF } = await import('jspdf')
+  const html2canvas = (await import('html2canvas')).default
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const pageHeight = doc.internal.pageSize.getHeight()
+
+  const dayHtml = days
+    .map((day, dayIndex) => {
+      const dayItems = exportItemsForDay(items, day.id)
+      const stopsHtml = dayItems.length
+        ? dayItems
+            .map((item) => {
+              const timeLabel = item.endTime
+                ? `${item.startTime || '--:--'}-${item.endTime}`
+                : item.startTime || '--:--'
+              const locationLine = [item.category, item.locationName || item.address].filter(Boolean).join(' · ')
+              const deadlineLine =
+                isMonitoredCancellationItem(item) && item.cancellationDeadline
+                  ? `<div class="deadline">Cancellation: ${escapeHtml(itemStatusLabel(item.status))} · ${escapeHtml(formatBookingDateTime(item.cancellationDeadline))}</div>`
+                  : ''
+
+              return `
+                <article class="stop">
+                  <div class="time">${escapeHtml(timeLabel)}</div>
+                  <div class="stop-body">
+                    <div class="title">${escapeHtml(item.title || 'Untitled stop')}</div>
+                    ${locationLine ? `<div class="meta">${escapeHtml(locationLine)}</div>` : ''}
+                    ${item.description ? `<div class="notes">${escapeHtml(item.description)}</div>` : ''}
+                    ${deadlineLine}
+                  </div>
+                </article>
+              `
+            })
+            .join('')
+        : '<div class="empty">No stops planned yet.</div>'
+
+      return `
+        <section class="day">
+          <div class="day-rule"></div>
+          <div class="day-title">${escapeHtml(day.label || `Day ${dayIndex + 1}`)} - ${escapeHtml(formatFullDayDate(day.date))}</div>
+          ${day.name ? `<div class="day-name">${escapeHtml(day.name)}</div>` : ''}
+          <div class="stops">${stopsHtml}</div>
+        </section>
+      `
+    })
+    .join('')
+
+  const container = document.createElement('div')
+  container.style.cssText = 'position:absolute;left:-10000px;top:0;width:794px;background:#fffdfa;'
+  container.innerHTML = `
+    <div class="pdf-root">
+      <style>
+        .pdf-root {
+          box-sizing: border-box;
+          width: 794px;
+          padding: 56px 58px 48px;
+          background: #fffdfa;
+          color: #0f172a;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", "Noto Sans CJK JP", "Yu Gothic", "Hiragino Sans", "Microsoft YaHei", Arial, sans-serif;
+        }
+        .trip-title { font-size: 30px; line-height: 1.08; font-weight: 800; letter-spacing: -0.04em; }
+        .trip-range { margin-top: 10px; color: #64748b; font-size: 13px; font-weight: 600; }
+        .day { margin-top: 34px; break-inside: avoid; }
+        .day-rule { height: 1px; background: #e2e8f0; margin-bottom: 20px; }
+        .day-title { font-size: 17px; line-height: 1.25; font-weight: 800; letter-spacing: -0.02em; }
+        .day-name { margin-top: 5px; color: #64748b; font-size: 12px; font-weight: 600; }
+        .stops { margin-top: 16px; }
+        .stop { display: grid; grid-template-columns: 82px 1fr; gap: 18px; padding: 11px 0; break-inside: avoid; }
+        .time { color: #0f172a; font-size: 12px; font-weight: 800; letter-spacing: -0.01em; }
+        .title { color: #0f172a; font-size: 14px; line-height: 1.35; font-weight: 800; letter-spacing: -0.02em; }
+        .meta { margin-top: 4px; color: #64748b; font-size: 11px; line-height: 1.45; font-weight: 600; }
+        .notes { margin-top: 5px; color: #475569; font-size: 11px; line-height: 1.5; white-space: pre-wrap; }
+        .deadline { margin-top: 6px; color: #be123c; font-size: 11px; line-height: 1.45; font-weight: 800; }
+        .empty { color: #94a3b8; font-size: 12px; font-weight: 600; }
+        .footer { margin-top: 36px; color: #94a3b8; font-size: 10px; font-weight: 600; }
+      </style>
+      <header>
+        <div class="trip-title">${escapeHtml(tripSummary.title || 'Trip overview')}</div>
+        <div class="trip-range">${escapeHtml(formatTripDateRange(tripSummary.startDate, tripSummary.endDate))}</div>
+      </header>
+      ${dayHtml}
+      <div class="footer">Generated from Trip Planner</div>
+    </div>
+  `
+
+  document.body.appendChild(container)
+
+  try {
+    const canvas = await html2canvas(container.firstElementChild, {
+      backgroundColor: '#fffdfa',
+      scale: Math.min(2, window.devicePixelRatio || 1.5),
+      useCORS: true,
+    })
+    const sliceHeight = Math.floor((pageHeight * canvas.width) / pageWidth)
+    let offsetY = 0
+    let pageIndex = 0
+
+    while (offsetY < canvas.height) {
+      const currentSliceHeight = Math.min(sliceHeight, canvas.height - offsetY)
+      const pageCanvas = document.createElement('canvas')
+      pageCanvas.width = canvas.width
+      pageCanvas.height = currentSliceHeight
+      const context = pageCanvas.getContext('2d')
+      context.drawImage(
+        canvas,
+        0,
+        offsetY,
+        canvas.width,
+        currentSliceHeight,
+        0,
+        0,
+        canvas.width,
+        currentSliceHeight,
+      )
+
+      if (pageIndex > 0) doc.addPage()
+      const imageHeight = (currentSliceHeight * pageWidth) / canvas.width
+      doc.addImage(pageCanvas.toDataURL('image/png'), 'PNG', 0, 0, pageWidth, imageHeight)
+      offsetY += currentSliceHeight
+      pageIndex += 1
+    }
+
+    return doc.output('blob')
+  } finally {
+    container.remove()
+  }
 }
 
 async function shareTripOverviewPdf({ days, items, tripSummary }) {
