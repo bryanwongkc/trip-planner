@@ -2907,6 +2907,7 @@ function DetailModal({
     }
     return null
   }, [detailItem.travelModeToNext])
+  const TravelModeIcon = travelModeMeta?.icon
 
   return (
     <div
@@ -2953,7 +2954,7 @@ function DetailModal({
 
         {travelModeMeta ? (
           <div className="mt-4 flex items-center gap-2 rounded-[0.95rem] bg-slate-100/90 px-4 py-3 text-[13px] text-slate-600">
-            <travelModeMeta.icon className="h-4 w-4 text-slate-500" />
+            {TravelModeIcon ? <TravelModeIcon className="h-4 w-4 text-slate-500" /> : null}
             <span>{travelModeMeta.label}</span>
           </div>
         ) : null}
@@ -2968,7 +2969,7 @@ function DetailModal({
             >
               {dayOptions.map((day) => (
                 <option key={day.id} value={day.id}>
-                  {day.label}
+                  {formatDayDate(day.date)}
                 </option>
               ))}
             </select>
@@ -3186,6 +3187,7 @@ function PlannerPanel({
     () => buildTimelineEntries(filteredItems),
     [filteredItems],
   )
+  const WeatherIcon = weatherDisplay?.icon
   const draftScheduleConflict = useMemo(() => {
     if (!effectiveDraftDayId) return null
     const existingItems = dayMap[effectiveDraftDayId]?.items || []
@@ -3306,7 +3308,7 @@ function PlannerPanel({
         <div className="sticky top-4 z-20 browse-ui">
           <div className="glass-panel flex items-center gap-3 rounded-[0.95rem] px-3 py-2.5">
             <div className="rounded-xl bg-white p-2 text-slate-700">
-              <weatherDisplay.icon className="h-4 w-4" />
+              {WeatherIcon ? <WeatherIcon className="h-4 w-4" /> : null}
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12px] font-semibold text-slate-900">
@@ -3710,7 +3712,7 @@ function PlannerPanel({
                 >
                   {dayOptions.map((day) => (
                     <option key={day.id} value={day.id}>
-                      {day.label}
+                      {formatDayDate(day.date)}
                     </option>
                   ))}
                 </select>
