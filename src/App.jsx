@@ -2281,8 +2281,8 @@ function BottomDayNav({
   overbookingCountsByDay = {},
 }) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 px-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] sm:px-4">
-      <div className="mx-auto flex max-w-5xl items-center gap-1 rounded-[1rem] border border-white/80 bg-[rgba(255,253,249,0.98)] p-1 shadow-[0_-10px_24px_rgba(15,23,42,0.075)]">
+    <div className="fixed inset-x-0 bottom-0 z-30 px-2.5 pb-[max(0.65rem,env(safe-area-inset-bottom))] sm:px-4">
+      <div className="mx-auto flex max-w-5xl items-center gap-1 rounded-[1.1rem] border border-white/80 bg-[rgba(255,253,249,0.98)] p-1.5 shadow-[0_-10px_24px_rgba(15,23,42,0.075)]">
         <button
           type="button"
           onClick={() => onDayChange(DAY_VIEW_ALL)}
@@ -3418,7 +3418,7 @@ function PlannerPanel({
                 />
               ) : null}
               <article
-                className={`timeline-card ${meta.card} relative rounded-[1.08rem] px-3 py-3 transition hover:bg-white active:bg-white sm:px-5 sm:py-4 ${
+                className={`timeline-card ${meta.card} relative rounded-[1.15rem] px-3.5 py-3.5 transition hover:bg-white active:bg-white sm:px-5 sm:py-4 ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
                 }`}
                 role="button"
@@ -3693,7 +3693,7 @@ function PlannerPanel({
         ) : null}
       </div>
 
-      <div className="glass-panel rounded-[1.08rem] px-3 py-3 sm:px-5 sm:py-4 browse-ui">
+      <div className="glass-panel rounded-[1.15rem] px-3.5 py-3.5 sm:px-5 sm:py-4 browse-ui">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h3 className="headline text-[1.18rem] leading-none text-slate-950 sm:text-[1.35rem]">Add stop</h3>
@@ -3910,7 +3910,7 @@ function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, map
 
   return (
     <div className="browse-ui">
-      <div className="glass-panel rounded-[1.08rem] px-4 py-4 sm:px-5">
+      <div className="glass-panel rounded-[1.15rem] px-3.5 py-3.5 sm:px-5 sm:py-4">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="headline text-[1.35rem] leading-none text-slate-950">Map</h2>
@@ -3921,8 +3921,8 @@ function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, map
         </div>
 
         <div
-          className={`mt-4 overflow-hidden rounded-[0.95rem] border border-slate-200/80 bg-slate-100 ${
-            isMobilePortrait ? 'h-[260px]' : 'h-[320px]'
+          className={`mt-3.5 overflow-hidden rounded-[1rem] border border-slate-200/80 bg-slate-100 sm:mt-4 ${
+            isMobilePortrait ? 'h-[240px]' : 'h-[320px]'
           }`}
         >
           {mapsReady ? (
@@ -5034,7 +5034,7 @@ export default function App() {
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl overflow-x-clip px-2.5 py-3 pb-20 pt-11 text-slate-900 sm:px-6 sm:py-5 sm:pb-24 sm:pt-16 lg:px-8">
+    <main className="mx-auto min-h-screen max-w-7xl overflow-x-clip px-3 py-3.5 pb-24 pt-14 text-slate-900 sm:px-6 sm:py-5 sm:pb-24 sm:pt-16 lg:px-8">
       <MenuButton onClick={() => setShowMenu(true)} />
       <AppDrawer
         activeTripSummary={activeTripSummary}
@@ -5092,11 +5092,11 @@ export default function App() {
       <section
         className={
           isMobilePortrait
-            ? 'mx-auto max-w-[28rem] space-y-2.5'
-            : 'grid gap-6 lg:grid-cols-[1.08fr_0.92fr]'
+            ? 'mx-auto max-w-[28rem] space-y-3'
+            : 'grid gap-7 lg:grid-cols-[minmax(0,1.06fr)_minmax(22rem,0.94fr)] xl:gap-8'
         }
       >
-        <div className={isMobilePortrait ? 'space-y-2.5' : 'space-y-4'}>
+        <div className={isMobilePortrait ? 'space-y-3' : 'space-y-4'}>
           <PlannerPanel
             activeDayId={resolvedActiveDayId}
             bookingOptions={tripState.bookingOptions}
@@ -5125,7 +5125,7 @@ export default function App() {
           />
         </div>
 
-        <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
+        <div className="space-y-3 lg:sticky lg:top-6 lg:self-start">
           <MemoMapPanel
             activeDayId={resolvedActiveDayId}
             filteredItems={deferredItems}
