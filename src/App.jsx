@@ -18,6 +18,7 @@ import {
   ChevronDown,
   Cloud,
   CloudRain,
+  Download,
   LogOut,
   Pencil,
   Footprints,
@@ -628,6 +629,173 @@ function buildDefaultTripSummary() {
     startDate: SEED_DAYS[0]?.date || '',
     endDate: SEED_DAYS[SEED_DAYS.length - 1]?.date || '',
   }
+}
+
+function pdfSafeText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim()
+}
+
+function exportFile(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function buildTripOverviewFilename(tripTitle) {
+  const safeTitle = pdfSafeText(tripTitle)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 42)
+  return `${safeTitle || 'trip-overview'}-overview.pdf`
+}
+
+async function createTripOverviewPdf({ days, items, tripSummary }) {
+  const { jsPDF } = await import('jspdf')
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+  const page = {
+    width: doc.internal.pageSize.getWidth(),
+    height: doc.internal.pageSize.getHeight(),
+    marginX: 44,
+    marginBottom: 48,
+  }
+  let y = 52
+
+  const ensureSpace = (height = 24) => {
+    if (y + height <= page.height - page.marginBottom) return
+    doc.addPage()
+    y = 48
+  }
+
+  const writeWrapped = (text, x, options = {}) => {
+    const {
+      color = [72, 84, 105],
+      lineHeight = 14,
+      maxWidth = page.width - x - page.marginX,
+      size = 9,
+      style = 'normal',
+    } = options
+    const cleanText = pdfSafeText(text)
+    if (!cleanText) return 0
+    doc.setFont('helvetica', style)
+    doc.setFontSize(size)
+    doc.setTextColor(...color)
+    const lines = doc.splitTextToSize(cleanText, maxWidth)
+    ensureSpace(lines.length * lineHeight)
+    doc.text(lines, x, y)
+    y += lines.length * lineHeight
+    return lines.length * lineHeight
+  }
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(24)
+  doc.setTextColor(15, 23, 42)
+  doc.text(pdfSafeText(tripSummary.title || 'Trip overview'), page.marginX, y)
+  y += 22
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  doc.setTextColor(100, 116, 139)
+  doc.text(formatTripDateRange(tripSummary.startDate, tripSummary.endDate), page.marginX, y)
+  y += 30
+
+  const itemsByDay = items.reduce((groups, item) => {
+    groups[item.dayId] = groups[item.dayId] || []
+    groups[item.dayId].push(item)
+    return groups
+  }, {})
+
+  days.forEach((day, dayIndex) => {
+    const dayItems = [...(itemsByDay[day.id] || [])].sort((a, b) => compareTime(a.startTime || '23:59', b.startTime || '23:59'))
+    ensureSpace(72)
+    doc.setDrawColor(226, 232, 240)
+    doc.line(page.marginX, y, page.width - page.marginX, y)
+    y += 22
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(13)
+    doc.setTextColor(15, 23, 42)
+    doc.text(`${day.label || `Day ${dayIndex + 1}`} - ${formatFullDayDate(day.date)}`, page.marginX, y)
+    y += 15
+
+    if (day.name) {
+      writeWrapped(day.name, page.marginX, { color: [100, 116, 139], size: 9, lineHeight: 12 })
+      y += 5
+    }
+
+    if (!dayItems.length) {
+      writeWrapped('No stops planned yet.', page.marginX, { color: [148, 163, 184], size: 9 })
+      y += 8
+      return
+    }
+
+    dayItems.forEach((item) => {
+      ensureSpace(62)
+      const timeLabel = item.endTime ? `${item.startTime || '--:--'}-${item.endTime}` : item.startTime || '--:--'
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(10)
+      doc.setTextColor(15, 23, 42)
+      doc.text(timeLabel, page.marginX, y)
+
+      const contentX = page.marginX + 82
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(10.5)
+      doc.setTextColor(15, 23, 42)
+      doc.text(pdfSafeText(item.title || 'Untitled stop'), contentX, y)
+      y += 14
+
+      const locationLine = [item.category, item.locationName || item.address].filter(Boolean).join(' · ')
+      writeWrapped(locationLine, contentX, { color: [100, 116, 139], size: 8.8, lineHeight: 12 })
+
+      if (item.description) {
+        writeWrapped(item.description, contentX, { color: [72, 84, 105], size: 8.8, lineHeight: 12 })
+      }
+
+      if (isMonitoredCancellationItem(item) && item.cancellationDeadline) {
+        writeWrapped(`Cancellation: ${itemStatusLabel(item.status)} · ${formatBookingDateTime(item.cancellationDeadline)}`, contentX, {
+          color: [190, 18, 60],
+          size: 8.6,
+          lineHeight: 12,
+          style: 'bold',
+        })
+      }
+
+      y += 8
+    })
+  })
+
+  const pageCount = doc.getNumberOfPages()
+  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+    doc.setPage(pageNumber)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    doc.setTextColor(148, 163, 184)
+    doc.text(`Generated from Trip Planner · Page ${pageNumber} of ${pageCount}`, page.marginX, page.height - 24)
+  }
+
+  return doc.output('blob')
+}
+
+async function shareTripOverviewPdf({ days, items, tripSummary }) {
+  const filename = buildTripOverviewFilename(tripSummary.title)
+  const blob = await createTripOverviewPdf({ days, items, tripSummary })
+  const file = new File([blob], filename, { type: 'application/pdf' })
+
+  if (navigator.canShare?.({ files: [file] })) {
+    await navigator.share({
+      files: [file],
+      title: `${tripSummary.title || 'Trip'} overview`,
+      text: 'Trip overview PDF',
+    })
+    return
+  }
+
+  exportFile(blob, filename)
 }
 
 function formatTripDateRange(startDate, endDate) {
@@ -1685,6 +1853,7 @@ function AppDrawer({
   onClose,
   onCreateTrip,
   onDeleteTrip,
+  onExportOverview,
   onOpenDeadlines,
   onRenameTrip,
   onRestoreTrip,
@@ -1692,6 +1861,7 @@ function AppDrawer({
   onShare,
   onSignOut,
   open,
+  pdfExporting,
   urgentDeadlineCount,
 }) {
   return (
@@ -1735,21 +1905,39 @@ function AppDrawer({
             tripSummaries={availableTrips}
           />
           {availableTrips.length ? (
-            <button
-              type="button"
-              onClick={onOpenDeadlines}
-              className="flex w-full items-center justify-between rounded-[0.95rem] border border-slate-200/70 bg-white/90 px-3.5 py-3 text-left text-slate-800 transition hover:bg-white"
-            >
-              <span>
-                <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                  Cancellation tracker
+            <>
+              <button
+                type="button"
+                onClick={onExportOverview}
+                disabled={pdfExporting}
+                className="flex w-full items-center justify-between rounded-[0.95rem] border border-slate-200/70 bg-white/90 px-3.5 py-3 text-left text-slate-800 transition hover:bg-white disabled:cursor-wait disabled:text-slate-400"
+              >
+                <span>
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                    Overview PDF
+                  </span>
+                  <span className="mt-1 block text-[13px] font-semibold">
+                    {pdfExporting ? 'Preparing export' : 'Export and share itinerary'}
+                  </span>
                 </span>
-                <span className="mt-1 block text-[13px] font-semibold">
-                  {urgentDeadlineCount ? `${urgentDeadlineCount} urgent` : 'Monitor hotel and restaurant'}
+                <Download className="h-4 w-4 text-slate-500" />
+              </button>
+              <button
+                type="button"
+                onClick={onOpenDeadlines}
+                className="flex w-full items-center justify-between rounded-[0.95rem] border border-slate-200/70 bg-white/90 px-3.5 py-3 text-left text-slate-800 transition hover:bg-white"
+              >
+                <span>
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                    Cancellation tracker
+                  </span>
+                  <span className="mt-1 block text-[13px] font-semibold">
+                    {urgentDeadlineCount ? `${urgentDeadlineCount} urgent` : 'Monitor hotel and restaurant'}
+                  </span>
                 </span>
-              </span>
-              <CalendarDays className="h-4 w-4 text-slate-500" />
-            </button>
+                <CalendarDays className="h-4 w-4 text-slate-500" />
+              </button>
+            </>
           ) : null}
         </div>
 
@@ -3450,6 +3638,7 @@ export default function App() {
   const [showCollaborators, setShowCollaborators] = useState(false)
   const [showDeadlines, setShowDeadlines] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
+  const [pdfExporting, setPdfExporting] = useState(false)
   const [dragState, setDragState] = useState(null)
   const [tripMembers, setTripMembers] = useState([])
 
@@ -4471,6 +4660,26 @@ export default function App() {
     if (shouldHandleTap) onTap?.()
   }
 
+  const handleExportOverviewPdf = async () => {
+    if (pdfExporting) return
+    setPdfExporting(true)
+    try {
+      await shareTripOverviewPdf({
+        days: visibleDays,
+        items: tripState.items,
+        tripSummary: activeTripSummary,
+      })
+      setShowMenu(false)
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        console.error('PDF export failed', error)
+        window.alert('Could not export the overview PDF. Please try again.')
+      }
+    } finally {
+      setPdfExporting(false)
+    }
+  }
+
   if (authReady && !currentUser) {
     return <SignInScreen configured={firebaseEnabled} error={authError} onSignIn={handleSignIn} />
   }
@@ -4500,6 +4709,7 @@ export default function App() {
         onClose={() => setShowMenu(false)}
         onCreateTrip={() => void createTrip()}
         onDeleteTrip={() => void deleteTrip()}
+        onExportOverview={() => void handleExportOverviewPdf()}
         onOpenDeadlines={() => {
           setShowMenu(false)
           setShowDeadlines(true)
@@ -4519,6 +4729,7 @@ export default function App() {
           void handleSignOut()
         }}
         open={showMenu}
+        pdfExporting={pdfExporting}
         urgentDeadlineCount={urgentDeadlineCount}
       />
       {!availableTrips.length ? (
