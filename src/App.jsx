@@ -763,7 +763,7 @@ function exportItemsForDay(items, dayId) {
   return buildTimelineEntries(dayItems).map((entry) => entry.item)
 }
 
-async function CREATE_TRIP_OVERVIEW_PDF_LEGACY({ days, items, tripSummary }) {
+async function createTripOverviewPdf({ days, items, tripSummary }) {
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const page = {
@@ -812,14 +812,8 @@ async function CREATE_TRIP_OVERVIEW_PDF_LEGACY({ days, items, tripSummary }) {
   doc.text(formatTripDateRange(tripSummary.startDate, tripSummary.endDate), page.marginX, y)
   y += 30
 
-  const itemsByDay = items.reduce((groups, item) => {
-    groups[item.dayId] = groups[item.dayId] || []
-    groups[item.dayId].push(item)
-    return groups
-  }, {})
-
   days.forEach((day, dayIndex) => {
-    const dayItems = [...(itemsByDay[day.id] || [])].sort((a, b) => compareTime(a.startTime || '23:59', b.startTime || '23:59'))
+    const dayItems = exportItemsForDay(items, day.id)
     ensureSpace(72)
     doc.setDrawColor(226, 232, 240)
     doc.line(page.marginX, y, page.width - page.marginX, y)
@@ -828,7 +822,7 @@ async function CREATE_TRIP_OVERVIEW_PDF_LEGACY({ days, items, tripSummary }) {
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(13)
     doc.setTextColor(15, 23, 42)
-    doc.text(`${day.label || `Day ${dayIndex + 1}`} - ${formatFullDayDate(day.date)}`, page.marginX, y)
+    doc.text(pdfSafeText(`${day.label || `Day ${dayIndex + 1}`} - ${formatFullDayDate(day.date)}`), page.marginX, y)
     y += 15
 
     if (day.name) {
@@ -860,6 +854,11 @@ async function CREATE_TRIP_OVERVIEW_PDF_LEGACY({ days, items, tripSummary }) {
       const locationLine = [item.category, item.locationName || item.address].filter(Boolean).join(' · ')
       writeWrapped(locationLine, contentX, { color: [100, 116, 139], size: 8.8, lineHeight: 12 })
 
+      const transitLine = buildTransitSummary(item)
+      if (transitLine) {
+        writeWrapped(transitLine, contentX, { color: [100, 116, 139], size: 8.8, lineHeight: 12 })
+      }
+
       if (item.description) {
         writeWrapped(item.description, contentX, { color: [72, 84, 105], size: 8.8, lineHeight: 12 })
       }
@@ -889,9 +888,9 @@ async function CREATE_TRIP_OVERVIEW_PDF_LEGACY({ days, items, tripSummary }) {
   return doc.output('blob')
 }
 
-async function createTripOverviewPdf({ days, items, tripSummary }) {
+async function CREATE_TRIP_OVERVIEW_PDF_IMAGE_LEGACY({ days, items, tripSummary }) {
   const { jsPDF } = await import('jspdf')
-  const html2canvas = (await import('html2canvas')).default
+  const html2canvas = null
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
