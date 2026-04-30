@@ -735,6 +735,44 @@ function escapeHtml(value) {
     .replace(/'/g, '&#039;')
 }
 
+const PDF_CJK_FONT_NAME = 'NotoSansJP'
+const PDF_CJK_FONT_FILE = 'NotoSansJP.ttf'
+let pdfCjkFontDataPromise = null
+
+function arrayBufferToBinaryString(buffer) {
+  const bytes = new Uint8Array(buffer)
+  const chunkSize = 0x8000
+  let binary = ''
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize))
+  }
+
+  return binary
+}
+
+async function registerPdfCjkFont(doc) {
+  try {
+    if (!pdfCjkFontDataPromise) {
+      pdfCjkFontDataPromise = fetch('/fonts/NotoSansJP.ttf')
+        .then((response) => {
+          if (!response.ok) throw new Error(`Font download failed: ${response.status}`)
+          return response.arrayBuffer()
+        })
+        .then(arrayBufferToBinaryString)
+    }
+
+    const fontData = await pdfCjkFontDataPromise
+    doc.addFileToVFS(PDF_CJK_FONT_FILE, fontData)
+    doc.addFont(PDF_CJK_FONT_FILE, PDF_CJK_FONT_NAME, 'normal')
+    doc.addFont(PDF_CJK_FONT_FILE, PDF_CJK_FONT_NAME, 'bold')
+    return PDF_CJK_FONT_NAME
+  } catch (error) {
+    console.warn('CJK PDF font could not be loaded; falling back to built-in PDF font.', error)
+    return 'helvetica'
+  }
+}
+
 function exportFile(blob, filename) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -766,6 +804,7 @@ function exportItemsForDay(items, dayId) {
 async function createTripOverviewPdf({ days, items, tripSummary }) {
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+  const pdfFont = await registerPdfCjkFont(doc)
   const page = {
     width: doc.internal.pageSize.getWidth(),
     height: doc.internal.pageSize.getHeight(),
@@ -790,7 +829,7 @@ async function createTripOverviewPdf({ days, items, tripSummary }) {
     } = options
     const cleanText = pdfSafeText(text)
     if (!cleanText) return 0
-    doc.setFont('helvetica', style)
+    doc.setFont(pdfFont, style)
     doc.setFontSize(size)
     doc.setTextColor(...color)
     const lines = doc.splitTextToSize(cleanText, maxWidth)
@@ -800,13 +839,13 @@ async function createTripOverviewPdf({ days, items, tripSummary }) {
     return lines.length * lineHeight
   }
 
-  doc.setFont('helvetica', 'bold')
+  doc.setFont(pdfFont, 'bold')
   doc.setFontSize(24)
   doc.setTextColor(15, 23, 42)
   doc.text(pdfSafeText(tripSummary.title || 'Trip overview'), page.marginX, y)
   y += 22
 
-  doc.setFont('helvetica', 'normal')
+  doc.setFont(pdfFont, 'normal')
   doc.setFontSize(10)
   doc.setTextColor(100, 116, 139)
   doc.text(formatTripDateRange(tripSummary.startDate, tripSummary.endDate), page.marginX, y)
@@ -819,7 +858,7 @@ async function createTripOverviewPdf({ days, items, tripSummary }) {
     doc.line(page.marginX, y, page.width - page.marginX, y)
     y += 22
 
-    doc.setFont('helvetica', 'bold')
+    doc.setFont(pdfFont, 'bold')
     doc.setFontSize(13)
     doc.setTextColor(15, 23, 42)
     doc.text(pdfSafeText(`${day.label || `Day ${dayIndex + 1}`} - ${formatFullDayDate(day.date)}`), page.marginX, y)
@@ -839,13 +878,13 @@ async function createTripOverviewPdf({ days, items, tripSummary }) {
     dayItems.forEach((item) => {
       ensureSpace(62)
       const timeLabel = item.endTime ? `${item.startTime || '--:--'}-${item.endTime}` : item.startTime || '--:--'
-      doc.setFont('helvetica', 'bold')
+      doc.setFont(pdfFont, 'bold')
       doc.setFontSize(10)
       doc.setTextColor(15, 23, 42)
       doc.text(timeLabel, page.marginX, y)
 
       const contentX = page.marginX + 82
-      doc.setFont('helvetica', 'bold')
+      doc.setFont(pdfFont, 'bold')
       doc.setFontSize(10.5)
       doc.setTextColor(15, 23, 42)
       doc.text(pdfSafeText(item.title || 'Untitled stop'), contentX, y)
@@ -879,7 +918,7 @@ async function createTripOverviewPdf({ days, items, tripSummary }) {
   const pageCount = doc.getNumberOfPages()
   for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
     doc.setPage(pageNumber)
-    doc.setFont('helvetica', 'normal')
+    doc.setFont(pdfFont, 'normal')
     doc.setFontSize(8)
     doc.setTextColor(148, 163, 184)
     doc.text(`Generated from Trip Planner · Page ${pageNumber} of ${pageCount}`, page.marginX, page.height - 24)
