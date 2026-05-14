@@ -3,6 +3,7 @@ import React, {
   lazy,
   memo,
   startTransition,
+  useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
@@ -118,6 +119,14 @@ const DURATION_PRESETS = [
   { label: '2h', value: 120 },
   { label: '3h', value: 180 },
 ]
+const TEMPORARILY_DISABLE_GOOGLE_AUTH = true
+const TEMPORARY_USER = {
+  uid: 'temporary-local-user',
+  displayName: 'Temporary user',
+  email: '',
+  photoURL: '',
+}
+const LOCAL_TRIP_OVERRIDES_KEY = 'trip-planner-temporary-overrides'
 
 function canViewTrip(role) {
   return ['owner', 'editor', 'viewer'].includes(role)
@@ -717,8 +726,35 @@ function buildDefaultTripSummary() {
   return {
     id: TRIP_ID,
     title: DEFAULT_TRIP_TITLE,
+    role: 'owner',
+    hidden: false,
     startDate: SEED_DAYS[0]?.date || '',
     endDate: SEED_DAYS[SEED_DAYS.length - 1]?.date || '',
+  }
+}
+
+function readLocalTripOverrides() {
+  if (!TEMPORARILY_DISABLE_GOOGLE_AUTH || typeof window === 'undefined') {
+    return { days: {}, items: {}, bookingOptions: {} }
+  }
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(LOCAL_TRIP_OVERRIDES_KEY) || '')
+    return {
+      days: parsed?.days || {},
+      items: parsed?.items || {},
+      bookingOptions: parsed?.bookingOptions || {},
+    }
+  } catch {
+    return { days: {}, items: {}, bookingOptions: {} }
+  }
+}
+
+function mergeTripOverrides(current, patch) {
+  return {
+    days: { ...(current.days || {}), ...(patch.days || {}) },
+    items: { ...(current.items || {}), ...(patch.items || {}) },
+    bookingOptions: { ...(current.bookingOptions || {}), ...(patch.bookingOptions || {}) },
   }
 }
 
@@ -4114,16 +4150,20 @@ export default function App() {
     if (typeof window === 'undefined') return TRIP_ID
     return window.localStorage.getItem(ACTIVE_TRIP_STORAGE_KEY) || TRIP_ID
   })
-  const [overrides, setOverrides] = useState({ days: {}, items: {}, bookingOptions: {} })
-  const [tripSummaries, setTripSummaries] = useState([])
+  const [overrides, setOverrides] = useState(readLocalTripOverrides)
+  const [tripSummaries, setTripSummaries] = useState(() =>
+    TEMPORARILY_DISABLE_GOOGLE_AUTH ? [buildDefaultTripSummary()] : [],
+  )
   const [tripDirectoryLoaded, setTripDirectoryLoaded] = useState(false)
-  const [currentUser, setCurrentUser] = useState(null)
+  const [currentUser, setCurrentUser] = useState(() =>
+    TEMPORARILY_DISABLE_GOOGLE_AUTH ? TEMPORARY_USER : null,
+  )
   const [userProfile, setUserProfile] = useState(null)
-  const [userProfileLoaded, setUserProfileLoaded] = useState(false)
-  const [authReady, setAuthReady] = useState(false)
+  const [userProfileLoaded, setUserProfileLoaded] = useState(TEMPORARILY_DISABLE_GOOGLE_AUTH)
+  const [authReady, setAuthReady] = useState(TEMPORARILY_DISABLE_GOOGLE_AUTH)
   const [authError, setAuthError] = useState('')
   const [firestoreState, setFirestoreState] = useState({
-    status: firebaseEnabled ? 'connecting' : 'disabled',
+    status: TEMPORARILY_DISABLE_GOOGLE_AUTH ? 'ready' : firebaseEnabled ? 'connecting' : 'disabled',
     error: '',
   })
   const [weatherState, setWeatherState] = useState({
@@ -4234,7 +4274,9 @@ export default function App() {
         loading: weatherState.targetKey !== weatherTargetKey,
       }
     : { loading: false, data: null, error: '' }
-  const firestoreReady = firebaseEnabled && authReady && Boolean(currentUser) && firestoreState.status === 'ready'
+  const firestoreReady =
+    TEMPORARILY_DISABLE_GOOGLE_AUTH ||
+    (firebaseEnabled && authReady && Boolean(currentUser) && firestoreState.status === 'ready')
   const detailItemId = detailItem?.id || ''
   const detailCategory = detailItem?.category || ''
   const detailAppliedLookupKey = detailItem?.flightInfo?.lookupKey || ''
@@ -4287,9 +4329,19 @@ export default function App() {
         }
 
         return record
-      },
+    },
     [],
   )
+
+  const saveTripPatch = useCallback(async (tripId, patch) => {
+    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
+      setOverrides((current) => mergeTripOverrides(current, patch))
+      setFirestoreState({ status: 'ready', error: '' })
+      return
+    }
+
+    await mergeTripPatch(tripId, patch)
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -4297,6 +4349,11 @@ export default function App() {
       window.localStorage.setItem(ACTIVE_TRIP_STORAGE_KEY, resolvedTripId)
     }
   }, [resolvedTripId])
+
+  useEffect(() => {
+    if (!TEMPORARILY_DISABLE_GOOGLE_AUTH || typeof window === 'undefined') return
+    window.localStorage.setItem(LOCAL_TRIP_OVERRIDES_KEY, JSON.stringify(overrides))
+  }, [overrides])
 
   useEffect(() => {
     dragStateRef.current = dragState
@@ -4312,6 +4369,22 @@ export default function App() {
 
   useEffect(() => {
     let active = true
+
+    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
+      queueMicrotask(() => {
+        if (!active) return
+        setCurrentUser(TEMPORARY_USER)
+        setAuthReady(true)
+        setAuthError('')
+        setTripSummaries((current) => (current.length ? current : [buildDefaultTripSummary()]))
+        setTripDirectoryLoaded(true)
+        setUserProfileLoaded(true)
+        setFirestoreState({ status: 'ready', error: '' })
+      })
+      return () => {
+        active = false
+      }
+    }
 
     if (!firebaseEnabled) {
       queueMicrotask(() => {
@@ -4368,6 +4441,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) return undefined
     if (!authReady || !firebaseEnabled || !currentUser?.uid) return undefined
 
     let active = true
@@ -4400,6 +4474,7 @@ export default function App() {
   }, [authReady, currentUser?.uid])
 
   useEffect(() => {
+    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) return undefined
     if (!authReady || !firebaseEnabled || !currentUser?.uid) return undefined
 
     let active = true
@@ -4432,6 +4507,7 @@ export default function App() {
   }, [authReady, currentUser?.uid])
 
   useEffect(() => {
+    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) return undefined
     if (!authReady || !firebaseEnabled || !currentUser?.uid) return undefined
     if (!tripDirectoryLoaded || !userProfileLoaded) return undefined
     if (tripSummaries.length > 0 || userProfile?.onboardingDemoCreated === true) return undefined
@@ -4474,6 +4550,7 @@ export default function App() {
   ])
 
   useEffect(() => {
+    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) return undefined
     if (!authReady || !firebaseEnabled || !currentUser?.uid || !resolvedTripId) return undefined
 
     let active = true
@@ -4598,6 +4675,11 @@ export default function App() {
   ])
 
   useEffect(() => {
+    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
+      queueMicrotask(() => setTripMembers([]))
+      return undefined
+    }
+
     if (!firebaseEnabled || !authReady || !resolvedTripId || !canViewTrip(activeRole)) {
       queueMicrotask(() => setTripMembers([]))
       return undefined
@@ -4769,7 +4851,7 @@ export default function App() {
       const patchItems = reorderTripItems(tripState, currentDrag.itemId, dropSlot.dayId, dropSlot.index)
       if (!patchItems.length) return
 
-      await mergeTripPatch(
+      await saveTripPatch(
         resolvedTripId,
         {
           items: Object.fromEntries(patchItems.map((item) => [item.id, item])),
@@ -4794,7 +4876,7 @@ export default function App() {
       window.removeEventListener('pointercancel', clearDragState)
       window.removeEventListener('touchmove', preventTouchMove)
     }
-  }, [dragState?.itemId, resolvedActiveDayId, resolvedTripId, tripState])
+  }, [dragState?.itemId, resolvedActiveDayId, resolvedTripId, saveTripPatch, tripState])
 
   useEffect(() => {
     let cancelled = false
@@ -4857,6 +4939,13 @@ export default function App() {
   )
 
   async function handleSignIn() {
+    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
+      setAuthError('')
+      setCurrentUser(TEMPORARY_USER)
+      setAuthReady(true)
+      return
+    }
+
     try {
       setAuthError('')
       await signInWithGoogle()
@@ -4867,6 +4956,12 @@ export default function App() {
   }
 
   async function handleSignOut() {
+    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
+      setShowCollaborators(false)
+      setShowMenu(false)
+      return
+    }
+
     try {
       await signOutUser()
       setShowCollaborators(false)
@@ -4887,10 +4982,15 @@ export default function App() {
     const patchItems = Object.fromEntries(
       mergeItemsForDay(manualItems, normalizedItem).map((entry) => [entry.id, entry]),
     )
-    await mergeTripPatch(resolvedTripId, { items: patchItems })
+    await saveTripPatch(resolvedTripId, { items: patchItems })
   }
 
   async function createTrip() {
+    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
+      window.alert('Google auth is temporarily disabled. New trips are unavailable in local mode.')
+      return
+    }
+
     if (!firebaseEnabled || !authReady || !currentUser?.uid) return
 
     const nextIndex = availableTrips.length + 1
@@ -4943,6 +5043,13 @@ export default function App() {
     const nextTitle = window.prompt('Rename trip', currentTitle)?.trim()
     if (!nextTitle || nextTitle === currentTitle) return
 
+    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
+      setTripSummaries((current) =>
+        current.map((trip) => (trip.id === resolvedTripId ? { ...trip, title: nextTitle } : trip)),
+      )
+      return
+    }
+
     await upsertTripMeta(resolvedTripId, {
       title: nextTitle,
       startDate: tripState.days[0]?.date || activeTripSummary.startDate || '',
@@ -4985,7 +5092,7 @@ export default function App() {
         return
       }
     }
-    await mergeTripPatch(resolvedTripId, { days: { [dayId]: changes } })
+    await saveTripPatch(resolvedTripId, { days: { [dayId]: changes } })
   }
 
   async function addDay(draft) {
@@ -4996,7 +5103,7 @@ export default function App() {
     }
 
     const id = slugId('day')
-    await mergeTripPatch(resolvedTripId, {
+    await saveTripPatch(resolvedTripId, {
       days: {
         [id]: {
           id,
@@ -5018,7 +5125,7 @@ export default function App() {
     const reordered = [...visibleDays]
     const [day] = reordered.splice(index, 1)
     reordered.splice(targetIndex, 0, day)
-    await mergeTripPatch(resolvedTripId, {
+    await saveTripPatch(resolvedTripId, {
       days: Object.fromEntries(
         renumberDays(reordered).map((entry) => [entry.id, { order: entry.order }]),
       ),
@@ -5032,7 +5139,7 @@ export default function App() {
     if (!window.confirm(`Delete ${day.label}? This will delete every item under that day.`)) return
 
     const remaining = visibleDays.filter((entry) => entry.id !== dayId)
-    await mergeTripPatch(resolvedTripId, {
+    await saveTripPatch(resolvedTripId, {
       days: {
         [dayId]: { hidden: true },
         ...Object.fromEntries(
@@ -5055,7 +5162,7 @@ export default function App() {
 
   async function deleteItem(itemId) {
     if (!canEditCurrentTrip) return
-    await mergeTripPatch(resolvedTripId, {
+    await saveTripPatch(resolvedTripId, {
       items: { [itemId]: { hidden: true } },
       bookingOptions: Object.fromEntries(
         tripState.bookingOptions
@@ -5073,7 +5180,7 @@ export default function App() {
     if (!targetItem) return
 
     if (targetItem.generated) {
-      await mergeTripPatch(resolvedTripId, {
+      await saveTripPatch(resolvedTripId, {
         items: {
           [targetItem.id]: {
             ...generatedItemPatch(targetItem),
@@ -5110,7 +5217,7 @@ export default function App() {
     const nextItem = normalizeTransitForItem(normalizeItemTimeFields(detailItem))
 
     if (nextItem.generated) {
-      await mergeTripPatch(resolvedTripId, {
+      await saveTripPatch(resolvedTripId, {
         items: {
           [nextItem.id]: generatedItemPatch(nextItem),
         },
@@ -5124,6 +5231,10 @@ export default function App() {
 
   async function addCollaborator(email, role) {
     if (!canManageCurrentTrip || !currentUser?.uid) return
+    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
+      window.alert('Sharing is unavailable while Google auth is temporarily disabled.')
+      return
+    }
 
     const match = await lookupUserByEmail(email)
     if (!match) {
@@ -5312,7 +5423,7 @@ export default function App() {
         activeTripSummary={activeTripSummary}
         availableTrips={availableTrips}
         canManageCurrentTrip={canManageCurrentTrip}
-        canShare={canViewTrip(activeRole)}
+        canShare={!TEMPORARILY_DISABLE_GOOGLE_AUTH && canViewTrip(activeRole)}
         currentUser={currentUser}
         deletedTrips={deletedTrips}
         disabled={!currentUser?.uid}
@@ -5362,7 +5473,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => void createTrip()}
-            disabled={!firebaseEnabled || !authReady || !currentUser?.uid}
+            disabled={TEMPORARILY_DISABLE_GOOGLE_AUTH || !firebaseEnabled || !authReady || !currentUser?.uid}
             className="mt-4 rounded-[0.9rem] bg-slate-950 px-4 py-3 text-sm font-bold text-white shadow-[0_10px_22px_rgba(15,23,42,0.10)] transition hover:bg-slate-800 disabled:bg-slate-300"
           >
             Create trip
