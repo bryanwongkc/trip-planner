@@ -19,6 +19,7 @@ import {
   ChevronDown,
   Cloud,
   CloudRain,
+  Copy,
   Download,
   LogOut,
   Pencil,
@@ -33,8 +34,8 @@ import {
   Trash2,
   Users,
   X,
+  ArrowUpDown,
   CarFront,
-  GripVertical,
   TrainFront,
 } from 'lucide-react'
 import {
@@ -575,6 +576,17 @@ function sortedCancellationEntries(items, bookingOptions = []) {
 function routeLabel(mode) {
   if (mode === 'transit') return 'Transit'
   return mode === 'walking' ? 'Walk' : 'Drive'
+}
+
+function routeIconForMode(mode) {
+  if (mode === 'walking') return Footprints
+  if (mode === 'transit') return TrainFront
+  return CarFront
+}
+
+function routeDurationText(segment) {
+  if (!segment?.route) return 'Loading'
+  return `${segment.route.estimated ? '~' : ''}${Math.round(segment.route.durationMin)} min`
 }
 
 function getGoogleMapsUrl(item) {
@@ -1149,6 +1161,90 @@ function buildBlankTripSnapshot(date = localTodayIso()) {
     },
     items: Object.fromEntries(SEED_ITEMS.map((item) => [item.id, { ...item, hidden: true }])),
     bookingOptions: {},
+  }
+}
+
+function deriveItemTitle(item) {
+  const fallback = item.locationName || item.description || item.address || item.category || 'Untitled stop'
+  return (item.title || '').trim() || fallback.trim?.() || 'Untitled stop'
+}
+
+function normalizeItemForSave(item) {
+  return {
+    ...item,
+    title: deriveItemTitle(item),
+  }
+}
+
+function buildClonedTripSnapshot(tripState) {
+  const dayIdMap = Object.fromEntries(tripState.days.map((day) => [day.id, slugId('day')]))
+  const itemIdMap = Object.fromEntries(
+    tripState.items
+      .filter((item) => !item.generated && !item.hidden)
+      .map((item) => [item.id, slugId('item')]),
+  )
+
+  const days = {
+    ...Object.fromEntries(SEED_DAYS.map((day) => [day.id, { ...day, hidden: true }])),
+    ...Object.fromEntries(
+      tripState.days.map((day, index) => {
+        const id = dayIdMap[day.id]
+        return [
+          id,
+          {
+            id,
+            date: day.date,
+            name: day.name || '',
+            order: index,
+          },
+        ]
+      }),
+    ),
+  }
+
+  const items = {
+    ...Object.fromEntries(SEED_ITEMS.map((item) => [item.id, { ...item, hidden: true }])),
+    ...Object.fromEntries(
+      tripState.items
+        .filter((item) => !item.generated && !item.hidden && itemIdMap[item.id])
+        .map((item) => {
+          const id = itemIdMap[item.id]
+          return [
+            id,
+            normalizeItemForSave({
+              ...item,
+              id,
+              dayId: dayIdMap[item.dayId] || item.dayId,
+              sourceItemId: item.sourceItemId ? itemIdMap[item.sourceItemId] || item.sourceItemId : undefined,
+            }),
+          ]
+        }),
+    ),
+  }
+
+  const bookingOptions = Object.fromEntries(
+    tripState.bookingOptions
+      .filter((booking) => !booking.hidden)
+      .map((booking) => {
+        const id = slugId('booking')
+        return [
+          id,
+          {
+            ...booking,
+            id,
+            linkedItemId: itemIdMap[booking.linkedItemId] || booking.linkedItemId || '',
+            dayId: dayIdMap[booking.dayId] || booking.dayId || '',
+          },
+        ]
+      }),
+  )
+
+  return {
+    startDate: tripState.days[0]?.date || '',
+    endDate: tripState.days[tripState.days.length - 1]?.date || '',
+    days,
+    items,
+    bookingOptions,
   }
 }
 
@@ -2031,6 +2127,7 @@ function TripSwitcher({
   deletedTrips,
   disabled,
   isMobilePortrait,
+  onCloneTrip,
   onCreateTrip,
   onDeleteTrip,
   onRenameTrip,
@@ -2071,6 +2168,11 @@ function TripSwitcher({
   async function handleCreateTrip() {
     setOpen(false)
     await onCreateTrip()
+  }
+
+  async function handleCloneTrip() {
+    setOpen(false)
+    await onCloneTrip()
   }
 
   return (
@@ -2159,7 +2261,7 @@ function TripSwitcher({
               })}
             </div>
             <div className="mt-1 border-t border-slate-200/70 pt-1">
-              <div className="grid grid-cols-2 gap-1 px-1 pb-1">
+              <div className="grid grid-cols-3 gap-1 px-1 pb-1">
                 <button
                   type="button"
                   onClick={() => void onRenameTrip()}
@@ -2168,6 +2270,15 @@ function TripSwitcher({
                 >
                   <Pencil className="h-3.5 w-3.5" />
                   Rename
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleCloneTrip()}
+                  disabled={disabled || !activeTrip || !canManageTrip}
+                  className="flex items-center justify-center gap-2 rounded-[0.78rem] px-3 py-2 text-[12px] font-semibold text-slate-600 transition hover:bg-white/80 disabled:text-slate-400"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  Clone
                 </button>
                 <button
                   type="button"
@@ -2282,6 +2393,7 @@ function AppDrawer({
   deletedTrips,
   disabled,
   isMobilePortrait,
+  onCloneTrip,
   onClose,
   onCreateTrip,
   onDeleteTrip,
@@ -2329,6 +2441,7 @@ function AppDrawer({
             deletedTrips={deletedTrips}
             disabled={disabled}
             isMobilePortrait={isMobilePortrait}
+            onCloneTrip={onCloneTrip}
             onCreateTrip={onCreateTrip}
             onDeleteTrip={onDeleteTrip}
             onRenameTrip={onRenameTrip}
@@ -2471,6 +2584,78 @@ function BottomDayNav({
   canEdit,
   overbookingCountsByDay = {},
 }) {
+  const dayPressRef = useRef({
+    timer: null,
+    dayId: '',
+    pointerId: null,
+    startX: 0,
+    startY: 0,
+    moved: false,
+    longPressed: false,
+  })
+
+  function clearDayPress() {
+    const state = dayPressRef.current
+    if (state.timer) window.clearTimeout(state.timer)
+    dayPressRef.current = {
+      timer: null,
+      dayId: '',
+      pointerId: null,
+      startX: 0,
+      startY: 0,
+      moved: false,
+      longPressed: false,
+    }
+  }
+
+  function startDayPress(event, dayId) {
+    if (!canEdit) return
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    clearDayPress()
+    dayPressRef.current = {
+      timer: window.setTimeout(() => {
+        const state = dayPressRef.current
+        if (!state.moved && state.dayId === dayId) {
+          dayPressRef.current.longPressed = true
+          onDayChange(dayId)
+          onManageDays(dayId)
+        }
+      }, LONG_PRESS_MS),
+      dayId,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+      longPressed: false,
+    }
+  }
+
+  function moveDayPress(event) {
+    const state = dayPressRef.current
+    if (state.pointerId !== event.pointerId) return
+    const movedX = Math.abs(event.clientX - state.startX)
+    const movedY = Math.abs(event.clientY - state.startY)
+    if (movedX > MOVE_THRESHOLD || movedY > MOVE_THRESHOLD) {
+      dayPressRef.current.moved = true
+      if (state.timer) {
+        window.clearTimeout(state.timer)
+        dayPressRef.current.timer = null
+      }
+    }
+  }
+
+  function handleDayClick(event, dayId) {
+    if (dayPressRef.current.longPressed) {
+      event.preventDefault()
+      clearDayPress()
+      return
+    }
+    clearDayPress()
+    onDayChange(dayId)
+  }
+
+  useEffect(() => clearDayPress, [])
+
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 px-2.5 pb-[max(0.65rem,env(safe-area-inset-bottom))] sm:px-4">
       <div className="mx-auto flex max-w-5xl items-center gap-1 rounded-[1.1rem] border border-white/80 bg-[rgba(255,253,249,0.98)] p-1.5 shadow-[0_-10px_24px_rgba(15,23,42,0.075)]">
@@ -2491,7 +2676,14 @@ function BottomDayNav({
                 key={day.id}
                 type="button"
                 data-day-drop-id={day.id}
-                onClick={() => onDayChange(day.id)}
+                onPointerDown={(event) => startDayPress(event, day.id)}
+                onPointerMove={moveDayPress}
+                onPointerUp={() => {
+                  if (!dayPressRef.current.longPressed) clearDayPress()
+                }}
+                onPointerCancel={clearDayPress}
+                onPointerLeave={clearDayPress}
+                onClick={(event) => handleDayClick(event, day.id)}
                 className={`relative shrink-0 whitespace-nowrap rounded-[0.8rem] px-2.5 py-2 text-[10px] font-bold uppercase tracking-[0.05em] transition ${
                   dragState?.overDayId === day.id
                     ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200'
@@ -2715,6 +2907,19 @@ function DayManagerModal({
     date: nextDayDate(days),
     name: '',
   })
+  const effectiveNewDay = {
+    ...newDay,
+    date: newDay.date && !days.some((day) => day.date === newDay.date) ? newDay.date : nextDayDate(days),
+  }
+
+  async function handleAddDay() {
+    const draft = { ...effectiveNewDay }
+    await onAddDay(draft)
+    setNewDay({
+      date: nextDayDate([...days, { id: '__new__', date: draft.date, order: days.length }]),
+      name: '',
+    })
+  }
 
   return (
     <div
@@ -2732,6 +2937,9 @@ function DayManagerModal({
             <h3 className="text-[1.7rem] font-bold tracking-[-0.02em] text-slate-900">Manage days</h3>
             <p className="mt-1 text-[13px] text-slate-600">
               Reorder, rename, edit dates, add, or delete trip days.
+            </p>
+            <p className="mt-2 max-w-md text-[12px] leading-5 text-slate-500">
+              Long-pressing a day tab opens this reorder view. Move travel days with the arrows, then keep dates in trip order.
             </p>
           </div>
           <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
@@ -2804,7 +3012,7 @@ function DayManagerModal({
             <Field label="Date">
               <input
                 type="date"
-                value={newDay.date}
+                value={effectiveNewDay.date}
                 onChange={(event) => setNewDay((current) => ({ ...current, date: event.target.value }))}
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
               />
@@ -2819,7 +3027,7 @@ function DayManagerModal({
             </Field>
             <button
               type="button"
-              onClick={() => onAddDay(newDay)}
+              onClick={() => void handleAddDay()}
               disabled={!firestoreReady || !canEdit}
               className="rounded-[1.2rem] bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:bg-slate-300"
             >
@@ -2832,9 +3040,19 @@ function DayManagerModal({
   )
 }
 
-function NoteModal({ canEdit, item, isMobilePortrait, onClose, onDelete, onOpenDetails }) {
+function NoteModal({
+  canEdit,
+  item,
+  isMobilePortrait,
+  onAddSubstitute,
+  onClose,
+  onDelete,
+  onDuplicate,
+  onOpenDetails,
+}) {
   const mapsUrl = item.category === 'Flight' ? '' : getGoogleMapsUrl(item)
   const locationSummary = itemLocationSummary(item)
+  const canAddSubstitute = canEdit && !item.generated && isStackableStayOrMeal(item)
 
   return (
     <div
@@ -2870,7 +3088,19 @@ function NoteModal({ canEdit, item, isMobilePortrait, onClose, onDelete, onOpenD
 
         <div className="mt-3.5 space-y-2">
           <div className="rounded-[1rem] bg-white px-4 py-3.5">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Notes</div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Notes</div>
+              {canEdit ? (
+                <button
+                  type="button"
+                  onClick={onOpenDetails}
+                  className="rounded-full bg-slate-100 p-2 text-slate-600 transition hover:bg-slate-200"
+                  aria-label="Edit notes"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
             <div className="mt-2 whitespace-pre-wrap text-[13px] leading-6 text-slate-700">
               {item.generated
                 ? 'This hotel stop stays linked to the previous day hotel. You can still adjust time, notes, and booking details here.'
@@ -2901,6 +3131,26 @@ function NoteModal({ canEdit, item, isMobilePortrait, onClose, onDelete, onOpenD
         </div>
 
         <div className="mt-4 space-y-2">
+          {canAddSubstitute ? (
+            <button
+              type="button"
+              onClick={() => void onAddSubstitute()}
+              className="flex w-full items-center justify-between rounded-[0.95rem] bg-white px-4 py-3.5 text-left text-sm font-semibold text-slate-800"
+            >
+              <span>Add substitute item</span>
+              <Plus className="h-4 w-4" />
+            </button>
+          ) : null}
+          {canEdit && !item.generated ? (
+            <button
+              type="button"
+              onClick={() => void onDuplicate()}
+              className="flex w-full items-center justify-between rounded-[0.95rem] bg-white px-4 py-3.5 text-left text-sm font-semibold text-slate-800"
+            >
+              <span>Duplicate item</span>
+              <Copy className="h-4 w-4" />
+            </button>
+          ) : null}
           {canEdit ? (
             <button
               type="button"
@@ -3584,10 +3834,16 @@ function PlannerPanel({
             Boolean(dragState && isManual) &&
             (!nextItem || nextItem.dayId !== item.dayId || nextItem.generated)
           const isDraggingItem = dragState?.itemId === item.id
+          const RouteIcon = nextSegment ? routeIconForMode(nextSegment.mode) : null
           return (
-            <div key={entry.id} className={isMobilePortrait ? 'space-y-1.5' : 'space-y-2'}>
+            <div
+              key={entry.id}
+              className={`itinerary-step grid grid-cols-[3.25rem_1.55rem_minmax(0,1fr)] gap-x-2 ${
+                isMobilePortrait ? 'gap-y-1.5' : 'gap-y-2'
+              } sm:grid-cols-[3.75rem_1.65rem_minmax(0,1fr)] sm:gap-x-3`}
+            >
               {showDayDivider ? (
-                <div className={`flex items-center gap-3 px-1 first:pt-0 ${isMobilePortrait ? 'py-2.5' : 'py-4'}`}>
+                <div className={`col-span-full flex items-center gap-3 px-1 first:pt-0 ${isMobilePortrait ? 'py-2.5' : 'py-4'}`}>
                   <div className="min-w-0">
                     <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                       {dayContext?.label || 'Day'}
@@ -3604,7 +3860,7 @@ function PlannerPanel({
                   type="button"
                   data-drop-slot-day-id={item.dayId}
                   data-drop-slot-index={manualIndex}
-                  className={`block h-4 w-full rounded-full border border-dashed transition ${
+                  className={`col-span-full block h-4 w-full rounded-full border border-dashed transition ${
                     dragState?.slot?.dayId === item.dayId && dragState?.slot?.index === manualIndex
                       ? 'border-indigo-400 bg-indigo-100/70'
                       : 'border-slate-300/80 bg-transparent'
@@ -3612,6 +3868,13 @@ function PlannerPanel({
                   aria-label={`Move before ${item.title}`}
                 />
               ) : null}
+              <div className="timeline-time pt-3 text-right">
+                <div className="text-[13px] font-bold tracking-[-0.01em] text-slate-900">{item.startTime}</div>
+                {item.endTime ? <div className="mt-0.5 text-[10px] font-medium tracking-[-0.01em] text-slate-400 sm:mt-1">{item.endTime}</div> : null}
+              </div>
+              <div className="timeline-rail timeline-rail--stop">
+                <span className={`timeline-dot ${meta.tone}`}>{index + 1}</span>
+              </div>
               <article
                 className={`timeline-card ${meta.card} relative rounded-[1.15rem] px-3.5 py-3.5 transition hover:bg-white active:bg-white sm:px-5 sm:py-4 ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
@@ -3627,19 +3890,11 @@ function PlannerPanel({
                 onContextMenu={(event) => event.preventDefault()}
                 onPointerDown={(event) => onOpenDetails.startPress(event, item)}
                 onPointerMove={onOpenDetails.movePress}
-                onPointerUp={(event) => onOpenDetails.endPress(event, item, isStack ? toggleStack : undefined)}
+                onPointerUp={(event) => onOpenDetails.endPress(event, item, () => onOpenNotes(item))}
                 onPointerCancel={onOpenDetails.cancelPress}
                 onPointerLeave={onOpenDetails.cancelPress}
               >
-                <div className="flex gap-3 sm:gap-5">
-                  <div className="w-[3.1rem] shrink-0 pt-0.5 text-right sm:w-[3.55rem]">
-                    <div className="text-[13px] font-bold tracking-[-0.01em] text-slate-900">{item.startTime}</div>
-                    {item.endTime ? <div className="mt-0.5 text-[10px] font-medium tracking-[-0.01em] text-slate-400 sm:mt-1">{item.endTime}</div> : null}
-                  </div>
-                  <div className="timeline-rail shrink-0">
-                    <span className={`timeline-dot ${meta.tone}`} />
-                  </div>
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0">
                     <div className={`flex ${isMobilePortrait ? 'flex-col items-stretch gap-2' : 'items-start justify-between gap-3'}`}>
                       <div className="min-w-0">
                         <h3 className={`${isMobilePortrait ? 'line-clamp-2 leading-5' : 'leading-6'} text-[0.98rem] font-bold tracking-[-0.02em] text-slate-950`}>{item.title}</h3>
@@ -3658,10 +3913,12 @@ function PlannerPanel({
                             onPointerDown={(event) => onDragStart(event, item)}
                             onClick={(event) => event.stopPropagation()}
                             data-drag-handle="true"
-                            className={`touch-none rounded-full bg-slate-50 p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 active:scale-95 sm:p-2 ${isMobilePortrait ? 'ml-auto' : ''}`}
-                            aria-label={`Drag ${item.title}`}
+                            title="Drag to reorder"
+                            className={`inline-flex touch-none shrink-0 items-center gap-1.5 rounded-full border border-slate-200/75 bg-white/86 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 shadow-[0_4px_12px_rgba(15,23,42,0.035)] transition hover:border-slate-300 hover:bg-white hover:text-slate-800 active:scale-95 sm:px-3 ${isMobilePortrait ? 'ml-auto' : ''}`}
+                            aria-label={`Reorder ${item.title}`}
                           >
-                            <GripVertical className="h-4 w-4" />
+                            <ArrowUpDown className="h-3.5 w-3.5" />
+                            <span>Reorder</span>
                           </button>
                         ) : null}
                       </div>
@@ -3722,11 +3979,10 @@ function PlannerPanel({
                       </div>
                     ) : null}
                   </div>
-                </div>
               </article>
 
               {isExpandedStack && isStack ? (
-                <div className="ml-[4.45rem] space-y-1.5 overflow-visible sm:ml-[5.9rem] sm:space-y-2.5">
+                <div className="col-start-3 space-y-1.5 overflow-visible sm:space-y-2.5">
                   {stackAlternatives.map((stackItem, stackIndex) => {
                     const stackMeta = typeMeta(stackItem.category)
                     const stackHasActive = hasActiveStayOrMealStatus(stackItem)
@@ -3743,7 +3999,7 @@ function PlannerPanel({
                         onContextMenu={(event) => event.preventDefault()}
                         onPointerDown={(event) => onOpenDetails.startPress(event, stackItem)}
                         onPointerMove={onOpenDetails.movePress}
-                        onPointerUp={(event) => onOpenDetails.endPress(event, stackItem)}
+                        onPointerUp={(event) => onOpenDetails.endPress(event, stackItem, () => onOpenNotes(stackItem))}
                         onPointerCancel={onOpenDetails.cancelPress}
                         onPointerLeave={onOpenDetails.cancelPress}
                         className={`rounded-[0.95rem] border border-slate-200/70 bg-white/86 px-3 py-2.5 shadow-[0_10px_22px_rgba(15,23,42,0.035)] transition hover:bg-white sm:px-3.5 sm:py-3 ${
@@ -3792,7 +4048,7 @@ function PlannerPanel({
                   })}
                 </div>
               ) : isExpandedStack && linkedBookingMeta.isOverbooked ? (
-                <div className="ml-[4.45rem] space-y-1.5 overflow-visible sm:ml-[5.9rem] sm:space-y-2">
+                <div className="col-start-3 space-y-1.5 overflow-visible sm:space-y-2">
                   {itemBookingOptions.map((booking) => {
                     const bookingDeadline = booking.cancellationDeadline
                       ? formatBookingDateTime(booking.cancellationDeadline)
@@ -3826,41 +4082,37 @@ function PlannerPanel({
               ) : null}
 
               {nextSegment ? (
-                <div
-                  className={`ml-[4.45rem] rounded-[0.9rem] px-3 py-1 text-[11px] text-slate-500 sm:ml-[5.9rem] sm:px-4 sm:py-1.5 ${
-                    isMobilePortrait
-                      ? 'flex items-center justify-between gap-3'
-                      : 'flex items-center justify-between gap-4'
-                  }`}
-                >
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="font-medium text-slate-700">{routeLabel(nextSegment.mode)}</span>
-                    <span>
-                      {nextSegment.route
-                        ? `${nextSegment.route.estimated ? '~' : ''}${Math.round(nextSegment.route.durationMin)} min`
-                        : 'Loading route'}
-                    </span>
-                    {nextSegment.route ? (
-                      <span className="truncate">
-                        {nextSegment.route.estimated ? '~' : ''}
-                        {nextSegment.route.distanceKm.toFixed(1)} km
-                      </span>
+                <>
+                  <div className="timeline-time py-2 text-right">
+                    {item.endTime ? (
+                      <div className="text-[11px] font-semibold tracking-[-0.01em] text-slate-500">{item.endTime}</div>
                     ) : null}
                   </div>
-                  {canEdit ? (
-                    <RouteModeControl
-                      currentMode={nextSegment.from.travelModeToNext || ''}
-                      onSelect={(mode) => onUpdateTravelMode(nextSegment.from.id, mode)}
-                    />
-                  ) : null}
-                </div>
+                  <div className="timeline-rail timeline-rail--route">
+                    <span className="timeline-route-dot" />
+                  </div>
+                  <div className="timeline-route-row flex items-center justify-between gap-3 rounded-[0.9rem] px-2 py-2 text-slate-500 sm:px-3">
+                    <div className="flex min-w-0 items-center gap-2.5" aria-label={`${routeLabel(nextSegment.mode)} ${routeDurationText(nextSegment)}`}>
+                      {RouteIcon ? <RouteIcon className="h-4 w-4 shrink-0 text-slate-400" /> : null}
+                      <span className="truncate text-[13px] font-bold tracking-[-0.02em] text-slate-500">
+                        {routeDurationText(nextSegment)}
+                      </span>
+                    </div>
+                    {canEdit ? (
+                      <RouteModeControl
+                        currentMode={nextSegment.from.travelModeToNext || ''}
+                        onSelect={(mode) => onUpdateTravelMode(nextSegment.from.id, mode)}
+                      />
+                    ) : null}
+                  </div>
+                </>
               ) : null}
               {showAfterSlot ? (
                 <button
                   type="button"
                   data-drop-slot-day-id={item.dayId}
                   data-drop-slot-index={(manualOrderLookup.counts[item.dayId] || 0)}
-                  className={`block h-4 w-full rounded-full border border-dashed transition ${
+                  className={`col-span-full block h-4 w-full rounded-full border border-dashed transition ${
                     dragState?.slot?.dayId === item.dayId &&
                     dragState?.slot?.index === (manualOrderLookup.counts[item.dayId] || 0)
                       ? 'border-indigo-400 bg-indigo-100/70'
@@ -4976,7 +5228,7 @@ export default function App() {
 
   async function saveItem(item) {
     if (!canEditCurrentTrip) return
-    const normalizedItem = stripFlightLocationFields(normalizeItemTimeFields(item))
+    const normalizedItem = normalizeItemForSave(stripFlightLocationFields(normalizeItemTimeFields(item)))
     const sameDayItems = (tripState.dayMap[item.dayId]?.items || []).filter((existing) => existing.id !== item.id)
     const manualItems = sameDayItems.filter((existing) => !existing.generated)
     const patchItems = Object.fromEntries(
@@ -5031,6 +5283,81 @@ export default function App() {
     } catch (error) {
       console.error(error)
       const message = error?.message || 'Trip creation failed'
+      setFirestoreState((current) => ({ ...current, status: 'error', error: message }))
+      window.alert(message)
+    }
+  }
+
+  async function cloneTrip() {
+    if (!firestoreReady || !canManageCurrentTrip || !activeTripSummary) return
+
+    const suggestedTitle = `${activeTripSummary.title || 'Trip'} copy`
+    const title = window.prompt('Clone trip as', suggestedTitle)?.trim()
+    if (!title) return
+
+    const snapshot = buildClonedTripSnapshot(tripState)
+    const tripId = slugId('trip')
+
+    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
+      setTripSummaries((current) => [
+        ...current,
+        {
+          id: tripId,
+          title,
+          role: 'owner',
+          hidden: false,
+          startDate: snapshot.startDate,
+          endDate: snapshot.endDate,
+        },
+      ])
+      setOverrides({
+        days: snapshot.days,
+        items: snapshot.items,
+        bookingOptions: snapshot.bookingOptions,
+      })
+      setActiveTripId(tripId)
+      setActiveDayId(DAY_VIEW_ALL)
+      setNoteItem(null)
+      setDetailItem(null)
+      return
+    }
+
+    if (!firebaseEnabled || !authReady || !currentUser?.uid) return
+
+    try {
+      await createTripRecordWithOwner(
+        tripId,
+        {
+          title,
+          startDate: snapshot.startDate,
+          endDate: snapshot.endDate,
+          days: snapshot.days,
+          items: snapshot.items,
+          bookingOptions: snapshot.bookingOptions,
+        },
+        currentUser,
+      )
+
+      setTripSummaries((current) =>
+        current.some((trip) => trip.id === tripId)
+          ? current
+          : [
+              ...current,
+              {
+                id: tripId,
+                title,
+                role: 'owner',
+                hidden: false,
+                startDate: snapshot.startDate,
+                endDate: snapshot.endDate,
+              },
+            ],
+      )
+      selectTrip(tripId)
+      setFirestoreState((current) => ({ ...current, error: '' }))
+    } catch (error) {
+      console.error(error)
+      const message = error?.message || 'Trip clone failed'
       setFirestoreState((current) => ({ ...current, status: 'error', error: message }))
       window.alert(message)
     }
@@ -5172,6 +5499,50 @@ export default function App() {
     })
     setNoteItem((current) => (current?.id === itemId ? null : current))
     setDetailItem((current) => (current?.id === itemId ? null : current))
+  }
+
+  async function duplicateItem(item) {
+    if (!firestoreReady || !canEditCurrentTrip || !item || item.generated) return
+
+    const duplicate = normalizeItemForSave({
+      ...createItemDraft(item),
+      id: slugId('item'),
+      generated: false,
+      sourceItemId: '',
+      order: (item.order ?? 0) + 1,
+    })
+
+    await saveItem(duplicate)
+    setNoteItem(null)
+    setDetailItem(createItemDraft(duplicate))
+  }
+
+  async function addSubstituteItem(item) {
+    if (!firestoreReady || !canEditCurrentTrip || !item || item.generated || !isStackableStayOrMeal(item)) {
+      return
+    }
+
+    const substitute = normalizeItemForSave({
+      ...createItemDraft(item),
+      id: slugId('item'),
+      title: `Substitute ${item.category.toLowerCase()}`,
+      locationName: '',
+      address: '',
+      lat: null,
+      lng: null,
+      placeId: '',
+      description: '',
+      bookingRef: '',
+      status: 'considering',
+      cancellationDeadline: '',
+      generated: false,
+      sourceItemId: '',
+      order: (item.order ?? 0) + 1,
+    })
+
+    await saveItem(substitute)
+    setNoteItem(null)
+    setDetailItem(createItemDraft(substitute))
   }
 
   async function updateTravelMode(itemId, travelModeToNext) {
@@ -5428,6 +5799,7 @@ export default function App() {
         deletedTrips={deletedTrips}
         disabled={!currentUser?.uid}
         isMobilePortrait={isMobilePortrait}
+        onCloneTrip={() => void cloneTrip()}
         onClose={() => setShowMenu(false)}
         onCreateTrip={() => void createTrip()}
         onDeleteTrip={() => void deleteTrip()}
@@ -5566,11 +5938,19 @@ export default function App() {
           canEdit={canEditCurrentTrip}
           item={noteItem}
           isMobilePortrait={isMobilePortrait}
+          onAddSubstitute={async () => {
+            const match = tripState.items.find((item) => item.id === noteItem.id) || noteItem
+            await addSubstituteItem(match)
+          }}
           onClose={() => setNoteItem(null)}
           onDelete={async () => {
             const id = noteItem.id
             setNoteItem(null)
             await deleteItem(id)
+          }}
+          onDuplicate={async () => {
+            const match = tripState.items.find((item) => item.id === noteItem.id) || noteItem
+            await duplicateItem(match)
           }}
           onOpenDetails={() => {
             const match = tripState.items.find((item) => item.id === noteItem.id) || noteItem

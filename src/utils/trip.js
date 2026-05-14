@@ -352,7 +352,7 @@ export function movementItemsForDay(activeDayId, tripState) {
 export function nextDayDate(days) {
   if (!days.length) return '2026-05-09'
   const maxDate = [...days].sort((a, b) => a.date.localeCompare(b.date))[days.length - 1]?.date
-  const next = new Date(`${maxDate}T00:00:00+09:00`)
+  const next = new Date(`${maxDate}T00:00:00Z`)
   next.setUTCDate(next.getUTCDate() + 1)
   return next.toISOString().slice(0, 10)
 }

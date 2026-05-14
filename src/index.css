@@ -71,8 +71,9 @@ body::before {
 .timeline-card {
   background: rgba(255, 255, 255, 0.94);
   border: 1px solid rgba(226, 232, 240, 0.62);
+  border-radius: 1.35rem;
   box-shadow:
-    0 8px 20px rgba(27, 39, 48, 0.026),
+    0 12px 26px rgba(27, 39, 48, 0.03),
     inset 0 1px 0 rgba(255, 255, 255, 0.78);
 }
 
@@ -113,30 +114,65 @@ body::before {
 
 .timeline-rail {
   position: relative;
-  width: 18px;
+  width: 100%;
   min-height: 100%;
 }
 
 .timeline-rail::before {
   content: '';
   position: absolute;
-  left: 8px;
-  top: 2px;
-  bottom: 2px;
+  left: 50%;
+  top: -0.5rem;
+  bottom: -0.5rem;
   width: 1px;
-  background: rgba(148, 163, 184, 0.22);
+  transform: translateX(-50%);
+  background: rgba(100, 116, 139, 0.36);
+}
+
+.timeline-rail--stop::before {
+  top: 1.75rem;
+  bottom: -0.8rem;
+}
+
+.timeline-rail--route::before {
+  top: -0.8rem;
+  bottom: -0.8rem;
 }
 
 .timeline-dot {
   position: absolute;
-  left: 1px;
-  top: 6px;
-  display: block;
-  width: 14px;
-  height: 14px;
+  left: 50%;
+  top: 0.72rem;
+  display: flex;
+  width: 1.45rem;
+  height: 1.45rem;
+  align-items: center;
+  justify-content: center;
   border-radius: 9999px;
-  border: 2px solid rgba(15, 23, 42, 0.58);
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.86);
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 3px #f5f2ec;
+  transform: translateX(-50%);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.timeline-route-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: block;
+  width: 0.58rem;
+  height: 0.58rem;
+  border-radius: 9999px;
+  background: rgba(100, 116, 139, 0.58);
+  box-shadow: 0 0 0 3px #f5f2ec;
+  transform: translate(-50%, -50%);
+}
+
+.timeline-route-row {
+  min-height: 2.35rem;
 }
 
 .quiet-divider {
