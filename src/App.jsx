@@ -3917,9 +3917,10 @@ function PlannerPanel({
                 <span className={`timeline-dot ${meta.tone}`}>{index + 1}</span>
               </div>
               <article
-                className={`timeline-card ${meta.card} relative rounded-[1.15rem] px-3.5 py-3.5 transition hover:bg-white active:bg-white sm:px-5 sm:py-4 ${
+                className={`timeline-card ${meta.card} ${isSubstituteStack ? 'timeline-card--side-stack' : ''} relative rounded-[1.15rem] px-3.5 py-3.5 transition hover:bg-white active:bg-white sm:px-5 sm:py-4 ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
                 }`}
+                style={isSubstituteStack ? { '--side-stack-count': Math.min(stackAlternatives.length, 2) } : undefined}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(event) => {
@@ -3935,7 +3936,7 @@ function PlannerPanel({
                 onPointerCancel={onOpenDetails.cancelPress}
                 onPointerLeave={onOpenDetails.cancelPress}
               >
-                  <div className="min-w-0">
+                  <div className="relative z-10 min-w-0">
                     <div className={`flex ${isMobilePortrait ? 'flex-col items-stretch gap-2' : 'items-start justify-between gap-3'}`}>
                       <div className="min-w-0">
                         <h3 className={`${isMobilePortrait ? 'line-clamp-2 leading-5' : 'leading-6'} text-[0.98rem] font-bold tracking-[-0.02em] text-slate-950`}>{item.title}</h3>
@@ -4022,10 +4023,17 @@ function PlannerPanel({
               </article>
 
               {isExpandedStack && isStack ? (
-                <div className="col-start-3 space-y-1.5 overflow-visible sm:space-y-2.5">
+                <div
+                  className={`col-start-3 space-y-1.5 overflow-visible sm:space-y-2.5 ${
+                    isSubstituteStack ? 'pl-3 sm:pl-4' : ''
+                  }`}
+                >
                   {stackAlternatives.map((stackItem, stackIndex) => {
                     const stackMeta = typeMeta(stackItem.category)
-                    const stackHasActive = hasActiveStayOrMealStatus(stackItem)
+                    const stackHasActive = isSubstituteStack
+                      ? hasActiveSelectionStatus(stackItem)
+                      : hasActiveStayOrMealStatus(stackItem)
+                    const stackSideOffset = isSubstituteStack ? Math.min((stackIndex + 1) * 8, 20) : 0
                     return (
                       <article
                         key={stackItem.id}
@@ -4043,10 +4051,16 @@ function PlannerPanel({
                         onPointerCancel={onOpenDetails.cancelPress}
                         onPointerLeave={onOpenDetails.cancelPress}
                         className={`rounded-[0.95rem] border border-slate-200/70 bg-white/86 px-3 py-2.5 shadow-[0_10px_22px_rgba(15,23,42,0.035)] transition hover:bg-white sm:px-3.5 sm:py-3 ${
-                          isMobilePortrait ? 'border-l-4' : ''
+                          isSubstituteStack || isMobilePortrait ? 'border-l-4' : ''
                         }`}
                         style={
-                          isMobilePortrait
+                          isSubstituteStack
+                            ? {
+                                borderLeftColor: stackHasActive ? '#10b981' : '#94a3b8',
+                                transform: `translateX(-${stackSideOffset}px)`,
+                                width: `calc(100% - ${stackSideOffset}px)`,
+                              }
+                            : isMobilePortrait
                             ? {
                                 borderLeftColor: stackHasActive ? '#10b981' : '#cbd5e1',
                               }
