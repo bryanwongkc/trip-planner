@@ -303,6 +303,10 @@ function hasActiveStayOrMealStatus(item) {
   return item?.status === 'active'
 }
 
+function hasActiveSelectionStatus(item) {
+  return item?.status === 'active'
+}
+
 function chooseStackLead(items) {
   return [...items].sort((a, b) => {
     const activeCompare = Number(hasActiveStayOrMealStatus(b)) - Number(hasActiveStayOrMealStatus(a))
@@ -311,11 +315,43 @@ function chooseStackLead(items) {
   })[0]
 }
 
+function chooseSubstituteStackLead(items) {
+  return [...items].sort((a, b) => {
+    const activeCompare = Number(hasActiveSelectionStatus(b)) - Number(hasActiveSelectionStatus(a))
+    if (activeCompare !== 0) return activeCompare
+    const sourceCompare = Number(Boolean(a.substituteOfItemId)) - Number(Boolean(b.substituteOfItemId))
+    if (sourceCompare !== 0) return sourceCompare
+    return itemInterval(a).start - itemInterval(b).start
+  })[0]
+}
+
 function buildTimelineEntries(items) {
   const stackByItemId = new Map()
 
   Object.values(
-    items.filter(isStackableStayOrMeal).reduce((groups, item) => {
+    items.reduce((groups, item) => {
+      if (!item.substituteGroupId) return groups
+      groups[item.substituteGroupId] = groups[item.substituteGroupId] || []
+      groups[item.substituteGroupId].push(item)
+      return groups
+    }, {}),
+  )
+    .filter((groupItems) => groupItems.length > 1)
+    .forEach((groupItems) => {
+      const leadItem = chooseSubstituteStackLead(groupItems)
+      const stack = {
+        id: `substitute-stack:${leadItem.substituteGroupId}`,
+        type: 'stack',
+        stackKind: 'substitute',
+        dayId: leadItem.dayId,
+        item: leadItem,
+        items: [leadItem, ...groupItems.filter((item) => item.id !== leadItem.id)],
+      }
+      groupItems.forEach((item) => stackByItemId.set(item.id, stack))
+    })
+
+  Object.values(
+    items.filter((item) => isStackableStayOrMeal(item) && !stackByItemId.has(item.id)).reduce((groups, item) => {
       const key = `${item.dayId}:${item.category}`
       groups[key] = groups[key] || []
       groups[key].push(item)
@@ -3052,7 +3088,7 @@ function NoteModal({
 }) {
   const mapsUrl = item.category === 'Flight' ? '' : getGoogleMapsUrl(item)
   const locationSummary = itemLocationSummary(item)
-  const canAddSubstitute = canEdit && !item.generated && isStackableStayOrMeal(item)
+  const canAddSubstitute = canEdit && !item.generated
 
   return (
     <div
@@ -3790,7 +3826,12 @@ function PlannerPanel({
           const isStack = entry.type === 'stack'
           const isExpandedStack = Boolean(expandedStacks[entry.id])
           const stackAlternatives = isStack ? entry.items.filter((stackItem) => stackItem.id !== item.id) : []
-          const stackChoiceLabel = item.category === 'Hotel' ? 'hotel options' : 'restaurant options'
+          const isSubstituteStack = entry.stackKind === 'substitute'
+          const stackChoiceLabel = isSubstituteStack
+            ? 'substitute options'
+            : item.category === 'Hotel'
+              ? 'hotel options'
+              : 'restaurant options'
           const itemBookingOptions = bookingOptions.filter(
             (booking) => booking.linkedItemId === item.id && isHeldBookingOption(booking),
           )
@@ -3803,7 +3844,7 @@ function PlannerPanel({
           const stackHeldCount = isStack
             ? entry.items.filter((stackItem) => stackItem.status !== 'cancelled').length
             : 0
-          const stackExcessCount = item.generated ? 0 : Math.max(0, stackHeldCount - 1)
+          const stackExcessCount = item.generated || isSubstituteStack ? 0 : Math.max(0, stackHeldCount - 1)
           const excessCount = linkedBookingMeta.isOverbooked
             ? linkedBookingMeta.excessCount
             : stackExcessCount
@@ -3914,11 +3955,10 @@ function PlannerPanel({
                             onClick={(event) => event.stopPropagation()}
                             data-drag-handle="true"
                             title="Drag to reorder"
-                            className={`inline-flex touch-none shrink-0 items-center gap-1.5 rounded-full border border-slate-200/75 bg-white/86 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 shadow-[0_4px_12px_rgba(15,23,42,0.035)] transition hover:border-slate-300 hover:bg-white hover:text-slate-800 active:scale-95 sm:px-3 ${isMobilePortrait ? 'ml-auto' : ''}`}
+                            className={`inline-flex h-9 w-9 touch-none shrink-0 items-center justify-center rounded-full border border-slate-200/75 bg-white/86 text-slate-500 shadow-[0_4px_12px_rgba(15,23,42,0.035)] transition hover:border-slate-300 hover:bg-white hover:text-slate-800 active:scale-95 ${isMobilePortrait ? 'ml-auto' : ''}`}
                             aria-label={`Reorder ${item.title}`}
                           >
-                            <ArrowUpDown className="h-3.5 w-3.5" />
-                            <span>Reorder</span>
+                            <ArrowUpDown className="h-4 w-4" />
                           </button>
                         ) : null}
                       </div>
@@ -3952,7 +3992,7 @@ function PlannerPanel({
                               : `Compare ${comparisonAltCount} other ${comparisonAltCount === 1 ? 'option' : 'options'}`}
                           </span>
                           <span className="mt-0.5 block text-[11px] leading-4 text-slate-500">
-                            {comparisonCount} overlapping {stackChoiceLabel}
+                            {comparisonCount} {isSubstituteStack ? 'available' : 'overlapping'} {stackChoiceLabel}
                           </span>
                           {nextCancelDeadline ? (
                             <span className="mt-1 block text-[11px] font-semibold leading-4 text-slate-600">
@@ -5518,14 +5558,19 @@ export default function App() {
   }
 
   async function addSubstituteItem(item) {
-    if (!firestoreReady || !canEditCurrentTrip || !item || item.generated || !isStackableStayOrMeal(item)) {
+    if (!firestoreReady || !canEditCurrentTrip || !item || item.generated) {
       return
     }
 
+    const substituteGroupId = item.substituteGroupId || slugId('substitute-group')
+    const sourceItem = normalizeItemForSave({
+      ...createItemDraft(item),
+      substituteGroupId,
+    })
     const substitute = normalizeItemForSave({
       ...createItemDraft(item),
       id: slugId('item'),
-      title: `Substitute ${item.category.toLowerCase()}`,
+      title: 'Substitute option',
       locationName: '',
       address: '',
       lat: null,
@@ -5537,10 +5582,21 @@ export default function App() {
       cancellationDeadline: '',
       generated: false,
       sourceItemId: '',
+      substituteGroupId,
+      substituteOfItemId: item.substituteOfItemId || item.id,
       order: (item.order ?? 0) + 1,
     })
+    const sameDayItems = (tripState.dayMap[item.dayId]?.items || []).filter(
+      (existing) => !existing.generated && ![sourceItem.id, substitute.id].includes(existing.id),
+    )
+    const patchItems = Object.fromEntries(
+      normalizeDayTimelineOrder(
+        [...sameDayItems, sourceItem, substitute].map((entry) => normalizeItemForSave(entry)),
+        item.dayId,
+      ).map((entry) => [entry.id, entry]),
+    )
 
-    await saveItem(substitute)
+    await saveTripPatch(resolvedTripId, { items: patchItems })
     setNoteItem(null)
     setDetailItem(createItemDraft(substitute))
   }
