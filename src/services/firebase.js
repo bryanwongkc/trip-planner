@@ -243,6 +243,72 @@ export async function lookupUserByEmail(email) {
   return match ? { id: match.id, ...match.data() } : null
 }
 
+export async function createTripInvite(tripId, actorUser, role, tripMeta = {}) {
+  const { db, doc, serverTimestamp, setDoc } = await loadFirebaseServices()
+  if (!db || !tripId || !actorUser?.uid || !['editor', 'viewer'].includes(role)) return null
+
+  const inviteId = `invite-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`}`
+  const inviteDoc = doc(db, 'tripInvites', inviteId)
+  const payload = stripUndefined({
+    inviteId,
+    tripId,
+    role,
+    title: tripMeta.title || '',
+    startDate: tripMeta.startDate || '',
+    endDate: tripMeta.endDate || '',
+    hidden: false,
+    isDemo: Boolean(tripMeta.isDemo),
+    active: true,
+    createdBy: actorUser.uid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+
+  await setDoc(inviteDoc, payload)
+  return payload
+}
+
+export async function acceptTripInvite(inviteId, user) {
+  const { db, doc, getDoc, serverTimestamp, writeBatch } = await loadFirebaseServices()
+  if (!db || !inviteId || !user?.uid) return null
+
+  const inviteDoc = doc(db, 'tripInvites', inviteId)
+  const inviteSnapshot = await getDoc(inviteDoc)
+  if (!inviteSnapshot.exists()) {
+    throw new Error('Invitation link was not found.')
+  }
+
+  const invite = inviteSnapshot.data()
+  if (!invite?.active || !invite.tripId || !['editor', 'viewer'].includes(invite.role)) {
+    throw new Error('Invitation link is no longer active.')
+  }
+
+  const batch = writeBatch(db)
+  const memberDoc = doc(db, 'trips', invite.tripId, 'members', user.uid)
+  const membershipIndexDoc = doc(db, 'users', user.uid, 'tripMemberships', invite.tripId)
+
+  batch.set(
+    memberDoc,
+    stripUndefined({
+      ...serializeUserProfile(user),
+      role: invite.role,
+      invitedBy: invite.createdBy || '',
+      inviteId,
+      joinedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }),
+    { merge: true },
+  )
+  batch.set(
+    membershipIndexDoc,
+    buildTripIndexPayload(invite.tripId, invite.role, invite, serverTimestamp),
+    { merge: true },
+  )
+
+  await batch.commit()
+  return { ...invite, id: inviteId }
+}
+
 export async function mergeTripPatch(tripId, patch) {
   const { db, doc, serverTimestamp, setDoc } = await loadFirebaseServices()
   if (!db || !tripId) return

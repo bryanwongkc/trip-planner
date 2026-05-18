@@ -94,11 +94,46 @@ service cloud.firestore {
         'photoURL',
         'role',
         'invitedBy',
+        'inviteId',
         'joinedAt',
         'updatedAt'
       ]) &&
       request.resource.data.uid == uid &&
-      request.resource.data.role in ['owner', 'editor', 'viewer'];
+      request.resource.data.role in ['owner', 'editor', 'viewer'] &&
+      (!('inviteId' in request.resource.data) || request.resource.data.inviteId is string);
+    }
+
+    function validTripInvite(inviteId) {
+      return request.resource.data.keys().hasOnly([
+        'inviteId',
+        'tripId',
+        'role',
+        'title',
+        'startDate',
+        'endDate',
+        'isDemo',
+        'hidden',
+        'active',
+        'createdBy',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      request.resource.data.inviteId == inviteId &&
+      request.resource.data.role in ['editor', 'viewer'] &&
+      request.resource.data.active is bool &&
+      request.resource.data.createdBy == request.auth.uid &&
+      (!('isDemo' in request.resource.data) || request.resource.data.isDemo is bool);
+    }
+
+    function canAcceptInvite(tripId, uid) {
+      return isSignedIn() &&
+        ('inviteId' in request.resource.data) &&
+        exists(/databases/$(database)/documents/tripInvites/$(request.resource.data.inviteId)) &&
+        get(/databases/$(database)/documents/tripInvites/$(request.resource.data.inviteId)).data.tripId == tripId &&
+        get(/databases/$(database)/documents/tripInvites/$(request.resource.data.inviteId)).data.role == request.resource.data.role &&
+        get(/databases/$(database)/documents/tripInvites/$(request.resource.data.inviteId)).data.active == true &&
+        request.auth.uid == uid &&
+        request.resource.data.role in ['editor', 'viewer'];
     }
 
     function validTripMembershipIndex(tripId) {
@@ -143,6 +178,7 @@ service cloud.firestore {
       allow read: if canViewTrip(tripId);
       allow create: if validTripMember(uid) && (
         (isTripOwner(tripId) && request.resource.data.role in ['owner', 'editor', 'viewer']) ||
+        canAcceptInvite(tripId, uid) ||
         (isSignedIn() &&
           request.auth.uid == uid &&
           getAfter(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid &&
@@ -152,6 +188,19 @@ service cloud.firestore {
       allow update: if isTripOwner(tripId) &&
         validTripMember(uid);
       allow delete: if isTripOwner(tripId);
+    }
+
+    match /tripInvites/{inviteId} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create: if isSignedIn() &&
+        validTripInvite(inviteId) &&
+        isTripOwner(request.resource.data.tripId);
+      allow update: if isSignedIn() &&
+        validTripInvite(inviteId) &&
+        resource.data.tripId == request.resource.data.tripId &&
+        isTripOwner(resource.data.tripId);
+      allow delete: if isSignedIn() && isTripOwner(resource.data.tripId);
     }
 
     match /trips/{tripId}/overrides/shared {

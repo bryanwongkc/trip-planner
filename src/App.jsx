@@ -49,7 +49,9 @@ import {
 } from './data/seedItinerary'
 import {
   addTripMember,
+  acceptTripInvite,
   createTripRecordWithOwner,
+  createTripInvite,
   ensureDemoTripForNewUser,
   ensureUserProfile,
   firebaseEnabled,
@@ -128,10 +130,9 @@ const DURATION_PRESETS = [
   { label: '2h', value: 120 },
   { label: '3h', value: 180 },
 ]
-const TEMPORARILY_DISABLE_GOOGLE_AUTH = true
-const TEMPORARY_USER = {
-  uid: 'temporary-local-user',
-  displayName: 'Temporary user',
+const GUEST_USER = {
+  uid: '',
+  displayName: 'Guest mode',
   email: '',
   photoURL: '',
 }
@@ -790,7 +791,7 @@ function buildDefaultTripSummary() {
 }
 
 function readLocalTripOverrides() {
-  if (!TEMPORARILY_DISABLE_GOOGLE_AUTH || typeof window === 'undefined') {
+  if (typeof window === 'undefined') {
     return { days: {}, items: {}, bookingOptions: {} }
   }
 
@@ -804,6 +805,17 @@ function readLocalTripOverrides() {
   } catch {
     return { days: {}, items: {}, bookingOptions: {} }
   }
+}
+
+function readInviteIdFromUrl() {
+  if (typeof window === 'undefined') return ''
+  return new URLSearchParams(window.location.search).get('invite') || ''
+}
+
+function hasTripOverrides(overrides) {
+  return ['days', 'items', 'bookingOptions'].some(
+    (key) => Object.keys(overrides?.[key] || {}).length > 0,
+  )
 }
 
 function mergeTripOverrides(current, patch) {
@@ -2383,7 +2395,7 @@ function TripSwitcher({
   )
 }
 
-function AccountPanel({ canShare, user, onShare, onSignOut }) {
+function AccountPanel({ authError, canShare, isGuestMode, user, onShare, onSignIn, onSignOut }) {
   return (
     <div className="rounded-[1rem] border border-slate-200/70 bg-white/78 p-2.5">
       <div className="flex items-center gap-3 px-1 py-1">
@@ -2400,9 +2412,11 @@ function AccountPanel({ canShare, user, onShare, onSignOut }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-semibold tracking-[-0.01em] text-slate-900">
-            {user?.displayName || 'Signed in'}
+            {user?.displayName || (isGuestMode ? 'Guest mode' : 'Signed in')}
           </div>
-          <div className="mt-0.5 truncate text-[11px] text-slate-500">{user?.email || ''}</div>
+          <div className="mt-0.5 truncate text-[11px] text-slate-500">
+            {isGuestMode ? 'Local changes only' : user?.email || ''}
+          </div>
         </div>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-1.5">
@@ -2417,25 +2431,33 @@ function AccountPanel({ canShare, user, onShare, onSignOut }) {
         </button>
         <button
           type="button"
-          onClick={onSignOut}
+          onClick={isGuestMode ? onSignIn : onSignOut}
+          disabled={isGuestMode && !firebaseEnabled}
           className="flex items-center justify-center gap-2 rounded-[0.8rem] bg-white px-3 py-2.5 text-[12px] font-semibold text-slate-700 transition hover:bg-slate-50"
         >
-          <LogOut className="h-3.5 w-3.5" />
-          Sign out
+          {isGuestMode ? <Cloud className="h-3.5 w-3.5" /> : <LogOut className="h-3.5 w-3.5" />}
+          {isGuestMode ? 'Sign in' : 'Sign out'}
         </button>
       </div>
+      {authError ? (
+        <div className="mt-2 rounded-[0.75rem] bg-rose-50 px-3 py-2 text-[11px] leading-5 text-rose-700">
+          {authError}
+        </div>
+      ) : null}
     </div>
   )
 }
 
 function AppDrawer({
   activeTripSummary,
+  authError,
   availableTrips,
   canManageCurrentTrip,
   canShare,
   currentUser,
   deletedTrips,
   disabled,
+  isGuestMode,
   isMobilePortrait,
   onCloneTrip,
   onClose,
@@ -2447,6 +2469,7 @@ function AppDrawer({
   onRestoreTrip,
   onSelectTrip,
   onShare,
+  onSignIn,
   onSignOut,
   open,
   pdfExporting,
@@ -2532,9 +2555,12 @@ function AppDrawer({
 
         <div className="mt-auto pt-4">
           <AccountPanel
+            authError={authError}
             canShare={canShare}
+            isGuestMode={isGuestMode}
             user={currentUser}
             onShare={onShare}
+            onSignIn={onSignIn}
             onSignOut={onSignOut}
           />
         </div>
@@ -2763,40 +2789,6 @@ function BottomDayNav({
   )
 }
 
-function SignInScreen({ configured, error, onSignIn }) {
-  return (
-    <main className="mx-auto flex min-h-screen max-w-7xl items-center justify-center px-4 py-8 text-slate-900">
-      <div className="glass-panel w-full max-w-[25.5rem] rounded-[1.25rem] px-6 py-7 text-center sm:px-7 sm:py-8">
-        <div className="text-[9px] font-bold uppercase tracking-[0.28em] text-slate-400">Trip Planner</div>
-        <h1 className="mt-3.5 text-[1.9rem] font-extrabold leading-tight tracking-[-0.045em] text-slate-950 sm:text-[2.08rem]">
-          Sign in to your trips
-        </h1>
-        <p className="mx-auto mt-2.5 max-w-[20rem] text-[14px] leading-6 text-slate-600">
-          Use Google sign-in to access only the trips you own or have been added to.
-        </p>
-        {!configured ? (
-          <div className="mt-5 rounded-[0.95rem] bg-amber-50 px-4 py-3 text-left text-[13px] leading-6 text-amber-700">
-            Firebase is not fully configured. Add the required Vite Firebase environment variables first.
-          </div>
-        ) : null}
-        {error ? (
-          <div className="mt-5 rounded-[0.95rem] bg-rose-50 px-4 py-3 text-left text-[13px] leading-6 text-rose-700">
-            {error}
-          </div>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => void onSignIn()}
-          disabled={!configured}
-          className="mt-6 w-full rounded-[0.9rem] bg-slate-950 px-4 py-3.5 text-sm font-bold text-white shadow-[0_10px_22px_rgba(15,23,42,0.10)] transition hover:bg-slate-800 disabled:bg-slate-300"
-        >
-          Continue with Google
-        </button>
-      </div>
-    </main>
-  )
-}
-
 function CollaboratorsModal({
   currentRole,
   currentUser,
@@ -2804,11 +2796,14 @@ function CollaboratorsModal({
   members,
   onAddMember,
   onClose,
+  onCreateInvite,
   onRemoveMember,
   onUpdateRole,
 }) {
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('editor')
+  const [inviteRole, setInviteRole] = useState('viewer')
+  const [inviteLink, setInviteLink] = useState('')
   const [busy, setBusy] = useState(false)
   const ownerCount = members.filter((member) => member.role === 'owner').length
   const canManage = canManageMembers(currentRole)
@@ -2822,6 +2817,25 @@ function CollaboratorsModal({
       setRole('editor')
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function handleCreateInvite() {
+    setBusy(true)
+    try {
+      const link = await onCreateInvite(inviteRole)
+      if (link) setInviteLink(link)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleCopyInvite() {
+    if (!inviteLink) return
+    try {
+      await navigator.clipboard?.writeText(inviteLink)
+    } catch (error) {
+      console.error(error)
     }
   }
 
@@ -2850,34 +2864,71 @@ function CollaboratorsModal({
         </div>
 
         {canManage ? (
-          <div className="mt-5 rounded-[1.2rem] bg-slate-50/90 p-4">
-            <div className="grid gap-3 sm:grid-cols-[1fr_11rem_auto] sm:items-end">
-              <Field label="Google account email">
-                <input
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="name@example.com"
-                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
-                />
-              </Field>
-              <Field label="Role">
-                <select
-                  value={role}
-                  onChange={(event) => setRole(event.target.value)}
-                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+          <div className="mt-5 space-y-3">
+            <div className="rounded-[1.2rem] bg-slate-50/90 p-4">
+              <div className="grid gap-3 sm:grid-cols-[1fr_11rem_auto] sm:items-end">
+                <Field label="Google account email">
+                  <input
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="name@example.com"
+                    className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                  />
+                </Field>
+                <Field label="Role">
+                  <select
+                    value={role}
+                    onChange={(event) => setRole(event.target.value)}
+                    className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                  >
+                    <option value="editor">Editor</option>
+                    <option value="viewer">Viewer</option>
+                  </select>
+                </Field>
+                <button
+                  type="button"
+                  onClick={() => void handleAddMember()}
+                  disabled={busy || !email.trim()}
+                  className="rounded-[1rem] bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-300"
                 >
-                  <option value="editor">Editor</option>
-                  <option value="viewer">Viewer</option>
-                </select>
-              </Field>
-              <button
-                type="button"
-                onClick={() => void handleAddMember()}
-                disabled={busy || !email.trim()}
-                className="rounded-[1rem] bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-300"
-              >
-                Add
-              </button>
+                  Add
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-[1.2rem] bg-slate-50/90 p-4">
+              <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                <Field label="Invitation link role">
+                  <select
+                    value={inviteRole}
+                    onChange={(event) => setInviteRole(event.target.value)}
+                    className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                  >
+                    <option value="viewer">Viewer</option>
+                    <option value="editor">Editor</option>
+                  </select>
+                </Field>
+                <button
+                  type="button"
+                  onClick={() => void handleCreateInvite()}
+                  disabled={busy}
+                  className="rounded-[1rem] bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-300"
+                >
+                  Create link
+                </button>
+              </div>
+              {inviteLink ? (
+                <div className="mt-3 flex flex-col gap-2 rounded-[1rem] bg-white p-3 sm:flex-row sm:items-center">
+                  <div className="min-w-0 flex-1 truncate text-[12px] text-slate-600">{inviteLink}</div>
+                  <button
+                    type="button"
+                    onClick={() => void handleCopyInvite()}
+                    className="rounded-[0.8rem] bg-slate-100 px-3 py-2 text-[12px] font-semibold text-slate-700"
+                  >
+                    Copy
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -4683,19 +4734,15 @@ export default function App() {
     return window.localStorage.getItem(ACTIVE_TRIP_STORAGE_KEY) || TRIP_ID
   })
   const [overrides, setOverrides] = useState(readLocalTripOverrides)
-  const [tripSummaries, setTripSummaries] = useState(() =>
-    TEMPORARILY_DISABLE_GOOGLE_AUTH ? [buildDefaultTripSummary()] : [],
-  )
-  const [tripDirectoryLoaded, setTripDirectoryLoaded] = useState(false)
-  const [currentUser, setCurrentUser] = useState(() =>
-    TEMPORARILY_DISABLE_GOOGLE_AUTH ? TEMPORARY_USER : null,
-  )
+  const [tripSummaries, setTripSummaries] = useState(() => [buildDefaultTripSummary()])
+  const [tripDirectoryLoaded, setTripDirectoryLoaded] = useState(true)
+  const [currentUser, setCurrentUser] = useState(null)
   const [userProfile, setUserProfile] = useState(null)
-  const [userProfileLoaded, setUserProfileLoaded] = useState(TEMPORARILY_DISABLE_GOOGLE_AUTH)
-  const [authReady, setAuthReady] = useState(TEMPORARILY_DISABLE_GOOGLE_AUTH)
+  const [userProfileLoaded, setUserProfileLoaded] = useState(true)
+  const [authReady, setAuthReady] = useState(true)
   const [authError, setAuthError] = useState('')
   const [firestoreState, setFirestoreState] = useState({
-    status: TEMPORARILY_DISABLE_GOOGLE_AUTH ? 'ready' : firebaseEnabled ? 'connecting' : 'disabled',
+    status: firebaseEnabled ? 'ready' : 'disabled',
     error: '',
   })
   const [weatherState, setWeatherState] = useState({
@@ -4716,6 +4763,7 @@ export default function App() {
   const [dragState, setDragState] = useState(null)
   const [tripMembers, setTripMembers] = useState([])
   const [appDialog, setAppDialog] = useState(null)
+  const [pendingInviteId, setPendingInviteId] = useState(readInviteIdFromUrl)
 
   const isMobilePortrait = useResponsiveMode()
   const routeCacheRef = useRef(new Map())
@@ -4725,6 +4773,17 @@ export default function App() {
   const dragPointerRef = useRef({ x: 0, y: 0 })
   const dragStateRef = useRef(null)
   const demoCreationGuardRef = useRef(new Set())
+  const guestMigrationRef = useRef({
+    declinedForUid: '',
+    inProgress: false,
+    localOverrides: null,
+    localTitle: '',
+    promptedForUid: '',
+  })
+  const inviteAcceptanceRef = useRef({
+    inProgress: false,
+    promptedForId: '',
+  })
   const appDialogResolveRef = useRef(null)
   const pressStateRef = useRef({
     timer: null,
@@ -4736,6 +4795,9 @@ export default function App() {
     longPressed: false,
   })
   const defaultTripSummary = useMemo(() => buildDefaultTripSummary(), [])
+  const isSignedIn = Boolean(currentUser?.uid)
+  const isGuestMode = !isSignedIn
+  const effectiveUser = currentUser || GUEST_USER
   const deletedTrips = useMemo(
     () =>
       tripSummaries
@@ -4867,8 +4929,7 @@ export default function App() {
       }
     : { loading: false, data: null, error: '' }
   const firestoreReady =
-    TEMPORARILY_DISABLE_GOOGLE_AUTH ||
-    (firebaseEnabled && authReady && Boolean(currentUser) && firestoreState.status === 'ready')
+    isGuestMode || (firebaseEnabled && authReady && isSignedIn && firestoreState.status === 'ready')
   const detailItemId = detailItem?.id || ''
   const detailCategory = detailItem?.category || ''
   const detailAppliedLookupKey = detailItem?.flightInfo?.lookupKey || ''
@@ -4926,13 +4987,20 @@ export default function App() {
   )
 
   const saveTripPatch = useCallback(async (tripId, patch) => {
-    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
+    if (isGuestMode) {
       setOverrides((current) => mergeTripOverrides(current, patch))
       setFirestoreState({ status: 'ready', error: '' })
       return
     }
 
     await mergeTripPatch(tripId, patch)
+  }, [isGuestMode])
+
+  const clearInviteUrl = useCallback(() => {
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    url.searchParams.delete('invite')
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
   }, [])
 
   useEffect(() => {
@@ -4943,9 +5011,9 @@ export default function App() {
   }, [resolvedTripId])
 
   useEffect(() => {
-    if (!TEMPORARILY_DISABLE_GOOGLE_AUTH || typeof window === 'undefined') return
+    if (!isGuestMode || typeof window === 'undefined') return
     window.localStorage.setItem(LOCAL_TRIP_OVERRIDES_KEY, JSON.stringify(overrides))
-  }, [overrides])
+  }, [isGuestMode, overrides])
 
   useEffect(() => {
     dragStateRef.current = dragState
@@ -4962,26 +5030,16 @@ export default function App() {
   useEffect(() => {
     let active = true
 
-    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
-      queueMicrotask(() => {
-        if (!active) return
-        setCurrentUser(TEMPORARY_USER)
-        setAuthReady(true)
-        setAuthError('')
-        setTripSummaries((current) => (current.length ? current : [buildDefaultTripSummary()]))
-        setTripDirectoryLoaded(true)
-        setUserProfileLoaded(true)
-        setFirestoreState({ status: 'ready', error: '' })
-      })
-      return () => {
-        active = false
-      }
-    }
-
     if (!firebaseEnabled) {
       queueMicrotask(() => {
         if (!active) return
+        setCurrentUser(null)
         setAuthReady(true)
+        setTripSummaries([buildDefaultTripSummary()])
+        setTripDirectoryLoaded(true)
+        setUserProfile(null)
+        setUserProfileLoaded(true)
+        setOverrides(readLocalTripOverrides())
         setFirestoreState({ status: 'disabled', error: 'Firebase env vars missing' })
       })
       return () => {
@@ -5000,18 +5058,24 @@ export default function App() {
           setAuthReady(true)
 
           if (user) {
-            try {
-              await ensureUserProfile(user)
-            } catch (error) {
-              console.error(error)
-            }
-          } else {
             setTripSummaries([])
             setTripDirectoryLoaded(false)
             setUserProfile(null)
             setUserProfileLoaded(false)
             setOverrides({ days: {}, items: {}, bookingOptions: {} })
             setFirestoreState({ status: 'connecting', error: '' })
+            try {
+              await ensureUserProfile(user)
+            } catch (error) {
+              console.error(error)
+            }
+          } else {
+            setTripSummaries([buildDefaultTripSummary()])
+            setTripDirectoryLoaded(true)
+            setUserProfile(null)
+            setUserProfileLoaded(true)
+            setOverrides(readLocalTripOverrides())
+            setFirestoreState({ status: 'ready', error: '' })
           }
         },
         (error) => {
@@ -5020,6 +5084,12 @@ export default function App() {
             setAuthReady(true)
             setAuthError(error?.message || 'Authentication failed')
             setCurrentUser(null)
+            setTripSummaries([buildDefaultTripSummary()])
+            setTripDirectoryLoaded(true)
+            setUserProfile(null)
+            setUserProfileLoaded(true)
+            setOverrides(readLocalTripOverrides())
+            setFirestoreState({ status: 'ready', error: '' })
           }
         },
       )
@@ -5033,7 +5103,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) return undefined
+    if (isGuestMode) return undefined
     if (!authReady || !firebaseEnabled || !currentUser?.uid) return undefined
 
     let active = true
@@ -5063,10 +5133,10 @@ export default function App() {
       active = false
       unsubscribe()
     }
-  }, [authReady, currentUser?.uid])
+  }, [authReady, currentUser?.uid, isGuestMode])
 
   useEffect(() => {
-    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) return undefined
+    if (isGuestMode) return undefined
     if (!authReady || !firebaseEnabled || !currentUser?.uid) return undefined
 
     let active = true
@@ -5096,12 +5166,228 @@ export default function App() {
       active = false
       unsubscribe()
     }
-  }, [authReady, currentUser?.uid])
+  }, [authReady, currentUser?.uid, isGuestMode])
 
   useEffect(() => {
-    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) return undefined
+    if (!pendingInviteId || !authReady || !isGuestMode) return undefined
+
+    const inviteState = inviteAcceptanceRef.current
+    if (inviteState.promptedForId === pendingInviteId || inviteState.inProgress) return undefined
+
+    let active = true
+    inviteState.promptedForId = pendingInviteId
+
+    async function promptForInviteSignIn() {
+      const confirmed = await showConfirm(
+        'Sign in with Google to accept this trip invitation.',
+        {
+          title: 'Trip invitation',
+          confirmLabel: 'Sign in',
+          cancelLabel: 'Not now',
+        },
+      )
+      if (!active || !confirmed) return
+      try {
+        setAuthError('')
+        await signInWithGoogle()
+      } catch (error) {
+        console.error(error)
+        setAuthError(error?.message || 'Google sign-in failed')
+      }
+    }
+
+    void promptForInviteSignIn()
+    return () => {
+      active = false
+    }
+  }, [authReady, isGuestMode, pendingInviteId, showConfirm])
+
+  useEffect(() => {
+    if (!pendingInviteId || isGuestMode) return undefined
+    if (!authReady || !firebaseEnabled || !currentUser?.uid) return undefined
+
+    const inviteState = inviteAcceptanceRef.current
+    if (inviteState.inProgress) return undefined
+
+    let active = true
+    inviteState.inProgress = true
+
+    async function acceptInvite() {
+      try {
+        const invite = await acceptTripInvite(pendingInviteId, currentUser)
+        if (!active || !invite?.tripId) return
+
+        setTripSummaries((current) =>
+          current.some((trip) => trip.id === invite.tripId)
+            ? current
+            : [
+                ...current,
+                {
+                  id: invite.tripId,
+                  role: invite.role,
+                  title: invite.title || 'Shared trip',
+                  startDate: invite.startDate || '',
+                  endDate: invite.endDate || '',
+                  hidden: false,
+                  isDemo: Boolean(invite.isDemo),
+                },
+              ],
+        )
+        selectTrip(invite.tripId)
+        setPendingInviteId('')
+        clearInviteUrl()
+        await showAlert(`You now have ${invite.role} access to ${invite.title || 'this trip'}.`, {
+          title: 'Invitation accepted',
+        })
+      } catch (error) {
+        console.error(error)
+        if (active) {
+          setPendingInviteId('')
+          clearInviteUrl()
+          await showAlert(error?.message || 'Could not accept this invitation.', {
+            title: 'Invitation failed',
+            tone: 'danger',
+          })
+        }
+      } finally {
+        inviteState.inProgress = false
+      }
+    }
+
+    void acceptInvite()
+    return () => {
+      active = false
+    }
+  }, [
+    authReady,
+    clearInviteUrl,
+    currentUser,
+    isGuestMode,
+    pendingInviteId,
+    showAlert,
+  ])
+
+  useEffect(() => {
+    if (isGuestMode) return undefined
     if (!authReady || !firebaseEnabled || !currentUser?.uid) return undefined
     if (!tripDirectoryLoaded || !userProfileLoaded) return undefined
+
+    const uid = currentUser.uid
+    const migration = guestMigrationRef.current
+    if (migration.promptedForUid === uid || migration.declinedForUid === uid || migration.inProgress) {
+      return undefined
+    }
+
+    const localOverrides = hasTripOverrides(migration.localOverrides)
+      ? migration.localOverrides
+      : readLocalTripOverrides()
+
+    if (!hasTripOverrides(localOverrides)) return undefined
+
+    let active = true
+    migration.promptedForUid = uid
+    migration.inProgress = true
+
+    async function migrateGuestTrip() {
+      try {
+        const confirmed = await showConfirm(
+          'Save your local guest itinerary to this Google account as a new Firestore trip?',
+          {
+            title: 'Save local itinerary',
+            confirmLabel: 'Save to account',
+            cancelLabel: 'Keep local only',
+          },
+        )
+
+        if (!active) return
+
+        if (!confirmed) {
+          migration.declinedForUid = uid
+          return
+        }
+
+        const localTripState = deriveTripState(localOverrides)
+        const snapshot = buildClonedTripSnapshot(localTripState)
+        const tripId = slugId('trip')
+        const title = migration.localTitle || 'Imported guest itinerary'
+        const nextSummary = {
+          id: tripId,
+          title,
+          role: 'owner',
+          hidden: false,
+          startDate: snapshot.startDate,
+          endDate: snapshot.endDate,
+        }
+
+        await createTripRecordWithOwner(
+          tripId,
+          {
+            title,
+            startDate: snapshot.startDate,
+            endDate: snapshot.endDate,
+            days: snapshot.days,
+            items: snapshot.items,
+            bookingOptions: snapshot.bookingOptions,
+          },
+          currentUser,
+        )
+
+        if (!active) return
+
+        setTripSummaries((current) =>
+          current.some((trip) => trip.id === tripId) ? current : [...current, nextSummary],
+        )
+        selectTrip(tripId)
+        setFirestoreState({ status: 'ready', error: '' })
+
+        await showAlert(
+          'Your local guest itinerary has been saved to your Google account. The local guest copy will be removed now.',
+          {
+            title: 'Itinerary saved',
+            confirmLabel: 'OK',
+          },
+        )
+
+        if (!active) return
+
+        window.localStorage.removeItem(LOCAL_TRIP_OVERRIDES_KEY)
+        migration.localOverrides = null
+        migration.localTitle = ''
+      } catch (error) {
+        console.error(error)
+        if (active) {
+          const message = error?.message || 'Local itinerary migration failed'
+          setFirestoreState((current) => ({ ...current, status: 'error', error: message }))
+          await showAlert(message, { title: 'Save failed', tone: 'danger' })
+        }
+      } finally {
+        migration.inProgress = false
+      }
+    }
+
+    void migrateGuestTrip()
+    return () => {
+      active = false
+    }
+  }, [
+    authReady,
+    currentUser,
+    isGuestMode,
+    showAlert,
+    showConfirm,
+    tripDirectoryLoaded,
+    userProfileLoaded,
+  ])
+
+  useEffect(() => {
+    if (isGuestMode) return undefined
+    if (!authReady || !firebaseEnabled || !currentUser?.uid) return undefined
+    if (!tripDirectoryLoaded || !userProfileLoaded) return undefined
+    const migration = guestMigrationRef.current
+    const localMigrationPending =
+      migration.inProgress ||
+      (migration.declinedForUid !== currentUser.uid && hasTripOverrides(migration.localOverrides || readLocalTripOverrides()))
+    if (localMigrationPending) return undefined
     if (tripSummaries.length > 0 || userProfile?.onboardingDemoCreated === true) return undefined
 
     const uid = currentUser.uid
@@ -5135,6 +5421,7 @@ export default function App() {
   }, [
     authReady,
     currentUser,
+    isGuestMode,
     tripDirectoryLoaded,
     tripSummaries.length,
     userProfile?.onboardingDemoCreated,
@@ -5142,7 +5429,7 @@ export default function App() {
   ])
 
   useEffect(() => {
-    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) return undefined
+    if (isGuestMode) return undefined
     if (!authReady || !firebaseEnabled || !currentUser?.uid || !resolvedTripId) return undefined
 
     let active = true
@@ -5174,7 +5461,7 @@ export default function App() {
       active = false
       unsubscribe()
     }
-  }, [authReady, currentUser?.uid, resolvedTripId])
+  }, [authReady, currentUser?.uid, isGuestMode, resolvedTripId])
 
   useEffect(() => {
     let cancelled = false
@@ -5267,7 +5554,7 @@ export default function App() {
   ])
 
   useEffect(() => {
-    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
+    if (isGuestMode) {
       queueMicrotask(() => setTripMembers([]))
       return undefined
     }
@@ -5298,7 +5585,7 @@ export default function App() {
       active = false
       unsubscribe()
     }
-  }, [activeRole, authReady, resolvedTripId])
+  }, [activeRole, authReady, isGuestMode, resolvedTripId])
 
   const routePairs = useMemo(() => makeMovementPairs(deferredItems), [deferredItems])
 
@@ -5531,11 +5818,9 @@ export default function App() {
   )
 
   async function handleSignIn() {
-    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
-      setAuthError('')
-      setCurrentUser(TEMPORARY_USER)
-      setAuthReady(true)
-      return
+    if (isGuestMode && hasTripOverrides(overrides)) {
+      guestMigrationRef.current.localOverrides = overrides
+      guestMigrationRef.current.localTitle = activeTripSummary?.title || defaultTripSummary.title
     }
 
     try {
@@ -5548,12 +5833,6 @@ export default function App() {
   }
 
   async function handleSignOut() {
-    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
-      setShowCollaborators(false)
-      setShowMenu(false)
-      return
-    }
-
     try {
       await signOutUser()
       setShowCollaborators(false)
@@ -5578,13 +5857,6 @@ export default function App() {
   }
 
   async function createTrip() {
-    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
-      await showAlert('Google auth is temporarily disabled. New trips are unavailable in local mode.')
-      return
-    }
-
-    if (!firebaseEnabled || !authReady || !currentUser?.uid) return
-
     const nextIndex = availableTrips.length + 1
     const suggestedTitle = `Trip ${nextIndex}`
     const title = await showPrompt('Trip name', {
@@ -5603,6 +5875,25 @@ export default function App() {
       startDate: snapshot.startDate,
       endDate: snapshot.endDate,
     }
+
+    if (isGuestMode) {
+      setTripSummaries((current) =>
+        current.some((trip) => trip.id === tripId) ? current : [...current, nextSummary],
+      )
+      setOverrides({
+        days: snapshot.days,
+        items: snapshot.items,
+        bookingOptions: snapshot.bookingOptions,
+      })
+      setActiveTripId(tripId)
+      setActiveDayId(DAY_VIEW_ALL)
+      setNoteItem(null)
+      setDetailItem(null)
+      setFirestoreState({ status: 'ready', error: '' })
+      return
+    }
+
+    if (!firebaseEnabled || !authReady || !currentUser?.uid) return
 
     try {
       await createTripRecordWithOwner(
@@ -5644,7 +5935,7 @@ export default function App() {
     const snapshot = buildClonedTripSnapshot(tripState)
     const tripId = slugId('trip')
 
-    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
+    if (isGuestMode) {
       setTripSummaries((current) => [
         ...current,
         {
@@ -5719,7 +6010,7 @@ export default function App() {
     })
     if (!nextTitle || nextTitle === currentTitle) return
 
-    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
+    if (isGuestMode) {
       setTripSummaries((current) =>
         current.map((trip) => (trip.id === resolvedTripId ? { ...trip, title: nextTitle } : trip)),
       )
@@ -5751,6 +6042,14 @@ export default function App() {
     const fallbackTrip =
       availableTrips.find((trip) => trip.id !== resolvedTripId && !trip.hidden) || defaultTripSummary
 
+    if (isGuestMode) {
+      setTripSummaries((current) =>
+        current.map((trip) => (trip.id === resolvedTripId ? { ...trip, hidden: true } : trip)),
+      )
+      selectTrip(fallbackTrip.id)
+      return
+    }
+
     await upsertTripMeta(resolvedTripId, {
       hidden: true,
     })
@@ -5760,6 +6059,14 @@ export default function App() {
 
   async function restoreTrip(tripId) {
     if (!firestoreReady || !tripId || !canManageCurrentTrip) return
+    if (isGuestMode) {
+      setTripSummaries((current) =>
+        current.map((trip) => (trip.id === tripId ? { ...trip, hidden: false } : trip)),
+      )
+      selectTrip(tripId)
+      return
+    }
+
     await upsertTripMeta(tripId, { hidden: false })
     selectTrip(tripId)
   }
@@ -6008,11 +6315,12 @@ export default function App() {
   }
 
   async function addCollaborator(email, role) {
-    if (!canManageCurrentTrip || !currentUser?.uid) return
-    if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
-      await showAlert('Sharing is unavailable while Google auth is temporarily disabled.')
+    if (!canManageCurrentTrip) return
+    if (isGuestMode) {
+      await showAlert('Sign in with Google to share trips and save collaborator access to Firestore.')
       return
     }
+    if (!currentUser?.uid) return
 
     const match = await lookupUserByEmail(email)
     if (!match) {
@@ -6040,6 +6348,37 @@ export default function App() {
         hidden: false,
       },
     )
+  }
+
+  async function createInvitationLink(role) {
+    if (!canManageCurrentTrip) return ''
+    if (isGuestMode) {
+      await showAlert('Sign in with Google to create invitation links.')
+      return ''
+    }
+    if (!currentUser?.uid) return ''
+
+    const invite = await createTripInvite(
+      resolvedTripId,
+      currentUser,
+      role,
+      {
+        title: activeTripSummary.title,
+        startDate: activeTripSummary.startDate,
+        endDate: activeTripSummary.endDate,
+        hidden: false,
+        isDemo: activeTripSummary.isDemo,
+      },
+    )
+    if (!invite?.inviteId) return ''
+
+    const link = `${window.location.origin}${window.location.pathname}?invite=${encodeURIComponent(invite.inviteId)}`
+    try {
+      await navigator.clipboard?.writeText(link)
+    } catch (error) {
+      console.error(error)
+    }
+    return link
   }
 
   async function changeCollaboratorRole(member, role) {
@@ -6191,10 +6530,6 @@ export default function App() {
     }
   }
 
-  if (authReady && !currentUser) {
-    return <SignInScreen configured={firebaseEnabled} error={authError} onSignIn={handleSignIn} />
-  }
-
   if (!authReady) {
     return (
       <main className="mx-auto flex min-h-screen max-w-7xl items-center justify-center px-4 py-10 text-slate-600">
@@ -6210,12 +6545,14 @@ export default function App() {
       <MenuButton onClick={() => setShowMenu(true)} />
       <AppDrawer
         activeTripSummary={activeTripSummary}
+        authError={authError}
         availableTrips={availableTrips}
         canManageCurrentTrip={canManageCurrentTrip}
-        canShare={!TEMPORARILY_DISABLE_GOOGLE_AUTH && canViewTrip(activeRole)}
-        currentUser={currentUser}
+        canShare={isSignedIn && canViewTrip(activeRole)}
+        currentUser={effectiveUser}
         deletedTrips={deletedTrips}
-        disabled={!currentUser?.uid}
+        disabled={false}
+        isGuestMode={isGuestMode}
         isMobilePortrait={isMobilePortrait}
         onCloneTrip={() => void cloneTrip()}
         onClose={() => setShowMenu(false)}
@@ -6235,6 +6572,10 @@ export default function App() {
         onShare={() => {
           setShowMenu(false)
           setShowCollaborators(true)
+        }}
+        onSignIn={() => {
+          setShowMenu(false)
+          void handleSignIn()
         }}
         onSignOut={() => {
           setShowMenu(false)
@@ -6270,7 +6611,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => void createTrip()}
-            disabled={TEMPORARILY_DISABLE_GOOGLE_AUTH || !firebaseEnabled || !authReady || !currentUser?.uid}
+            disabled={!authReady || (!isGuestMode && (!firebaseEnabled || !currentUser?.uid))}
             className="mt-4 rounded-[0.9rem] bg-slate-950 px-4 py-3 text-sm font-bold text-white shadow-[0_10px_22px_rgba(15,23,42,0.10)] transition hover:bg-slate-800 disabled:bg-slate-300"
           >
             Create trip
@@ -6429,6 +6770,7 @@ export default function App() {
           members={tripMembers}
           onAddMember={(email, role) => addCollaborator(email, role)}
           onClose={() => setShowCollaborators(false)}
+          onCreateInvite={(role) => createInvitationLink(role)}
           onRemoveMember={(member) => removeCollaborator(member)}
           onUpdateRole={(member, role) => changeCollaboratorRole(member, role)}
         />
