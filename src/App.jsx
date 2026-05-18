@@ -114,9 +114,9 @@ const WALLET_STACK_SPRING = {
 }
 const SUBSTITUTE_STACK_OFFSETS = [
   { x: 0, y: 0, scale: 1, opacity: 1 },
-  { x: -8, y: -8, scale: 0.985, opacity: 0.96 },
-  { x: -16, y: -16, scale: 0.97, opacity: 0.94 },
-  { x: -24, y: -24, scale: 0.955, opacity: 0.91 },
+  { x: -20, y: -5, scale: 0.985, opacity: 0.96 },
+  { x: -40, y: -10, scale: 0.97, opacity: 0.94 },
+  { x: -60, y: -15, scale: 0.955, opacity: 0.91 },
 ]
 const SUBSTITUTE_STACK_VISIBLE_DEPTH = 4
 const MotionDiv = motion.div
@@ -3933,7 +3933,7 @@ function PlannerPanel({
                 <span className={`timeline-dot ${meta.tone}`}>{index + 1}</span>
               </div>
               <LayoutGroup id={`substitute-wallet-${entry.id}`}>
-                <div className={`relative min-w-0 overflow-visible ${showCollapsedSubstituteStack ? 'ml-4 pt-4' : ''}`}>
+                <div className={`relative min-w-0 overflow-visible ${showCollapsedSubstituteStack ? 'ml-10 pt-2' : ''}`}>
                   {showCollapsedSubstituteStack ? (
                     <AnimatePresence initial={false}>
                       {stackAlternatives.slice(0, SUBSTITUTE_STACK_VISIBLE_DEPTH - 1).map((stackItem, stackIndex) => {
@@ -4026,7 +4026,7 @@ function PlannerPanel({
                         {item.generated ? 'Auto-carried from the previous day hotel stay.' : item.description}
                       </p>
                     ) : null}
-                    {showOptionsRow ? (
+                    {showOptionsRow && (!isSubstituteStack || !isExpandedStack) ? (
                       <button
                         type="button"
                         onPointerDown={(event) => event.stopPropagation()}
@@ -4074,11 +4074,25 @@ function PlannerPanel({
               {isExpandedStack && isStack ? (
                   <MotionDiv
                     layout
-                    className={`col-start-3 space-y-1.5 overflow-visible sm:space-y-2.5 ${
-                      isSubstituteStack ? 'pl-3 sm:pl-4' : ''
+                    className={`col-start-3 overflow-visible ${
+                      isSubstituteStack
+                        ? 'max-h-[68svh] space-y-3 overflow-y-auto py-1 pr-1 pl-0 sm:space-y-3.5'
+                        : 'space-y-1.5 sm:space-y-2.5'
                     }`}
                     transition={WALLET_STACK_SPRING}
                   >
+                  {isSubstituteStack ? (
+                    <div className="mb-1 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={toggleStack}
+                        aria-label="Collapse substitute options"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 shadow-[0_8px_18px_rgba(17,24,39,0.06)] transition hover:border-slate-300 hover:text-slate-900 active:scale-95"
+                      >
+                        <ChevronDown className="h-4 w-4 rotate-180" />
+                      </button>
+                    </div>
+                  ) : null}
                   <AnimatePresence initial={false}>
                   {stackAlternatives.map((stackItem, stackIndex) => {
                     const stackMeta = typeMeta(stackItem.category)
@@ -4109,8 +4123,12 @@ function PlannerPanel({
                         onPointerUp={(event) => onOpenDetails.endPress(event, stackItem, () => onOpenNotes(stackItem))}
                         onPointerCancel={onOpenDetails.cancelPress}
                         onPointerLeave={onOpenDetails.cancelPress}
-                        className={`rounded-[0.95rem] border border-slate-200/70 bg-white/86 px-3 py-2.5 shadow-[0_10px_22px_rgba(15,23,42,0.035)] transition hover:bg-white sm:px-3.5 sm:py-3 ${
-                          isSubstituteStack || isMobilePortrait ? 'border-l-4' : ''
+                        className={`${
+                          isSubstituteStack
+                            ? `timeline-card ${stackMeta.card} rounded-[1.55rem] px-3.5 py-3.5 sm:px-5 sm:py-4`
+                            : 'rounded-[0.95rem] border border-slate-200/70 bg-white/86 px-3 py-2.5 shadow-[0_10px_22px_rgba(15,23,42,0.035)] sm:px-3.5 sm:py-3'
+                        } transition hover:bg-white ${
+                          !isSubstituteStack && isMobilePortrait ? 'border-l-4' : ''
                         }`}
                         style={
                           isSubstituteStack
@@ -4127,6 +4145,44 @@ function PlannerPanel({
                               }
                         }
                       >
+                        {isSubstituteStack ? (
+                          <div className="min-w-0">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <h4 className={`${isMobilePortrait ? 'line-clamp-2 leading-5' : 'leading-6'} text-[0.98rem] font-bold tracking-[-0.02em] text-slate-950`}>
+                                  {stackItem.title}
+                                </h4>
+                                {stackItem.locationName ? (
+                                  <p className="mt-0.5 truncate text-[12px] text-slate-500 sm:mt-1">{stackItem.locationName}</p>
+                                ) : null}
+                              </div>
+                              {stackHasActive ? (
+                                <div className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-700">
+                                  Active
+                                </div>
+                              ) : null}
+                            </div>
+                            {stackItem.address && stackItem.address !== stackItem.locationName ? (
+                              <p className="mt-2 truncate text-[11px] text-slate-400">{stackItem.address}</p>
+                            ) : null}
+                            {stackItem.description ? (
+                              <p className="mt-2 line-clamp-2 text-[12px] leading-6 text-slate-500">
+                                {stackItem.description}
+                              </p>
+                            ) : null}
+                            <div className="mt-3 rounded-[0.9rem] bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-600">
+                              <span className="font-semibold text-slate-800">
+                                {stackItem.startTime}
+                                {stackItem.endTime ? `-${stackItem.endTime}` : ''}
+                              </span>
+                              {stackItem.cancellationDeadline ? (
+                                <span className="block">
+                                  Deadline {formatBookingDateTime(stackItem.cancellationDeadline)}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        ) : (
                         <div className="flex items-start gap-3">
                           <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${stackMeta.tone}`} />
                           <div className="min-w-0 flex-1">
@@ -4154,6 +4210,7 @@ function PlannerPanel({
                             ) : null}
                           </div>
                         </div>
+                        )}
                       </MotionDiv>
                     )
                   })}
