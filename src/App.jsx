@@ -30,6 +30,7 @@ import {
   Plus,
   Search,
   Share2,
+  Star,
   Sun,
   Trash2,
   Users,
@@ -106,10 +107,10 @@ const ROUTE_MODE_OPTIONS = [
   ...TRAVEL_MODE_OPTIONS,
 ]
 const SUBSTITUTE_STACK_OFFSETS = [
-  { x: 0, y: 0, scale: 1, opacity: 1 },
-  { x: -15, y: -2.5, scale: 0.985, opacity: 0.96 },
-  { x: -30, y: -5, scale: 0.97, opacity: 0.94 },
-  { x: -45, y: -7.5, scale: 0.955, opacity: 0.91 },
+  { y: 0, opacity: 1 },
+  { y: 0, opacity: 0.98 },
+  { y: 0, opacity: 0.94 },
+  { y: 0, opacity: 0.9 },
 ]
 const SUBSTITUTE_STACK_VISIBLE_DEPTH = 4
 const TRANSIT_MODE_OPTIONS = [
@@ -3884,7 +3885,7 @@ function PlannerPanel({
                   new Date(a.cancellationDeadline).getTime() - new Date(b.cancellationDeadline).getTime(),
               )[0]?.cancellationDeadline ||
             ''
-          const showOptionsRow = isStack || linkedBookingMeta.isOverbooked
+          const showOptionsRow = (!isSubstituteStack && isStack) || linkedBookingMeta.isOverbooked
           const toggleStack = (event) => {
             event?.stopPropagation?.()
             setExpandedStacks((current) => ({
@@ -3948,25 +3949,7 @@ function PlannerPanel({
               <div className="timeline-rail timeline-rail--stop">
                 <span className={`timeline-dot ${meta.tone}`}>{index + 1}</span>
               </div>
-                <div className={`relative min-w-0 overflow-visible ${showCollapsedSubstituteStack ? 'pt-2' : ''}`}>
-                  {showCollapsedSubstituteStack
-                    ? stackAlternatives.slice(0, SUBSTITUTE_STACK_VISIBLE_DEPTH - 1).map((stackItem, stackIndex) => {
-                        const depth = Math.min(stackIndex + 1, SUBSTITUTE_STACK_OFFSETS.length - 1)
-                        const layer = SUBSTITUTE_STACK_OFFSETS[depth]
-                        return (
-                          <div
-                            key={`collapsed-${stackItem.id}`}
-                            aria-hidden="true"
-                            className="pointer-events-none absolute inset-0 rounded-[1.55rem] border border-slate-200/80 bg-white shadow-[0_18px_40px_rgba(17,24,39,0.06)]"
-                            style={{
-                              opacity: layer.opacity,
-                              transform: `translate3d(${layer.x}px, ${layer.y}px, 0) scale(${layer.scale})`,
-                              zIndex: SUBSTITUTE_STACK_VISIBLE_DEPTH - depth,
-                            }}
-                          />
-                        )
-                      })
-                    : null}
+                <div className="relative min-w-0 overflow-visible">
               <article
                 className={`timeline-card ${meta.card} relative z-10 rounded-[1.55rem] px-3.5 py-3.5 transition hover:bg-white active:bg-white sm:px-5 sm:py-4 ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
@@ -4078,6 +4061,42 @@ function PlannerPanel({
                     ) : null}
                   </div>
               </article>
+                  {showCollapsedSubstituteStack ? (
+                    <div className="relative z-0 -mt-[5px] pl-3 pb-1">
+                      {stackAlternatives.slice(0, SUBSTITUTE_STACK_VISIBLE_DEPTH - 1).map((stackItem, stackIndex) => {
+                        const depth = Math.min(stackIndex + 1, SUBSTITUTE_STACK_OFFSETS.length - 1)
+                        const layer = SUBSTITUTE_STACK_OFFSETS[depth]
+                        return (
+                          <button
+                            type="button"
+                            key={`collapsed-summary-${stackItem.id}`}
+                            onPointerDown={toggleStack}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault()
+                                toggleStack(event)
+                              }
+                            }}
+                            onClick={toggleStack}
+                            className="relative flex h-9 w-full items-center justify-between gap-3 rounded-[1rem] border border-slate-200/80 bg-white/95 px-3.5 text-left text-[11px] font-semibold text-slate-600 shadow-[0_12px_26px_rgba(17,24,39,0.055)] transition hover:border-slate-300 hover:bg-white active:scale-[0.995]"
+                            style={{
+                              marginTop: stackIndex === 0 ? 0 : -5,
+                              opacity: layer.opacity,
+                              transform: `translateY(${layer.y}px)`,
+                              zIndex: SUBSTITUTE_STACK_VISIBLE_DEPTH - stackIndex,
+                            }}
+                            aria-label={`Open substitute option ${stackItem.title}`}
+                          >
+                            <span className="min-w-0 truncate">{stackItem.title}</span>
+                            <span className="shrink-0 text-[10px] font-bold text-slate-400">
+                              {stackItem.startTime}
+                              {stackItem.endTime ? `-${stackItem.endTime}` : ''}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : null}
                 </div>
 
               {isExpandedStack && isStack ? (
@@ -4174,7 +4193,7 @@ function PlannerPanel({
                                   aria-label={`Make ${stackItem.title} the primary choice`}
                                   className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 shadow-[0_8px_18px_rgba(17,24,39,0.06)] transition hover:border-blue-200 hover:bg-blue-50 hover:text-[#2F6BFF] active:scale-95"
                                 >
-                                  <Check className="h-4 w-4" />
+                                  <Star className="h-4 w-4" />
                                 </button>
                               ) : null}
                             </div>
