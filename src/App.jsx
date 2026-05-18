@@ -3893,6 +3893,13 @@ function PlannerPanel({
               [entry.id]: !current[entry.id],
             }))
           }
+          const expandStack = (event) => {
+            event?.stopPropagation?.()
+            setExpandedStacks((current) => ({
+              ...current,
+              [entry.id]: true,
+            }))
+          }
           const promoteSubstitute = (event, stackItem) => {
             event?.stopPropagation?.()
             if (!onPromoteSubstitute) return
@@ -3953,26 +3960,22 @@ function PlannerPanel({
               <article
                 className={`timeline-card ${meta.card} relative z-10 rounded-[1.55rem] px-3.5 py-3.5 transition hover:bg-white active:bg-white sm:px-5 sm:py-4 ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
-                } ${showCollapsedSubstituteStack ? 'cursor-pointer shadow-[0_26px_56px_rgba(17,24,39,0.11)]' : ''}`}
+                } ${showCollapsedSubstituteStack ? 'shadow-[0_26px_56px_rgba(17,24,39,0.11)]' : ''}`}
                 role="button"
                 tabIndex={0}
-                onClick={showCollapsedSubstituteStack ? toggleStack : undefined}
+                onClick={undefined}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
-                    if (showCollapsedSubstituteStack) {
-                      toggleStack(event)
-                    } else {
-                      onOpenNotes(item)
-                    }
+                    onOpenNotes(item)
                   }
                 }}
                 onContextMenu={(event) => event.preventDefault()}
-                onPointerDown={showCollapsedSubstituteStack ? undefined : (event) => onOpenDetails.startPress(event, item)}
-                onPointerMove={showCollapsedSubstituteStack ? undefined : onOpenDetails.movePress}
-                onPointerUp={showCollapsedSubstituteStack ? undefined : (event) => onOpenDetails.endPress(event, item, () => onOpenNotes(item))}
-                onPointerCancel={showCollapsedSubstituteStack ? undefined : onOpenDetails.cancelPress}
-                onPointerLeave={showCollapsedSubstituteStack ? undefined : onOpenDetails.cancelPress}
+                onPointerDown={(event) => onOpenDetails.startPress(event, item)}
+                onPointerMove={onOpenDetails.movePress}
+                onPointerUp={(event) => onOpenDetails.endPress(event, item, () => onOpenNotes(item))}
+                onPointerCancel={onOpenDetails.cancelPress}
+                onPointerLeave={onOpenDetails.cancelPress}
               >
                   <div className="relative z-10 min-w-0">
                     <div className={`flex ${isMobilePortrait ? 'flex-col items-stretch gap-2' : 'items-start justify-between gap-3'}`}>
@@ -4070,14 +4073,14 @@ function PlannerPanel({
                           <button
                             type="button"
                             key={`collapsed-summary-${stackItem.id}`}
-                            onPointerDown={toggleStack}
+                            onPointerDown={expandStack}
                             onKeyDown={(event) => {
                               if (event.key === 'Enter' || event.key === ' ') {
                                 event.preventDefault()
-                                toggleStack(event)
+                                expandStack(event)
                               }
                             }}
-                            onClick={toggleStack}
+                            onClick={expandStack}
                             className="relative flex h-9 w-full items-center justify-between gap-3 rounded-[1rem] border border-slate-200/80 bg-white/95 px-3.5 text-left text-[11px] font-semibold text-slate-600 shadow-[0_12px_26px_rgba(17,24,39,0.055)] transition hover:border-slate-300 hover:bg-white active:scale-[0.995]"
                             style={{
                               marginTop: stackIndex === 0 ? 0 : -5,
@@ -4101,14 +4104,14 @@ function PlannerPanel({
 
               {isExpandedStack && isStack ? (
                   <div
-                    className={`col-start-3 overflow-visible ${
+                    className={`relative col-start-3 overflow-visible ${
                       isSubstituteStack
-                        ? 'max-h-[56svh] space-y-2 overflow-y-auto py-0.5 pr-1 pl-3 sm:space-y-2.5'
+                        ? '-mt-1 max-h-[56svh] space-y-1 overflow-y-auto py-0 pr-1 pl-3 sm:space-y-1.5'
                         : 'space-y-1.5 sm:space-y-2.5'
                     }`}
                   >
                   {isSubstituteStack ? (
-                    <div className="mb-0.5 flex justify-end">
+                    <div className="flex h-7 justify-end">
                       <button
                         type="button"
                         onClick={toggleStack}
