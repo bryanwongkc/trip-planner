@@ -38,6 +38,7 @@ import {
   CarFront,
   TrainFront,
 } from 'lucide-react'
+import { AnimatePresence, LayoutGroup, motion } from 'framer-motion'
 import {
   CATEGORY_OPTIONS,
   DEFAULT_TRIP_TITLE,
@@ -105,6 +106,19 @@ const ROUTE_MODE_OPTIONS = [
   { value: '', label: 'Auto' },
   ...TRAVEL_MODE_OPTIONS,
 ]
+const WALLET_STACK_SPRING = {
+  type: 'spring',
+  stiffness: 290,
+  damping: 29,
+  mass: 0.92,
+}
+const SUBSTITUTE_STACK_OFFSETS = [
+  { x: 0, y: 0, scale: 1, opacity: 1 },
+  { x: -8, y: -8, scale: 0.985, opacity: 0.96 },
+  { x: -16, y: -16, scale: 0.97, opacity: 0.94 },
+  { x: -24, y: -24, scale: 0.955, opacity: 0.91 },
+]
+const MotionDiv = motion.div
 const TRANSIT_MODE_OPTIONS = [
   { value: 'train', label: 'Train' },
   { value: 'bus', label: 'Bus' },
@@ -3917,10 +3931,10 @@ function PlannerPanel({
                 <span className={`timeline-dot ${meta.tone}`}>{index + 1}</span>
               </div>
               <article
-                className={`timeline-card ${meta.card} ${isSubstituteStack ? 'timeline-card--side-stack' : ''} relative rounded-[1.15rem] px-3.5 py-3.5 transition hover:bg-white active:bg-white sm:px-5 sm:py-4 ${
+                className={`timeline-card ${meta.card} ${isSubstituteStack && !isExpandedStack ? 'timeline-card--side-stack' : ''} relative rounded-[1.55rem] px-3.5 py-3.5 transition hover:bg-white active:bg-white sm:px-5 sm:py-4 ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
                 }`}
-                style={isSubstituteStack ? { '--side-stack-count': Math.min(stackAlternatives.length, 2) } : undefined}
+                style={isSubstituteStack && !isExpandedStack ? { '--side-stack-count': Math.min(stackAlternatives.length, 2) } : undefined}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(event) => {
@@ -4023,20 +4037,31 @@ function PlannerPanel({
               </article>
 
               {isExpandedStack && isStack ? (
-                <div
-                  className={`col-start-3 space-y-1.5 overflow-visible sm:space-y-2.5 ${
-                    isSubstituteStack ? 'pl-3 sm:pl-4' : ''
-                  }`}
-                >
+                <LayoutGroup id={`substitute-stack-${entry.id}`}>
+                  <MotionDiv
+                    layout
+                    className={`col-start-3 space-y-1.5 overflow-visible sm:space-y-2.5 ${
+                      isSubstituteStack ? 'pl-3 sm:pl-4' : ''
+                    }`}
+                    transition={WALLET_STACK_SPRING}
+                  >
+                  <AnimatePresence initial={false}>
                   {stackAlternatives.map((stackItem, stackIndex) => {
                     const stackMeta = typeMeta(stackItem.category)
                     const stackHasActive = isSubstituteStack
                       ? hasActiveSelectionStatus(stackItem)
                       : hasActiveStayOrMealStatus(stackItem)
                     const stackSideOffset = isSubstituteStack ? Math.min((stackIndex + 1) * 8, 20) : 0
+                    const substituteDepth = Math.min(stackIndex + 1, SUBSTITUTE_STACK_OFFSETS.length - 1)
+                    const substituteMotion = SUBSTITUTE_STACK_OFFSETS[substituteDepth]
                     return (
-                      <article
+                      <MotionDiv
                         key={stackItem.id}
+                        layout
+                        initial={isSubstituteStack ? substituteMotion : { opacity: 0, y: -8, scale: 0.98 }}
+                        animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+                        exit={isSubstituteStack ? substituteMotion : { opacity: 0, y: -8, scale: 0.98 }}
+                        transition={WALLET_STACK_SPRING}
                         role="button"
                         tabIndex={0}
                         onKeyDown={(event) => {
@@ -4097,10 +4122,12 @@ function PlannerPanel({
                             ) : null}
                           </div>
                         </div>
-                      </article>
+                      </MotionDiv>
                     )
                   })}
-                </div>
+                  </AnimatePresence>
+                  </MotionDiv>
+                </LayoutGroup>
               ) : isExpandedStack && linkedBookingMeta.isOverbooked ? (
                 <div className="col-start-3 space-y-1.5 overflow-visible sm:space-y-2">
                   {itemBookingOptions.map((booking) => {
