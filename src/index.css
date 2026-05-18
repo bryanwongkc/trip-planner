@@ -76,46 +76,6 @@ body::before {
     inset 0 1px 0 rgba(255, 255, 255, 0.78);
 }
 
-.timeline-card--side-stack {
-  isolation: isolate;
-  margin-left: 1rem;
-}
-
-.timeline-card--side-stack::before,
-.timeline-card--side-stack::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 1px solid rgba(100, 116, 139, 0.24);
-  border-radius: inherit;
-  background: linear-gradient(135deg, rgba(248, 250, 252, 0.98), rgba(203, 213, 225, 0.78));
-  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.045);
-  clip-path: inset(-0.85rem calc(100% - 1.7rem) -0.85rem -0.85rem round 1.35rem);
-  pointer-events: none;
-  transition: transform 160ms ease, opacity 160ms ease;
-  z-index: 1;
-}
-
-.timeline-card--side-stack::before {
-  opacity: min(var(--side-stack-count), 1);
-  transform: translate(-0.78rem, 0.34rem);
-}
-
-.timeline-card--side-stack::after {
-  opacity: calc(max(var(--side-stack-count) - 1, 0) * 0.78);
-  transform: translate(-1.42rem, 0.68rem);
-}
-
-.timeline-card--side-stack:hover::before,
-.timeline-card--side-stack:focus-visible::before {
-  transform: translate(-0.9rem, 0.4rem);
-}
-
-.timeline-card--side-stack:hover::after,
-.timeline-card--side-stack:focus-visible::after {
-  transform: translate(-1.62rem, 0.78rem);
-}
-
 .timeline-card--hotel {
   background: #ffffff;
   border-color: rgba(229, 231, 235, 0.9);

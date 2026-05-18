@@ -118,6 +118,7 @@ const SUBSTITUTE_STACK_OFFSETS = [
   { x: -16, y: -16, scale: 0.97, opacity: 0.94 },
   { x: -24, y: -24, scale: 0.955, opacity: 0.91 },
 ]
+const SUBSTITUTE_STACK_VISIBLE_DEPTH = 4
 const MotionDiv = motion.div
 const TRANSIT_MODE_OPTIONS = [
   { value: 'train', label: 'Train' },
@@ -3841,6 +3842,7 @@ function PlannerPanel({
           const isExpandedStack = Boolean(expandedStacks[entry.id])
           const stackAlternatives = isStack ? entry.items.filter((stackItem) => stackItem.id !== item.id) : []
           const isSubstituteStack = entry.stackKind === 'substitute'
+          const showCollapsedSubstituteStack = isSubstituteStack && !isExpandedStack && stackAlternatives.length > 0
           const stackChoiceLabel = isSubstituteStack
             ? 'substitute options'
             : item.category === 'Hotel'
@@ -3930,25 +3932,57 @@ function PlannerPanel({
               <div className="timeline-rail timeline-rail--stop">
                 <span className={`timeline-dot ${meta.tone}`}>{index + 1}</span>
               </div>
+              <LayoutGroup id={`substitute-wallet-${entry.id}`}>
+                <div className={`relative min-w-0 overflow-visible ${showCollapsedSubstituteStack ? 'ml-4 pt-4' : ''}`}>
+                  {showCollapsedSubstituteStack ? (
+                    <AnimatePresence initial={false}>
+                      {stackAlternatives.slice(0, SUBSTITUTE_STACK_VISIBLE_DEPTH - 1).map((stackItem, stackIndex) => {
+                        const depth = Math.min(stackIndex + 1, SUBSTITUTE_STACK_OFFSETS.length - 1)
+                        const layer = SUBSTITUTE_STACK_OFFSETS[depth]
+                        return (
+                          <MotionDiv
+                            key={`collapsed-${stackItem.id}`}
+                            layoutId={`substitute-card-${stackItem.id}`}
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-0 rounded-[1.55rem] border border-slate-200/80 bg-white shadow-[0_18px_40px_rgba(17,24,39,0.06)]"
+                            initial={false}
+                            animate={{
+                              x: layer.x,
+                              y: layer.y,
+                              scale: layer.scale,
+                              opacity: layer.opacity,
+                            }}
+                            exit={{ opacity: 0, scale: 0.96 }}
+                            transition={WALLET_STACK_SPRING}
+                            style={{ zIndex: SUBSTITUTE_STACK_VISIBLE_DEPTH - depth }}
+                          />
+                        )
+                      })}
+                    </AnimatePresence>
+                  ) : null}
               <article
-                className={`timeline-card ${meta.card} ${isSubstituteStack && !isExpandedStack ? 'timeline-card--side-stack' : ''} relative rounded-[1.55rem] px-3.5 py-3.5 transition hover:bg-white active:bg-white sm:px-5 sm:py-4 ${
+                className={`timeline-card ${meta.card} relative z-10 rounded-[1.55rem] px-3.5 py-3.5 transition hover:bg-white active:bg-white sm:px-5 sm:py-4 ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
-                }`}
-                style={isSubstituteStack && !isExpandedStack ? { '--side-stack-count': Math.min(stackAlternatives.length, 2) } : undefined}
+                } ${showCollapsedSubstituteStack ? 'cursor-pointer shadow-[0_26px_56px_rgba(17,24,39,0.11)]' : ''}`}
                 role="button"
                 tabIndex={0}
+                onClick={showCollapsedSubstituteStack ? toggleStack : undefined}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
-                    onOpenNotes(item)
+                    if (showCollapsedSubstituteStack) {
+                      toggleStack(event)
+                    } else {
+                      onOpenNotes(item)
+                    }
                   }
                 }}
                 onContextMenu={(event) => event.preventDefault()}
-                onPointerDown={(event) => onOpenDetails.startPress(event, item)}
-                onPointerMove={onOpenDetails.movePress}
-                onPointerUp={(event) => onOpenDetails.endPress(event, item, () => onOpenNotes(item))}
-                onPointerCancel={onOpenDetails.cancelPress}
-                onPointerLeave={onOpenDetails.cancelPress}
+                onPointerDown={showCollapsedSubstituteStack ? undefined : (event) => onOpenDetails.startPress(event, item)}
+                onPointerMove={showCollapsedSubstituteStack ? undefined : onOpenDetails.movePress}
+                onPointerUp={showCollapsedSubstituteStack ? undefined : (event) => onOpenDetails.endPress(event, item, () => onOpenNotes(item))}
+                onPointerCancel={showCollapsedSubstituteStack ? undefined : onOpenDetails.cancelPress}
+                onPointerLeave={showCollapsedSubstituteStack ? undefined : onOpenDetails.cancelPress}
               >
                   <div className="relative z-10 min-w-0">
                     <div className={`flex ${isMobilePortrait ? 'flex-col items-stretch gap-2' : 'items-start justify-between gap-3'}`}>
@@ -4035,9 +4069,9 @@ function PlannerPanel({
                     ) : null}
                   </div>
               </article>
+                </div>
 
               {isExpandedStack && isStack ? (
-                <LayoutGroup id={`substitute-stack-${entry.id}`}>
                   <MotionDiv
                     layout
                     className={`col-start-3 space-y-1.5 overflow-visible sm:space-y-2.5 ${
@@ -4051,13 +4085,13 @@ function PlannerPanel({
                     const stackHasActive = isSubstituteStack
                       ? hasActiveSelectionStatus(stackItem)
                       : hasActiveStayOrMealStatus(stackItem)
-                    const stackSideOffset = isSubstituteStack ? Math.min((stackIndex + 1) * 8, 20) : 0
                     const substituteDepth = Math.min(stackIndex + 1, SUBSTITUTE_STACK_OFFSETS.length - 1)
                     const substituteMotion = SUBSTITUTE_STACK_OFFSETS[substituteDepth]
                     return (
                       <MotionDiv
                         key={stackItem.id}
                         layout
+                        layoutId={isSubstituteStack ? `substitute-card-${stackItem.id}` : undefined}
                         initial={isSubstituteStack ? substituteMotion : { opacity: 0, y: -8, scale: 0.98 }}
                         animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
                         exit={isSubstituteStack ? substituteMotion : { opacity: 0, y: -8, scale: 0.98 }}
@@ -4082,8 +4116,6 @@ function PlannerPanel({
                           isSubstituteStack
                             ? {
                                 borderLeftColor: stackHasActive ? '#10b981' : '#94a3b8',
-                                transform: `translateX(-${stackSideOffset}px)`,
-                                width: `calc(100% - ${stackSideOffset}px)`,
                               }
                             : isMobilePortrait
                             ? {
@@ -4127,7 +4159,6 @@ function PlannerPanel({
                   })}
                   </AnimatePresence>
                   </MotionDiv>
-                </LayoutGroup>
               ) : isExpandedStack && linkedBookingMeta.isOverbooked ? (
                 <div className="col-start-3 space-y-1.5 overflow-visible sm:space-y-2">
                   {itemBookingOptions.map((booking) => {
@@ -4161,6 +4192,7 @@ function PlannerPanel({
                   })}
                 </div>
               ) : null}
+              </LayoutGroup>
 
               {nextSegment ? (
                 <>
