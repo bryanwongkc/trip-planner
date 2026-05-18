@@ -3173,53 +3173,66 @@ function NoteModal({
           ) : null}
         </div>
 
-        <div className="mt-4 space-y-2">
-          {canAddSubstitute ? (
+        <div className="mt-4">
+          <div className="grid grid-cols-4 gap-2">
             <button
               type="button"
               onClick={() => void onAddSubstitute()}
-              className="flex w-full items-center justify-between rounded-[0.95rem] bg-white px-4 py-3.5 text-left text-sm font-semibold text-slate-800"
+              disabled={!canAddSubstitute}
+              className="flex min-h-[4.25rem] flex-col items-center justify-center gap-1.5 rounded-[0.95rem] border border-slate-200/70 bg-white px-1.5 py-2 text-center text-[10px] font-semibold leading-3 tracking-[-0.01em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+              aria-label="Add substitute item"
             >
-              <span>Add substitute item</span>
               <Plus className="h-4 w-4" />
+              <span>Substitute</span>
             </button>
-          ) : null}
-          {canEdit && !item.generated ? (
             <button
               type="button"
               onClick={() => void onDuplicate()}
-              className="flex w-full items-center justify-between rounded-[0.95rem] bg-white px-4 py-3.5 text-left text-sm font-semibold text-slate-800"
+              disabled={!canEdit || item.generated}
+              className="flex min-h-[4.25rem] flex-col items-center justify-center gap-1.5 rounded-[0.95rem] border border-slate-200/70 bg-white px-1.5 py-2 text-center text-[10px] font-semibold leading-3 tracking-[-0.01em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+              aria-label="Duplicate item"
             >
-              <span>Duplicate item</span>
               <Copy className="h-4 w-4" />
+              <span>Duplicate</span>
             </button>
-          ) : null}
-          {canEdit ? (
             <button
               type="button"
               onClick={onOpenDetails}
-              className="flex w-full items-center justify-between rounded-[0.95rem] bg-slate-900 px-4 py-3.5 text-left text-sm font-bold text-white"
+              disabled={!canEdit}
+              className="flex min-h-[4.25rem] flex-col items-center justify-center gap-1.5 rounded-[0.95rem] border border-slate-900 bg-slate-900 px-1.5 py-2 text-center text-[10px] font-bold leading-3 tracking-[-0.01em] text-white shadow-[0_10px_22px_rgba(15,23,42,0.10)] transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
+              aria-label="Edit details"
             >
-              <span>Edit details</span>
               <Pencil className="h-4 w-4" />
+              <span>Edit</span>
             </button>
-          ) : null}
-          {mapsUrl ? (
-            <a
-              href={mapsUrl}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => onClose()}
-              className="flex w-full items-center justify-between rounded-[0.95rem] bg-white px-4 py-3.5 text-sm font-semibold text-slate-800"
-            >
-              <span>Open in Google Maps</span>
-              <ExternalLink className="h-4 w-4" />
-            </a>
-          ) : null}
+            {mapsUrl ? (
+              <a
+                href={mapsUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => onClose()}
+                className="flex min-h-[4.25rem] flex-col items-center justify-center gap-1.5 rounded-[0.95rem] border border-slate-200/70 bg-white px-1.5 py-2 text-center text-[10px] font-semibold leading-3 tracking-[-0.01em] text-slate-700 transition hover:bg-slate-50"
+                aria-label="Open in Google Maps"
+              >
+                <ExternalLink className="h-4 w-4" />
+                <span>Maps</span>
+              </a>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="flex min-h-[4.25rem] flex-col items-center justify-center gap-1.5 rounded-[0.95rem] border border-slate-200/70 bg-slate-100 px-1.5 py-2 text-center text-[10px] font-semibold leading-3 tracking-[-0.01em] text-slate-400"
+                aria-label="Open in Google Maps unavailable"
+              >
+                <ExternalLink className="h-4 w-4" />
+                <span>Maps</span>
+              </button>
+            )}
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex w-full items-center justify-center rounded-[0.95rem] bg-slate-100 px-4 py-3.5 text-sm font-semibold text-slate-600"
+            className="mt-2 flex w-full items-center justify-center rounded-[0.95rem] bg-slate-100 px-4 py-3.5 text-sm font-semibold text-slate-600"
           >
             Cancel
           </button>
@@ -3935,7 +3948,7 @@ function PlannerPanel({
               <div className="timeline-rail timeline-rail--stop">
                 <span className={`timeline-dot ${meta.tone}`}>{index + 1}</span>
               </div>
-                <div className={`relative min-w-0 overflow-visible ${showCollapsedSubstituteStack ? 'ml-10 pt-2' : ''}`}>
+                <div className={`relative min-w-0 overflow-visible ${showCollapsedSubstituteStack ? 'pt-2' : ''}`}>
                   {showCollapsedSubstituteStack
                     ? stackAlternatives.slice(0, SUBSTITUTE_STACK_VISIBLE_DEPTH - 1).map((stackItem, stackIndex) => {
                         const depth = Math.min(stackIndex + 1, SUBSTITUTE_STACK_OFFSETS.length - 1)
@@ -4148,7 +4161,15 @@ function PlannerPanel({
                               ) : canEdit ? (
                                 <button
                                   type="button"
-                                  onPointerDown={(event) => event.stopPropagation()}
+                                  onPointerDown={(event) => promoteSubstitute(event, stackItem)}
+                                  onPointerUp={(event) => event.stopPropagation()}
+                                  onKeyDown={(event) => {
+                                    event.stopPropagation()
+                                    if (event.key === 'Enter' || event.key === ' ') {
+                                      event.preventDefault()
+                                      promoteSubstitute(event, stackItem)
+                                    }
+                                  }}
                                   onClick={(event) => promoteSubstitute(event, stackItem)}
                                   aria-label={`Make ${stackItem.title} the primary choice`}
                                   className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 shadow-[0_8px_18px_rgba(17,24,39,0.06)] transition hover:border-blue-200 hover:bg-blue-50 hover:text-[#2F6BFF] active:scale-95"
@@ -5896,13 +5917,19 @@ export default function App() {
     )
     if (!groupItems.some((candidate) => candidate.id === item.id)) return
 
-    await saveTripPatch(resolvedTripId, {
-      items: Object.fromEntries(
-        groupItems.map((candidate) => [
-          candidate.id,
-          { status: candidate.id === item.id ? 'active' : 'considering' },
-        ]),
+    const nextGroupItems = groupItems.map((candidate) =>
+      normalizeItemForSave(
+        stripFlightLocationFields(
+          normalizeItemTimeFields({
+            ...candidate,
+            status: candidate.id === item.id ? 'active' : 'considering',
+          }),
+        ),
       ),
+    )
+
+    await saveTripPatch(resolvedTripId, {
+      items: Object.fromEntries(nextGroupItems.map((candidate) => [candidate.id, candidate])),
     })
   }
 
