@@ -4103,19 +4103,19 @@ function PlannerPanel({
                   <div
                     className={`col-start-3 overflow-visible ${
                       isSubstituteStack
-                        ? 'max-h-[68svh] space-y-3 overflow-y-auto py-1 pr-1 pl-0 sm:space-y-3.5'
+                        ? 'max-h-[56svh] space-y-2 overflow-y-auto py-0.5 pr-1 pl-3 sm:space-y-2.5'
                         : 'space-y-1.5 sm:space-y-2.5'
                     }`}
                   >
                   {isSubstituteStack ? (
-                    <div className="mb-1 flex justify-end">
+                    <div className="mb-0.5 flex justify-end">
                       <button
                         type="button"
                         onClick={toggleStack}
                         aria-label="Collapse substitute options"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 shadow-[0_8px_18px_rgba(17,24,39,0.06)] transition hover:border-slate-300 hover:text-slate-900 active:scale-95"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 shadow-[0_6px_14px_rgba(17,24,39,0.055)] transition hover:border-slate-300 hover:text-slate-900 active:scale-95"
                       >
-                        <ChevronDown className="h-4 w-4 rotate-180" />
+                        <ChevronDown className="h-3.5 w-3.5 rotate-180" />
                       </button>
                     </div>
                   ) : null}
@@ -4142,7 +4142,7 @@ function PlannerPanel({
                         onPointerLeave={onOpenDetails.cancelPress}
                         className={`${
                           isSubstituteStack
-                            ? `timeline-card ${stackMeta.card} rounded-[1.55rem] px-3.5 py-3.5 sm:px-5 sm:py-4`
+                            ? `timeline-card ${stackMeta.card} rounded-[1.25rem] px-3.5 py-3 sm:px-4 sm:py-3.5`
                             : 'rounded-[0.95rem] border border-slate-200/70 bg-white/86 px-3 py-2.5 shadow-[0_10px_22px_rgba(15,23,42,0.035)] sm:px-3.5 sm:py-3'
                         } transition hover:bg-white ${
                           !isSubstituteStack && isMobilePortrait ? 'border-l-4' : ''
@@ -4166,7 +4166,7 @@ function PlannerPanel({
                           <div className="min-w-0">
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
-                                <h4 className={`${isMobilePortrait ? 'line-clamp-2 leading-5' : 'leading-6'} text-[0.98rem] font-bold tracking-[-0.02em] text-slate-950`}>
+                                <h4 className={`${isMobilePortrait ? 'line-clamp-2 leading-5' : 'leading-5'} text-[0.92rem] font-bold tracking-[-0.02em] text-slate-950`}>
                                   {stackItem.title}
                                 </h4>
                                 {stackItem.locationName ? (
@@ -4191,9 +4191,9 @@ function PlannerPanel({
                                   }}
                                   onClick={(event) => promoteSubstitute(event, stackItem)}
                                   aria-label={`Make ${stackItem.title} the primary choice`}
-                                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 shadow-[0_8px_18px_rgba(17,24,39,0.06)] transition hover:border-blue-200 hover:bg-blue-50 hover:text-[#2F6BFF] active:scale-95"
+                                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 shadow-[0_6px_14px_rgba(17,24,39,0.055)] transition hover:border-blue-200 hover:bg-blue-50 hover:text-[#2F6BFF] active:scale-95"
                                 >
-                                  <Star className="h-4 w-4" />
+                                  <Star className="h-3.5 w-3.5" />
                                 </button>
                               ) : null}
                             </div>
@@ -4205,7 +4205,7 @@ function PlannerPanel({
                                 {stackItem.description}
                               </p>
                             ) : null}
-                            <div className="mt-3 rounded-[0.9rem] bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-600">
+                            <div className="mt-2 rounded-[0.75rem] bg-slate-50 px-3 py-1.5 text-[11px] leading-5 text-slate-600">
                               <span className="font-semibold text-slate-800">
                                 {stackItem.startTime}
                                 {stackItem.endTime ? `-${stackItem.endTime}` : ''}
