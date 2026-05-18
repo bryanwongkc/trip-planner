@@ -3908,6 +3908,17 @@ function PlannerPanel({
               [entry.id]: !current[entry.id],
             }))
           }
+          const collapseStack = (event) => {
+            event?.stopPropagation?.()
+            setExpandedStacks((current) => ({
+              ...current,
+              [entry.id]: false,
+            }))
+            window.requestAnimationFrame(() => {
+              document.body.getBoundingClientRect()
+              window.dispatchEvent(new Event('resize'))
+            })
+          }
           const expandStack = (event) => {
             event?.stopPropagation?.()
             setExpandedStacks((current) => ({
@@ -3971,7 +3982,10 @@ function PlannerPanel({
               <div className="timeline-rail timeline-rail--stop">
                 <span className={`timeline-dot ${meta.tone}`}>{index + 1}</span>
               </div>
-                <div className="relative min-w-0 overflow-visible">
+                <div
+                  key={`${entry.id}-${isExpandedStack ? 'expanded' : 'collapsed'}`}
+                  className="relative min-w-0 overflow-visible"
+                >
               <article
                 className={`timeline-card ${meta.card} relative z-10 rounded-[1.55rem] px-3.5 py-3.5 transition hover:bg-white active:bg-white sm:px-5 sm:py-4 ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
@@ -4106,7 +4120,7 @@ function PlannerPanel({
                       <div className="flex h-7 justify-end">
                         <button
                           type="button"
-                          onClick={toggleStack}
+                          onClick={collapseStack}
                           aria-label="Collapse substitute options"
                           className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 shadow-[0_6px_14px_rgba(17,24,39,0.055)] transition hover:border-slate-300 hover:text-slate-900 active:scale-95"
                         >
