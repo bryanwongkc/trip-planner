@@ -4100,33 +4100,108 @@ function PlannerPanel({
                       })}
                     </div>
                   ) : null}
-                </div>
-
-              {isExpandedStack && isStack ? (
-                  <div
-                    className={`relative col-start-3 overflow-visible ${
-                      isSubstituteStack
-                        ? '-mt-1 max-h-[56svh] space-y-1 overflow-y-auto py-0 pr-1 pl-3 sm:space-y-1.5'
-                        : 'space-y-1.5 sm:space-y-2.5'
-                    }`}
-                  >
-                  {isSubstituteStack ? (
-                    <div className="flex h-7 justify-end">
-                      <button
-                        type="button"
-                        onClick={toggleStack}
-                        aria-label="Collapse substitute options"
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 shadow-[0_6px_14px_rgba(17,24,39,0.055)] transition hover:border-slate-300 hover:text-slate-900 active:scale-95"
-                      >
-                        <ChevronDown className="h-3.5 w-3.5 rotate-180" />
-                      </button>
+                  {isSubstituteStack && isExpandedStack && isStack ? (
+                    <div className="mt-0.5 max-h-[56svh] space-y-1 overflow-y-auto py-0 pr-1 pl-3 sm:space-y-1.5">
+                      <div className="flex h-7 justify-end">
+                        <button
+                          type="button"
+                          onClick={toggleStack}
+                          aria-label="Collapse substitute options"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 shadow-[0_6px_14px_rgba(17,24,39,0.055)] transition hover:border-slate-300 hover:text-slate-900 active:scale-95"
+                        >
+                          <ChevronDown className="h-3.5 w-3.5 rotate-180" />
+                        </button>
+                      </div>
+                      {stackAlternatives.map((stackItem) => {
+                        const stackMeta = typeMeta(stackItem.category)
+                        const stackHasActive = hasActiveSelectionStatus(stackItem)
+                        return (
+                          <article
+                            key={stackItem.id}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault()
+                              }
+                            }}
+                            onContextMenu={(event) => event.preventDefault()}
+                            onPointerDown={(event) => onOpenDetails.startPress(event, stackItem)}
+                            onPointerMove={onOpenDetails.movePress}
+                            onPointerUp={(event) => onOpenDetails.endPress(event, stackItem, () => onOpenNotes(stackItem))}
+                            onPointerCancel={onOpenDetails.cancelPress}
+                            onPointerLeave={onOpenDetails.cancelPress}
+                            className={`timeline-card ${stackMeta.card} rounded-[1.25rem] px-3.5 py-3 transition hover:bg-white sm:px-4 sm:py-3.5`}
+                            style={{
+                              borderLeftColor: stackHasActive ? '#10b981' : '#94a3b8',
+                            }}
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <h4 className={`${isMobilePortrait ? 'line-clamp-2 leading-5' : 'leading-5'} text-[0.92rem] font-bold tracking-[-0.02em] text-slate-950`}>
+                                    {stackItem.title}
+                                  </h4>
+                                  {stackItem.locationName ? (
+                                    <p className="mt-0.5 truncate text-[12px] text-slate-500 sm:mt-1">{stackItem.locationName}</p>
+                                  ) : null}
+                                </div>
+                                {stackHasActive ? (
+                                  <div className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-700">
+                                    Active
+                                  </div>
+                                ) : canEdit ? (
+                                  <button
+                                    type="button"
+                                    onPointerDown={(event) => promoteSubstitute(event, stackItem)}
+                                    onPointerUp={(event) => event.stopPropagation()}
+                                    onKeyDown={(event) => {
+                                      event.stopPropagation()
+                                      if (event.key === 'Enter' || event.key === ' ') {
+                                        event.preventDefault()
+                                        promoteSubstitute(event, stackItem)
+                                      }
+                                    }}
+                                    onClick={(event) => promoteSubstitute(event, stackItem)}
+                                    aria-label={`Make ${stackItem.title} the primary choice`}
+                                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 shadow-[0_6px_14px_rgba(17,24,39,0.055)] transition hover:border-blue-200 hover:bg-blue-50 hover:text-[#2F6BFF] active:scale-95"
+                                  >
+                                    <Star className="h-3.5 w-3.5" />
+                                  </button>
+                                ) : null}
+                              </div>
+                              {stackItem.address && stackItem.address !== stackItem.locationName ? (
+                                <p className="mt-2 truncate text-[11px] text-slate-400">{stackItem.address}</p>
+                              ) : null}
+                              {stackItem.description ? (
+                                <p className="mt-2 line-clamp-2 text-[12px] leading-6 text-slate-500">
+                                  {stackItem.description}
+                                </p>
+                              ) : null}
+                              <div className="mt-2 rounded-[0.75rem] bg-slate-50 px-3 py-1.5 text-[11px] leading-5 text-slate-600">
+                                <span className="font-semibold text-slate-800">
+                                  {stackItem.startTime}
+                                  {stackItem.endTime ? `-${stackItem.endTime}` : ''}
+                                </span>
+                                {stackItem.cancellationDeadline ? (
+                                  <span className="block">
+                                    Deadline {formatBookingDateTime(stackItem.cancellationDeadline)}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                          </article>
+                        )
+                      })}
                     </div>
                   ) : null}
+                </div>
+
+              {isExpandedStack && isStack && !isSubstituteStack ? (
+                  <div className="relative col-start-3 space-y-1.5 overflow-visible sm:space-y-2.5">
                   {stackAlternatives.map((stackItem, stackIndex) => {
                     const stackMeta = typeMeta(stackItem.category)
-                    const stackHasActive = isSubstituteStack
-                      ? hasActiveSelectionStatus(stackItem)
-                      : hasActiveStayOrMealStatus(stackItem)
+                    const stackHasActive = hasActiveStayOrMealStatus(stackItem)
                     return (
                       <article
                         key={stackItem.id}
@@ -4143,19 +4218,11 @@ function PlannerPanel({
                         onPointerUp={(event) => onOpenDetails.endPress(event, stackItem, () => onOpenNotes(stackItem))}
                         onPointerCancel={onOpenDetails.cancelPress}
                         onPointerLeave={onOpenDetails.cancelPress}
-                        className={`${
-                          isSubstituteStack
-                            ? `timeline-card ${stackMeta.card} rounded-[1.25rem] px-3.5 py-3 sm:px-4 sm:py-3.5`
-                            : 'rounded-[0.95rem] border border-slate-200/70 bg-white/86 px-3 py-2.5 shadow-[0_10px_22px_rgba(15,23,42,0.035)] sm:px-3.5 sm:py-3'
-                        } transition hover:bg-white ${
-                          !isSubstituteStack && isMobilePortrait ? 'border-l-4' : ''
+                        className={`rounded-[0.95rem] border border-slate-200/70 bg-white/86 px-3 py-2.5 shadow-[0_10px_22px_rgba(15,23,42,0.035)] transition hover:bg-white sm:px-3.5 sm:py-3 ${
+                          isMobilePortrait ? 'border-l-4' : ''
                         }`}
                         style={
-                          isSubstituteStack
-                            ? {
-                                borderLeftColor: stackHasActive ? '#10b981' : '#94a3b8',
-                              }
-                            : isMobilePortrait
+                          isMobilePortrait
                             ? {
                                 borderLeftColor: stackHasActive ? '#10b981' : '#cbd5e1',
                               }
@@ -4165,62 +4232,6 @@ function PlannerPanel({
                               }
                         }
                       >
-                        {isSubstituteStack ? (
-                          <div className="min-w-0">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <h4 className={`${isMobilePortrait ? 'line-clamp-2 leading-5' : 'leading-5'} text-[0.92rem] font-bold tracking-[-0.02em] text-slate-950`}>
-                                  {stackItem.title}
-                                </h4>
-                                {stackItem.locationName ? (
-                                  <p className="mt-0.5 truncate text-[12px] text-slate-500 sm:mt-1">{stackItem.locationName}</p>
-                                ) : null}
-                              </div>
-                              {stackHasActive ? (
-                                <div className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-700">
-                                  Active
-                                </div>
-                              ) : canEdit ? (
-                                <button
-                                  type="button"
-                                  onPointerDown={(event) => promoteSubstitute(event, stackItem)}
-                                  onPointerUp={(event) => event.stopPropagation()}
-                                  onKeyDown={(event) => {
-                                    event.stopPropagation()
-                                    if (event.key === 'Enter' || event.key === ' ') {
-                                      event.preventDefault()
-                                      promoteSubstitute(event, stackItem)
-                                    }
-                                  }}
-                                  onClick={(event) => promoteSubstitute(event, stackItem)}
-                                  aria-label={`Make ${stackItem.title} the primary choice`}
-                                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 shadow-[0_6px_14px_rgba(17,24,39,0.055)] transition hover:border-blue-200 hover:bg-blue-50 hover:text-[#2F6BFF] active:scale-95"
-                                >
-                                  <Star className="h-3.5 w-3.5" />
-                                </button>
-                              ) : null}
-                            </div>
-                            {stackItem.address && stackItem.address !== stackItem.locationName ? (
-                              <p className="mt-2 truncate text-[11px] text-slate-400">{stackItem.address}</p>
-                            ) : null}
-                            {stackItem.description ? (
-                              <p className="mt-2 line-clamp-2 text-[12px] leading-6 text-slate-500">
-                                {stackItem.description}
-                              </p>
-                            ) : null}
-                            <div className="mt-2 rounded-[0.75rem] bg-slate-50 px-3 py-1.5 text-[11px] leading-5 text-slate-600">
-                              <span className="font-semibold text-slate-800">
-                                {stackItem.startTime}
-                                {stackItem.endTime ? `-${stackItem.endTime}` : ''}
-                              </span>
-                              {stackItem.cancellationDeadline ? (
-                                <span className="block">
-                                  Deadline {formatBookingDateTime(stackItem.cancellationDeadline)}
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                        ) : (
                         <div className="flex items-start gap-3">
                           <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${stackMeta.tone}`} />
                           <div className="min-w-0 flex-1">
@@ -4248,7 +4259,6 @@ function PlannerPanel({
                             ) : null}
                           </div>
                         </div>
-                        )}
                       </article>
                     )
                   })}
