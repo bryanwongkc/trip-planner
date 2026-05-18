@@ -68,7 +68,7 @@ function TripMap({ filteredItems, routeSegments }) {
           path: window.google.maps.SymbolPath.CIRCLE,
           fillColor: typeColor(item.category),
           fillOpacity: 0.95,
-          strokeColor: '#0f172a',
+          strokeColor: '#111111',
           strokeWeight: 2,
           scale: 11,
         },
@@ -116,7 +116,7 @@ function TripMap({ filteredItems, routeSegments }) {
 
     infoWindow.setContent(`
       <div style="padding-right:8px">
-        <div style="font-weight:600;color:#0f172a">${activeItem.title}</div>
+        <div style="font-weight:600;color:#111111">${activeItem.title}</div>
         <div style="font-size:12px;color:#475569;margin-top:4px">${activeItem.locationName || activeItem.address || ''}</div>
         <div style="font-size:12px;color:#475569;margin-top:4px">${getTimeRange(activeItem)}</div>
       </div>

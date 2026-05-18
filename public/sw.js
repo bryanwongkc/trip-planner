@@ -1,5 +1,13 @@
-const CACHE_NAME = 'trip-planner-shell-v1'
-const APP_SHELL = ['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png']
+const CACHE_NAME = 'trip-planner-offline-v2'
+const APP_SHELL = [
+  '/',
+  '/index.html',
+  '/manifest.webmanifest',
+  '/favicon.svg',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/icons.svg',
+]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -21,6 +29,33 @@ self.addEventListener('activate', (event) => {
   )
 })
 
+async function cacheFirst(request) {
+  const cached = await caches.match(request)
+  if (cached) return cached
+
+  const response = await fetch(request)
+  if (response.ok) {
+    const cache = await caches.open(CACHE_NAME)
+    await cache.put(request, response.clone())
+  }
+  return response
+}
+
+async function networkFirst(request, fallbackUrl = '/') {
+  const cache = await caches.open(CACHE_NAME)
+
+  try {
+    const response = await fetch(request)
+    if (response.ok) {
+      await cache.put(request, response.clone())
+    }
+    return response
+  } catch {
+    const cached = await caches.match(request)
+    return cached || caches.match(fallbackUrl)
+  }
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event
   if (request.method !== 'GET') return
@@ -29,29 +64,20 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return
 
   if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const copy = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put('/', copy))
-          return response
-        })
-        .catch(() => caches.match('/')),
-    )
+    event.respondWith(networkFirst(request, '/'))
     return
   }
 
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached
+  if (
+    request.destination === 'script' ||
+    request.destination === 'style' ||
+    request.destination === 'font' ||
+    request.destination === 'image' ||
+    url.pathname.startsWith('/assets/')
+  ) {
+    event.respondWith(cacheFirst(request))
+    return
+  }
 
-      return fetch(request).then((response) => {
-        if (response.ok) {
-          const copy = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy))
-        }
-        return response
-      })
-    }),
-  )
+  event.respondWith(networkFirst(request))
 })

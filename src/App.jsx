@@ -38,7 +38,6 @@ import {
   CarFront,
   TrainFront,
 } from 'lucide-react'
-import { AnimatePresence, LayoutGroup, motion } from 'framer-motion'
 import {
   CATEGORY_OPTIONS,
   DEFAULT_TRIP_TITLE,
@@ -106,20 +105,13 @@ const ROUTE_MODE_OPTIONS = [
   { value: '', label: 'Auto' },
   ...TRAVEL_MODE_OPTIONS,
 ]
-const WALLET_STACK_SPRING = {
-  type: 'spring',
-  stiffness: 290,
-  damping: 29,
-  mass: 0.92,
-}
 const SUBSTITUTE_STACK_OFFSETS = [
   { x: 0, y: 0, scale: 1, opacity: 1 },
-  { x: -20, y: -5, scale: 0.985, opacity: 0.96 },
-  { x: -40, y: -10, scale: 0.97, opacity: 0.94 },
-  { x: -60, y: -15, scale: 0.955, opacity: 0.91 },
+  { x: -15, y: -2.5, scale: 0.985, opacity: 0.96 },
+  { x: -30, y: -5, scale: 0.97, opacity: 0.94 },
+  { x: -45, y: -7.5, scale: 0.955, opacity: 0.91 },
 ]
 const SUBSTITUTE_STACK_VISIBLE_DEPTH = 4
-const MotionDiv = motion.div
 const TRANSIT_MODE_OPTIONS = [
   { value: 'train', label: 'Train' },
   { value: 'bus', label: 'Bus' },
@@ -1077,7 +1069,7 @@ async function CREATE_TRIP_OVERVIEW_PDF_IMAGE_LEGACY({ days, items, tripSummary 
     .join('')
 
   const container = document.createElement('div')
-  container.style.cssText = 'position:absolute;left:-10000px;top:0;width:794px;background:#fffdfa;'
+  container.style.cssText = 'position:absolute;left:-10000px;top:0;width:794px;background:#f7f8fa;'
   container.innerHTML = `
     <div class="pdf-root">
       <style>
@@ -1085,8 +1077,8 @@ async function CREATE_TRIP_OVERVIEW_PDF_IMAGE_LEGACY({ days, items, tripSummary 
           box-sizing: border-box;
           width: 794px;
           padding: 56px 58px 48px;
-          background: #fffdfa;
-          color: #0f172a;
+          background: #f7f8fa;
+          color: #111111;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", "Noto Sans CJK JP", "Yu Gothic", "Hiragino Sans", "Microsoft YaHei", Arial, sans-serif;
         }
         .trip-title { font-size: 30px; line-height: 1.08; font-weight: 800; letter-spacing: -0.04em; }
@@ -1097,8 +1089,8 @@ async function CREATE_TRIP_OVERVIEW_PDF_IMAGE_LEGACY({ days, items, tripSummary 
         .day-name { margin-top: 5px; color: #64748b; font-size: 12px; font-weight: 600; }
         .stops { margin-top: 16px; }
         .stop { display: grid; grid-template-columns: 82px 1fr; gap: 18px; padding: 11px 0; break-inside: avoid; }
-        .time { color: #0f172a; font-size: 12px; font-weight: 800; letter-spacing: -0.01em; }
-        .title { color: #0f172a; font-size: 14px; line-height: 1.35; font-weight: 800; letter-spacing: -0.02em; }
+        .time { color: #111111; font-size: 12px; font-weight: 800; letter-spacing: -0.01em; }
+        .title { color: #111111; font-size: 14px; line-height: 1.35; font-weight: 800; letter-spacing: -0.02em; }
         .meta { margin-top: 4px; color: #64748b; font-size: 11px; line-height: 1.45; font-weight: 600; }
         .notes { margin-top: 5px; color: #475569; font-size: 11px; line-height: 1.5; white-space: pre-wrap; }
         .deadline { margin-top: 6px; color: #be123c; font-size: 11px; line-height: 1.45; font-weight: 800; }
@@ -1118,7 +1110,7 @@ async function CREATE_TRIP_OVERVIEW_PDF_IMAGE_LEGACY({ days, items, tripSummary 
 
   try {
     const canvas = await html2canvas(container.firstElementChild, {
-      backgroundColor: '#fffdfa',
+      backgroundColor: '#f7f8fa',
       scale: Math.min(2, window.devicePixelRatio || 1.5),
       useCORS: true,
     })
@@ -3639,6 +3631,7 @@ function PlannerPanel({
   onDragStart,
   onOpenDetails,
   onOpenNotes,
+  onPromoteSubstitute,
   onSaveNewItem,
   onUpdateTravelMode,
   routeSegmentMap,
@@ -3886,6 +3879,16 @@ function PlannerPanel({
               [entry.id]: !current[entry.id],
             }))
           }
+          const promoteSubstitute = (event, stackItem) => {
+            event?.stopPropagation?.()
+            if (!onPromoteSubstitute) return
+            void onPromoteSubstitute(stackItem, entry.items).then(() => {
+              setExpandedStacks((current) => ({
+                ...current,
+                [entry.id]: false,
+              }))
+            })
+          }
           const showBeforeSlot = Boolean(dragState && isManual)
           const showAfterSlot =
             Boolean(dragState && isManual) &&
@@ -3932,34 +3935,25 @@ function PlannerPanel({
               <div className="timeline-rail timeline-rail--stop">
                 <span className={`timeline-dot ${meta.tone}`}>{index + 1}</span>
               </div>
-              <LayoutGroup id={`substitute-wallet-${entry.id}`}>
                 <div className={`relative min-w-0 overflow-visible ${showCollapsedSubstituteStack ? 'ml-10 pt-2' : ''}`}>
-                  {showCollapsedSubstituteStack ? (
-                    <AnimatePresence initial={false}>
-                      {stackAlternatives.slice(0, SUBSTITUTE_STACK_VISIBLE_DEPTH - 1).map((stackItem, stackIndex) => {
+                  {showCollapsedSubstituteStack
+                    ? stackAlternatives.slice(0, SUBSTITUTE_STACK_VISIBLE_DEPTH - 1).map((stackItem, stackIndex) => {
                         const depth = Math.min(stackIndex + 1, SUBSTITUTE_STACK_OFFSETS.length - 1)
                         const layer = SUBSTITUTE_STACK_OFFSETS[depth]
                         return (
-                          <MotionDiv
+                          <div
                             key={`collapsed-${stackItem.id}`}
-                            layoutId={`substitute-card-${stackItem.id}`}
                             aria-hidden="true"
                             className="pointer-events-none absolute inset-0 rounded-[1.55rem] border border-slate-200/80 bg-white shadow-[0_18px_40px_rgba(17,24,39,0.06)]"
-                            initial={false}
-                            animate={{
-                              x: layer.x,
-                              y: layer.y,
-                              scale: layer.scale,
+                            style={{
                               opacity: layer.opacity,
+                              transform: `translate3d(${layer.x}px, ${layer.y}px, 0) scale(${layer.scale})`,
+                              zIndex: SUBSTITUTE_STACK_VISIBLE_DEPTH - depth,
                             }}
-                            exit={{ opacity: 0, scale: 0.96 }}
-                            transition={WALLET_STACK_SPRING}
-                            style={{ zIndex: SUBSTITUTE_STACK_VISIBLE_DEPTH - depth }}
                           />
                         )
-                      })}
-                    </AnimatePresence>
-                  ) : null}
+                      })
+                    : null}
               <article
                 className={`timeline-card ${meta.card} relative z-10 rounded-[1.55rem] px-3.5 py-3.5 transition hover:bg-white active:bg-white sm:px-5 sm:py-4 ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
@@ -4040,9 +4034,11 @@ function PlannerPanel({
                               ? `Hide ${comparisonAltCount} other ${comparisonAltCount === 1 ? 'option' : 'options'}`
                               : `Compare ${comparisonAltCount} other ${comparisonAltCount === 1 ? 'option' : 'options'}`}
                           </span>
-                          <span className="mt-0.5 block text-[11px] leading-4 text-slate-500">
-                            {comparisonCount} {isSubstituteStack ? 'available' : 'overlapping'} {stackChoiceLabel}
-                          </span>
+                          {!isSubstituteStack ? (
+                            <span className="mt-0.5 block text-[11px] leading-4 text-slate-500">
+                              {comparisonCount} overlapping {stackChoiceLabel}
+                            </span>
+                          ) : null}
                           {nextCancelDeadline ? (
                             <span className="mt-1 block text-[11px] font-semibold leading-4 text-slate-600">
                               Next cancel deadline: {formatBookingDateTime(nextCancelDeadline)}
@@ -4072,14 +4068,12 @@ function PlannerPanel({
                 </div>
 
               {isExpandedStack && isStack ? (
-                  <MotionDiv
-                    layout
+                  <div
                     className={`col-start-3 overflow-visible ${
                       isSubstituteStack
                         ? 'max-h-[68svh] space-y-3 overflow-y-auto py-1 pr-1 pl-0 sm:space-y-3.5'
                         : 'space-y-1.5 sm:space-y-2.5'
                     }`}
-                    transition={WALLET_STACK_SPRING}
                   >
                   {isSubstituteStack ? (
                     <div className="mb-1 flex justify-end">
@@ -4093,23 +4087,14 @@ function PlannerPanel({
                       </button>
                     </div>
                   ) : null}
-                  <AnimatePresence initial={false}>
                   {stackAlternatives.map((stackItem, stackIndex) => {
                     const stackMeta = typeMeta(stackItem.category)
                     const stackHasActive = isSubstituteStack
                       ? hasActiveSelectionStatus(stackItem)
                       : hasActiveStayOrMealStatus(stackItem)
-                    const substituteDepth = Math.min(stackIndex + 1, SUBSTITUTE_STACK_OFFSETS.length - 1)
-                    const substituteMotion = SUBSTITUTE_STACK_OFFSETS[substituteDepth]
                     return (
-                      <MotionDiv
+                      <article
                         key={stackItem.id}
-                        layout
-                        layoutId={isSubstituteStack ? `substitute-card-${stackItem.id}` : undefined}
-                        initial={isSubstituteStack ? substituteMotion : { opacity: 0, y: -8, scale: 0.98 }}
-                        animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
-                        exit={isSubstituteStack ? substituteMotion : { opacity: 0, y: -8, scale: 0.98 }}
-                        transition={WALLET_STACK_SPRING}
                         role="button"
                         tabIndex={0}
                         onKeyDown={(event) => {
@@ -4160,6 +4145,16 @@ function PlannerPanel({
                                 <div className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-700">
                                   Active
                                 </div>
+                              ) : canEdit ? (
+                                <button
+                                  type="button"
+                                  onPointerDown={(event) => event.stopPropagation()}
+                                  onClick={(event) => promoteSubstitute(event, stackItem)}
+                                  aria-label={`Make ${stackItem.title} the primary choice`}
+                                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 shadow-[0_8px_18px_rgba(17,24,39,0.06)] transition hover:border-blue-200 hover:bg-blue-50 hover:text-[#2F6BFF] active:scale-95"
+                                >
+                                  <Check className="h-4 w-4" />
+                                </button>
                               ) : null}
                             </div>
                             {stackItem.address && stackItem.address !== stackItem.locationName ? (
@@ -4211,11 +4206,10 @@ function PlannerPanel({
                           </div>
                         </div>
                         )}
-                      </MotionDiv>
+                      </article>
                     )
                   })}
-                  </AnimatePresence>
-                  </MotionDiv>
+                  </div>
               ) : isExpandedStack && linkedBookingMeta.isOverbooked ? (
                 <div className="col-start-3 space-y-1.5 overflow-visible sm:space-y-2">
                   {itemBookingOptions.map((booking) => {
@@ -4249,7 +4243,6 @@ function PlannerPanel({
                   })}
                 </div>
               ) : null}
-              </LayoutGroup>
 
               {nextSegment ? (
                 <>
@@ -4565,6 +4558,79 @@ function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, map
 
 const MemoMapPanel = memo(MapPanel)
 
+function AppDialog({ dialog, onCancel, onSubmit }) {
+  const inputRef = useRef(null)
+
+  if (!dialog) return null
+
+  const isPrompt = dialog.type === 'prompt'
+  const isDanger = dialog.tone === 'danger'
+
+  return (
+    <div
+      className="fixed inset-0 z-[90] flex items-end bg-slate-950/40 p-3 pt-10 backdrop-blur-[2px] sm:items-center sm:justify-center sm:p-4"
+      onClick={onCancel}
+    >
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          onSubmit(isPrompt ? inputRef.current?.value.trim() || '' : true)
+        }}
+        onClick={(event) => event.stopPropagation()}
+        className="glass-panel w-full max-w-md rounded-[1.35rem] border border-white/70 p-4 shadow-[0_22px_60px_rgba(15,23,42,0.18)] sm:rounded-[1.55rem] sm:p-5"
+      >
+        <div className="flex items-start gap-3">
+          <div
+            className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+              isDanger ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-700'
+            }`}
+          >
+            {isDanger ? <Trash2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-[1.05rem] font-bold leading-6 tracking-[-0.02em] text-slate-950">
+              {dialog.title}
+            </h2>
+            {dialog.message ? (
+              <p className="mt-1 text-[13px] leading-5 text-slate-600">{dialog.message}</p>
+            ) : null}
+          </div>
+        </div>
+
+        {isPrompt ? (
+          <input
+            key={`${dialog.title}-${dialog.defaultValue || ''}`}
+            ref={inputRef}
+            autoFocus
+            defaultValue={dialog.defaultValue || ''}
+            className="mt-4 w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm font-medium text-slate-900"
+          />
+        ) : null}
+
+        <div className="mt-5 flex items-center justify-end gap-2">
+          {dialog.type !== 'alert' ? (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-[0.9rem] border border-slate-200 bg-white px-4 py-2.5 text-[13px] font-semibold text-slate-700"
+            >
+              {dialog.cancelLabel || 'Cancel'}
+            </button>
+          ) : null}
+          <button
+            type="submit"
+            className={`rounded-[0.9rem] px-4 py-2.5 text-[13px] font-bold text-white ${
+              isDanger ? 'bg-rose-600' : 'bg-slate-950'
+            }`}
+          >
+            {dialog.confirmLabel || 'OK'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
 export default function App() {
   const googleMapsState = useGoogleMapsApi(MAPS_API_KEY)
   const [activeDayId, setActiveDayId] = useState(DAY_VIEW_ALL)
@@ -4605,6 +4671,7 @@ export default function App() {
   const [pdfExporting, setPdfExporting] = useState(false)
   const [dragState, setDragState] = useState(null)
   const [tripMembers, setTripMembers] = useState([])
+  const [appDialog, setAppDialog] = useState(null)
 
   const isMobilePortrait = useResponsiveMode()
   const routeCacheRef = useRef(new Map())
@@ -4614,6 +4681,7 @@ export default function App() {
   const dragPointerRef = useRef({ x: 0, y: 0 })
   const dragStateRef = useRef(null)
   const demoCreationGuardRef = useRef(new Set())
+  const appDialogResolveRef = useRef(null)
   const pressStateRef = useRef({
     timer: null,
     pointerId: null,
@@ -4676,6 +4744,64 @@ export default function App() {
     [resolvedActiveDayId, tripState],
   )
   const deferredItems = useDeferredValue(filteredItems)
+
+  const closeAppDialog = useCallback((result) => {
+    const resolve = appDialogResolveRef.current
+    appDialogResolveRef.current = null
+    setAppDialog(null)
+    resolve?.(result)
+  }, [])
+
+  const openAppDialog = useCallback((dialog) => {
+    if (appDialogResolveRef.current) {
+      appDialogResolveRef.current(null)
+    }
+
+    return new Promise((resolve) => {
+      appDialogResolveRef.current = resolve
+      setAppDialog(dialog)
+    })
+  }, [])
+
+  const showAlert = useCallback(
+    (message, options = {}) =>
+      openAppDialog({
+        type: 'alert',
+        title: options.title || 'Notice',
+        message,
+        confirmLabel: options.confirmLabel || 'OK',
+        tone: options.tone || 'default',
+      }),
+    [openAppDialog],
+  )
+
+  const showConfirm = useCallback(
+    (message, options = {}) =>
+      openAppDialog({
+        type: 'confirm',
+        title: options.title || 'Confirm action',
+        message,
+        confirmLabel: options.confirmLabel || 'Confirm',
+        cancelLabel: options.cancelLabel || 'Cancel',
+        tone: options.tone || 'default',
+      }),
+    [openAppDialog],
+  )
+
+  const showPrompt = useCallback(
+    (message, options = {}) =>
+      openAppDialog({
+        type: 'prompt',
+        title: options.title || message,
+        message: options.title ? message : '',
+        defaultValue: options.defaultValue || '',
+        confirmLabel: options.confirmLabel || 'Save',
+        cancelLabel: options.cancelLabel || 'Cancel',
+        tone: options.tone || 'default',
+      }),
+    [openAppDialog],
+  )
+
   const selectedWeather =
     resolvedActiveDayId === DAY_VIEW_ALL
       ? null
@@ -5409,7 +5535,7 @@ export default function App() {
 
   async function createTrip() {
     if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
-      window.alert('Google auth is temporarily disabled. New trips are unavailable in local mode.')
+      await showAlert('Google auth is temporarily disabled. New trips are unavailable in local mode.')
       return
     }
 
@@ -5417,7 +5543,10 @@ export default function App() {
 
     const nextIndex = availableTrips.length + 1
     const suggestedTitle = `Trip ${nextIndex}`
-    const title = window.prompt('Trip name', suggestedTitle)?.trim()
+    const title = await showPrompt('Trip name', {
+      defaultValue: suggestedTitle,
+      confirmLabel: 'Create',
+    })
     if (!title) return
 
     const tripId = slugId('trip')
@@ -5454,7 +5583,7 @@ export default function App() {
       console.error(error)
       const message = error?.message || 'Trip creation failed'
       setFirestoreState((current) => ({ ...current, status: 'error', error: message }))
-      window.alert(message)
+      await showAlert(message, { title: 'Trip creation failed', tone: 'danger' })
     }
   }
 
@@ -5462,7 +5591,10 @@ export default function App() {
     if (!firestoreReady || !canManageCurrentTrip || !activeTripSummary) return
 
     const suggestedTitle = `${activeTripSummary.title || 'Trip'} copy`
-    const title = window.prompt('Clone trip as', suggestedTitle)?.trim()
+    const title = await showPrompt('Clone trip as', {
+      defaultValue: suggestedTitle,
+      confirmLabel: 'Clone',
+    })
     if (!title) return
 
     const snapshot = buildClonedTripSnapshot(tripState)
@@ -5529,7 +5661,7 @@ export default function App() {
       console.error(error)
       const message = error?.message || 'Trip clone failed'
       setFirestoreState((current) => ({ ...current, status: 'error', error: message }))
-      window.alert(message)
+      await showAlert(message, { title: 'Trip clone failed', tone: 'danger' })
     }
   }
 
@@ -5537,7 +5669,10 @@ export default function App() {
     if (!firestoreReady || !canManageCurrentTrip) return
 
     const currentTitle = activeTripSummary?.title || 'Untitled trip'
-    const nextTitle = window.prompt('Rename trip', currentTitle)?.trim()
+    const nextTitle = await showPrompt('Rename trip', {
+      defaultValue: currentTitle,
+      confirmLabel: 'Rename',
+    })
     if (!nextTitle || nextTitle === currentTitle) return
 
     if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
@@ -5557,12 +5692,17 @@ export default function App() {
   async function deleteTrip() {
     if (!firestoreReady || !canManageCurrentTrip) return
     if (resolvedTripId === defaultTripSummary.id) {
-      window.alert('The default trip cannot be deleted.')
+      await showAlert('The default trip cannot be deleted.')
       return
     }
 
     const tripTitle = activeTripSummary?.title || 'this trip'
-    if (!window.confirm(`Delete ${tripTitle}? This trip will be removed from the selector.`)) return
+    const confirmed = await showConfirm(`Delete ${tripTitle}? This trip will be removed from the selector.`, {
+      title: 'Delete trip',
+      confirmLabel: 'Delete',
+      tone: 'danger',
+    })
+    if (!confirmed) return
 
     const fallbackTrip =
       availableTrips.find((trip) => trip.id !== resolvedTripId && !trip.hidden) || defaultTripSummary
@@ -5585,7 +5725,7 @@ export default function App() {
     if (changes.date) {
       const duplicate = visibleDays.find((day) => day.id !== dayId && day.date === changes.date)
       if (duplicate) {
-        window.alert('Each day needs a unique date.')
+        await showAlert('Each day needs a unique date.')
         return
       }
     }
@@ -5595,7 +5735,7 @@ export default function App() {
   async function addDay(draft) {
     if (!firestoreReady || !canEditCurrentTrip || !draft.date) return
     if (visibleDays.some((day) => day.date === draft.date)) {
-      window.alert('That date already exists in the itinerary.')
+      await showAlert('That date already exists in the itinerary.')
       return
     }
 
@@ -5633,7 +5773,12 @@ export default function App() {
     if (!canEditCurrentTrip) return
     const day = tripState.dayMap[dayId]
     if (!day) return
-    if (!window.confirm(`Delete ${day.label}? This will delete every item under that day.`)) return
+    const confirmed = await showConfirm(`Delete ${day.label}? This will delete every item under that day.`, {
+      title: 'Delete day',
+      confirmLabel: 'Delete',
+      tone: 'danger',
+    })
+    if (!confirmed) return
 
     const remaining = visibleDays.filter((entry) => entry.id !== dayId)
     await saveTripPatch(resolvedTripId, {
@@ -5658,7 +5803,18 @@ export default function App() {
   }
 
   async function deleteItem(itemId) {
-    if (!canEditCurrentTrip) return
+    if (!canEditCurrentTrip) return false
+    const targetItem = tripState.items.find((item) => item.id === itemId)
+    const confirmed = await showConfirm(
+      `Delete ${targetItem?.title || 'this event'}? This event will be removed from the itinerary.`,
+      {
+        title: 'Delete event',
+        confirmLabel: 'Delete',
+        tone: 'danger',
+      },
+    )
+    if (!confirmed) return false
+
     await saveTripPatch(resolvedTripId, {
       items: { [itemId]: { hidden: true } },
       bookingOptions: Object.fromEntries(
@@ -5669,6 +5825,7 @@ export default function App() {
     })
     setNoteItem((current) => (current?.id === itemId ? null : current))
     setDetailItem((current) => (current?.id === itemId ? null : current))
+    return true
   }
 
   async function duplicateItem(item) {
@@ -5731,6 +5888,24 @@ export default function App() {
     setDetailItem(createItemDraft(substitute))
   }
 
+  async function promoteSubstituteItem(item) {
+    if (!firestoreReady || !canEditCurrentTrip || !item?.substituteGroupId) return
+
+    const groupItems = tripState.items.filter(
+      (candidate) => candidate.substituteGroupId === item.substituteGroupId && !candidate.generated,
+    )
+    if (!groupItems.some((candidate) => candidate.id === item.id)) return
+
+    await saveTripPatch(resolvedTripId, {
+      items: Object.fromEntries(
+        groupItems.map((candidate) => [
+          candidate.id,
+          { status: candidate.id === item.id ? 'active' : 'considering' },
+        ]),
+      ),
+    })
+  }
+
   async function updateTravelMode(itemId, travelModeToNext) {
     if (!canEditCurrentTrip) return
     const targetItem = tripState.items.find((item) => item.id === itemId)
@@ -5789,21 +5964,21 @@ export default function App() {
   async function addCollaborator(email, role) {
     if (!canManageCurrentTrip || !currentUser?.uid) return
     if (TEMPORARILY_DISABLE_GOOGLE_AUTH) {
-      window.alert('Sharing is unavailable while Google auth is temporarily disabled.')
+      await showAlert('Sharing is unavailable while Google auth is temporarily disabled.')
       return
     }
 
     const match = await lookupUserByEmail(email)
     if (!match) {
-      window.alert('This person needs to sign in once before they can be added.')
+      await showAlert('This person needs to sign in once before they can be added.')
       return
     }
     if (match.uid === currentUser.uid) {
-      window.alert('You already have access to this trip.')
+      await showAlert('You already have access to this trip.')
       return
     }
     if (tripMembers.some((member) => member.uid === match.uid)) {
-      window.alert('This person is already a collaborator on the trip.')
+      await showAlert('This person is already a collaborator on the trip.')
       return
     }
 
@@ -5826,7 +6001,7 @@ export default function App() {
 
     const ownerCount = tripMembers.filter((entry) => entry.role === 'owner').length
     if (member.uid === currentUser?.uid && member.role === 'owner' && role !== 'owner' && ownerCount === 1) {
-      window.alert('You cannot demote yourself as the only owner.')
+      await showAlert('You cannot demote yourself as the only owner.')
       return
     }
 
@@ -5848,11 +6023,16 @@ export default function App() {
 
     const ownerCount = tripMembers.filter((entry) => entry.role === 'owner').length
     if (member.role === 'owner' && ownerCount === 1) {
-      window.alert('You cannot remove the last owner.')
+      await showAlert('You cannot remove the last owner.')
       return
     }
 
-    if (!window.confirm(`Remove ${member.displayName || member.email || member.uid} from this trip?`)) return
+    const confirmed = await showConfirm(`Remove ${member.displayName || member.email || member.uid} from this trip?`, {
+      title: 'Remove collaborator',
+      confirmLabel: 'Remove',
+      tone: 'danger',
+    })
+    if (!confirmed) return
     await removeTripMember(resolvedTripId, member.uid)
   }
 
@@ -5929,10 +6109,13 @@ export default function App() {
       setShowPdfExportOptions(false)
     } catch (error) {
       if (error?.name === 'NotSupportedError') {
-        window.alert('This browser cannot share PDF files directly. Use Download instead.')
+        await showAlert('This browser cannot share PDF files directly. Use Download instead.')
       } else if (error?.name !== 'AbortError') {
         console.error('PDF share failed', error)
-        window.alert('Could not share the overview PDF. Please try again.')
+        await showAlert('Could not share the overview PDF. Please try again.', {
+          title: 'Share failed',
+          tone: 'danger',
+        })
       }
     } finally {
       setPdfExporting(false)
@@ -5952,7 +6135,10 @@ export default function App() {
     } catch (error) {
       if (error?.name !== 'AbortError') {
         console.error('PDF download failed', error)
-        window.alert('Could not download the overview PDF. Please try again.')
+        await showAlert('Could not download the overview PDF. Please try again.', {
+          title: 'Download failed',
+          tone: 'danger',
+        })
       }
     } finally {
       setPdfExporting(false)
@@ -6021,6 +6207,13 @@ export default function App() {
         onShare={() => void handleShareOverviewPdf()}
         open={showPdfExportOptions}
       />
+      <AppDialog
+        dialog={appDialog}
+        onCancel={() =>
+          closeAppDialog(appDialog?.type === 'alert' ? true : appDialog?.type === 'prompt' ? null : false)
+        }
+        onSubmit={(result) => closeAppDialog(result)}
+      />
       {!availableTrips.length ? (
         <div className="glass-panel max-w-md rounded-[1.08rem] px-5 py-5">
           <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Trips</div>
@@ -6067,6 +6260,7 @@ export default function App() {
               cancelPress: clearPressState,
             }}
             onOpenNotes={openNotes}
+            onPromoteSubstitute={(item) => promoteSubstituteItem(item)}
             onSaveNewItem={saveItem}
             onUpdateTravelMode={(itemId, mode) => void updateTravelMode(itemId, mode)}
             routeSegmentMap={routeSegmentMap}
@@ -6131,8 +6325,8 @@ export default function App() {
           onClose={() => setNoteItem(null)}
           onDelete={async () => {
             const id = noteItem.id
-            setNoteItem(null)
-            await deleteItem(id)
+            const deleted = await deleteItem(id)
+            if (deleted) setNoteItem(null)
           }}
           onDuplicate={async () => {
             const match = tripState.items.find((item) => item.id === noteItem.id) || noteItem
@@ -6176,8 +6370,8 @@ export default function App() {
           scheduleConflict={detailScheduleConflict}
           onDelete={async () => {
             const id = detailItem.id
-            setDetailItem(null)
-            await deleteItem(id)
+            const deleted = await deleteItem(id)
+            if (deleted) setDetailItem(null)
           }}
         />
       ) : null}

@@ -8,8 +8,8 @@
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone", "browser"],
   "orientation": "any",
-  "background_color": "#fffdfa",
-  "theme_color": "#0f172a",
+  "background_color": "#F7F8FA",
+  "theme_color": "#111111",
   "categories": ["travel", "productivity"],
   "icons": [
     {
