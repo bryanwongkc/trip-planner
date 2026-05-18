@@ -3644,7 +3644,6 @@ function PlannerPanel({
   mapsReady,
   onDragStart,
   onOpenDetails,
-  onOpenNotes,
   onPromoteSubstitute,
   onSaveNewItem,
   onUpdateTravelMode,
@@ -3659,6 +3658,22 @@ function PlannerPanel({
       : dayOptions[0]?.id || ''
   const [draft, setDraft] = useState(() => buildEmptyDraft(defaultDayId))
   const [expandedStacks, setExpandedStacks] = useState({})
+  const cardPressProps = (cardItem) => ({
+    role: 'button',
+    tabIndex: 0,
+    onKeyDown: (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+      }
+    },
+    onContextMenu: (event) => event.preventDefault(),
+    onClick: (event) => event.preventDefault(),
+    onPointerDown: (event) => onOpenDetails.startPress(event, cardItem),
+    onPointerMove: onOpenDetails.movePress,
+    onPointerUp: (event) => onOpenDetails.endPress(event, cardItem),
+    onPointerCancel: onOpenDetails.cancelPress,
+    onPointerLeave: onOpenDetails.cancelPress,
+  })
   const draftConflictId = '__draft__'
   const effectiveDraftDayId =
     activeDayId !== DAY_VIEW_ALL && dayOptions.some((day) => day.id === activeDayId)
@@ -3961,21 +3976,7 @@ function PlannerPanel({
                 className={`timeline-card ${meta.card} relative z-10 rounded-[1.55rem] px-3.5 py-3.5 transition hover:bg-white active:bg-white sm:px-5 sm:py-4 ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
                 } ${showCollapsedSubstituteStack ? 'shadow-[0_26px_56px_rgba(17,24,39,0.11)]' : ''}`}
-                role="button"
-                tabIndex={0}
-                onClick={undefined}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault()
-                    onOpenNotes(item)
-                  }
-                }}
-                onContextMenu={(event) => event.preventDefault()}
-                onPointerDown={(event) => onOpenDetails.startPress(event, item)}
-                onPointerMove={onOpenDetails.movePress}
-                onPointerUp={(event) => onOpenDetails.endPress(event, item, () => onOpenNotes(item))}
-                onPointerCancel={onOpenDetails.cancelPress}
-                onPointerLeave={onOpenDetails.cancelPress}
+                {...cardPressProps(item)}
               >
                   <div className="relative z-10 min-w-0">
                     <div className={`flex ${isMobilePortrait ? 'flex-col items-stretch gap-2' : 'items-start justify-between gap-3'}`}>
@@ -4118,23 +4119,11 @@ function PlannerPanel({
                         return (
                           <article
                             key={stackItem.id}
-                            role="button"
-                            tabIndex={0}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter' || event.key === ' ') {
-                                event.preventDefault()
-                              }
-                            }}
-                            onContextMenu={(event) => event.preventDefault()}
-                            onPointerDown={(event) => onOpenDetails.startPress(event, stackItem)}
-                            onPointerMove={onOpenDetails.movePress}
-                            onPointerUp={(event) => onOpenDetails.endPress(event, stackItem, () => onOpenNotes(stackItem))}
-                            onPointerCancel={onOpenDetails.cancelPress}
-                            onPointerLeave={onOpenDetails.cancelPress}
                             className={`timeline-card ${stackMeta.card} rounded-[1.25rem] px-3.5 py-3 transition hover:bg-white sm:px-4 sm:py-3.5`}
                             style={{
                               borderLeftColor: stackHasActive ? '#10b981' : '#94a3b8',
                             }}
+                            {...cardPressProps(stackItem)}
                           >
                             <div className="min-w-0">
                               <div className="flex items-start justify-between gap-3">
@@ -4205,19 +4194,6 @@ function PlannerPanel({
                     return (
                       <article
                         key={stackItem.id}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault()
-                          }
-                        }}
-                        onContextMenu={(event) => event.preventDefault()}
-                        onPointerDown={(event) => onOpenDetails.startPress(event, stackItem)}
-                        onPointerMove={onOpenDetails.movePress}
-                        onPointerUp={(event) => onOpenDetails.endPress(event, stackItem, () => onOpenNotes(stackItem))}
-                        onPointerCancel={onOpenDetails.cancelPress}
-                        onPointerLeave={onOpenDetails.cancelPress}
                         className={`rounded-[0.95rem] border border-slate-200/70 bg-white/86 px-3 py-2.5 shadow-[0_10px_22px_rgba(15,23,42,0.035)] transition hover:bg-white sm:px-3.5 sm:py-3 ${
                           isMobilePortrait ? 'border-l-4' : ''
                         }`}
@@ -4231,6 +4207,7 @@ function PlannerPanel({
                                 width: `calc(100% - ${Math.min((stackIndex + 1) * 10, 28)}px)`,
                               }
                         }
+                        {...cardPressProps(stackItem)}
                       >
                         <div className="flex items-start gap-3">
                           <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${stackMeta.tone}`} />
@@ -5988,10 +5965,6 @@ export default function App() {
     })
   }
 
-  function openNotes(item) {
-    setNoteItem(item)
-  }
-
   function openDetails(item) {
     if (!canEditCurrentTrip) return
     setNoteItem(null)
@@ -6318,7 +6291,6 @@ export default function App() {
               endPress,
               cancelPress: clearPressState,
             }}
-            onOpenNotes={openNotes}
             onPromoteSubstitute={(item) => promoteSubstituteItem(item)}
             onSaveNewItem={saveItem}
             onUpdateTravelMode={(itemId, mode) => void updateTravelMode(itemId, mode)}
