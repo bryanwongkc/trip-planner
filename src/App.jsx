@@ -694,7 +694,7 @@ function RouteModeControl({ currentMode, onSelect }) {
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="inline-flex items-center gap-1.5 rounded-full bg-white/96 px-2.5 py-1.5 text-[10px] font-semibold tracking-[-0.01em] text-slate-600 transition hover:bg-white"
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-full bg-white/96 px-3 text-[10px] font-semibold tracking-[-0.01em] text-slate-600 transition hover:bg-white"
       >
         <span>{activeOption.label}</span>
         <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition ${open ? 'rotate-180' : ''}`} />
@@ -712,7 +712,7 @@ function RouteModeControl({ currentMode, onSelect }) {
                   onSelect(option.value)
                   setOpen(false)
                 }}
-                className={`flex w-full items-center justify-between rounded-[0.75rem] px-2.5 py-2 text-left text-[11px] font-medium tracking-[-0.01em] transition ${
+                className={`flex min-h-11 w-full items-center justify-between rounded-[0.75rem] px-2.5 text-left text-[11px] font-medium tracking-[-0.01em] transition ${
                   active ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
                 }`}
               >
@@ -2110,7 +2110,7 @@ function EndTimeModeField({ conflict = false, disabled, draft, onChange }) {
           type="button"
           disabled={disabled}
           onClick={() => onChange({ endTimeMode: 'time' })}
-          className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${
+          className={`min-h-11 rounded-full px-3 text-[11px] font-semibold transition ${
             draft.endTimeMode === 'time'
               ? 'bg-slate-900 text-white'
               : 'bg-slate-100 text-slate-600'
@@ -2128,7 +2128,7 @@ function EndTimeModeField({ conflict = false, disabled, draft, onChange }) {
                 draft.durationMinutes ?? getDurationMinutes(draft.startTime, draft.endTime) ?? 60,
             })
           }
-          className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${
+          className={`min-h-11 rounded-full px-3 text-[11px] font-semibold transition ${
             draft.endTimeMode === 'duration'
               ? 'bg-slate-900 text-white'
               : 'bg-slate-100 text-slate-600'
@@ -2179,7 +2179,7 @@ function EndTimeModeField({ conflict = false, disabled, draft, onChange }) {
                   type="button"
                   disabled={disabled}
                   onClick={() => onChange({ durationMinutes: preset.value })}
-                  className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${
+                  className={`min-h-11 rounded-full px-3 text-[11px] font-semibold transition ${
                     Number(draft.durationMinutes) === preset.value
                       ? 'bg-slate-900 text-white'
                       : 'bg-slate-100 text-slate-600'
@@ -2342,7 +2342,7 @@ function TripSwitcher({
                   type="button"
                   onClick={() => void onRenameTrip()}
                   disabled={disabled || !activeTrip || !canEditTrip}
-                  className="flex items-center justify-center gap-2 rounded-[0.78rem] px-3 py-2 text-[12px] font-semibold text-slate-600 transition hover:bg-white/80 disabled:text-slate-400"
+                  className="flex min-h-11 items-center justify-center gap-2 rounded-[0.78rem] px-3 text-[12px] font-semibold text-slate-600 transition hover:bg-white/80 disabled:text-slate-400"
                 >
                   <Pencil className="h-3.5 w-3.5" />
                   Rename
@@ -2351,7 +2351,7 @@ function TripSwitcher({
                   type="button"
                   onClick={() => void handleCloneTrip()}
                   disabled={disabled || !activeTrip || !canEditTrip}
-                  className="flex items-center justify-center gap-2 rounded-[0.78rem] px-3 py-2 text-[12px] font-semibold text-slate-600 transition hover:bg-white/80 disabled:text-slate-400"
+                  className="flex min-h-11 items-center justify-center gap-2 rounded-[0.78rem] px-3 text-[12px] font-semibold text-slate-600 transition hover:bg-white/80 disabled:text-slate-400"
                 >
                   <Copy className="h-3.5 w-3.5" />
                   Clone
@@ -2360,7 +2360,7 @@ function TripSwitcher({
                   type="button"
                   onClick={() => void onDeleteTrip()}
                   disabled={disabled || !activeTrip || !canDeleteTrip || activeTrip.id === TRIP_ID}
-                  className="flex items-center justify-center gap-2 rounded-[0.78rem] px-3 py-2 text-[12px] font-semibold text-rose-600 transition hover:bg-rose-50 disabled:text-slate-300"
+                  className="flex min-h-11 items-center justify-center gap-2 rounded-[0.78rem] px-3 text-[12px] font-semibold text-rose-600 transition hover:bg-rose-50 disabled:text-slate-300"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   Delete
@@ -2444,7 +2444,7 @@ function AccountPanel({ authError, canShare, isGuestMode, user, onShare, onSignI
           type="button"
           onClick={onShare}
           disabled={!canShare}
-          className="flex items-center justify-center gap-2 rounded-[0.8rem] bg-white px-3 py-2.5 text-[12px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:text-slate-400"
+          className="flex min-h-11 items-center justify-center gap-2 rounded-[0.8rem] bg-white px-3 text-[12px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:text-slate-400"
         >
           <Users className="h-3.5 w-3.5" />
           Share
@@ -2453,7 +2453,7 @@ function AccountPanel({ authError, canShare, isGuestMode, user, onShare, onSignI
           type="button"
           onClick={isGuestMode ? onSignIn : onSignOut}
           disabled={isGuestMode && !firebaseEnabled}
-          className="flex items-center justify-center gap-2 rounded-[0.8rem] bg-white px-3 py-2.5 text-[12px] font-semibold text-slate-700 transition hover:bg-slate-50"
+          className="flex min-h-11 items-center justify-center gap-2 rounded-[0.8rem] bg-white px-3 text-[12px] font-semibold text-slate-700 transition hover:bg-slate-50"
         >
           {isGuestMode ? <Cloud className="h-3.5 w-3.5" /> : <LogOut className="h-3.5 w-3.5" />}
           {isGuestMode ? 'Sign in' : 'Sign out'}
@@ -2515,7 +2515,7 @@ function AppDrawer({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full bg-white p-2 text-slate-500 shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
             aria-label="Close menu"
           >
             <X className="h-4 w-4" />
@@ -2616,7 +2616,7 @@ function PdfExportSheet({ loading, onClose, onDownload, onShare, open }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full bg-white p-2 text-slate-500 shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
             aria-label="Close export options"
           >
             <X className="h-4 w-4" />
@@ -2659,7 +2659,7 @@ function MenuButton({ onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="glass-panel fixed left-3 top-3 z-30 flex h-10 w-10 items-center justify-center rounded-full text-slate-700 transition hover:bg-white sm:left-5 sm:top-5"
+      className="glass-panel fixed left-3 top-3 z-30 flex h-11 w-11 items-center justify-center rounded-full text-slate-700 transition hover:bg-white sm:left-5 sm:top-5"
       aria-label="Open menu"
     >
       <Menu className="h-4 w-4" />
@@ -2671,11 +2671,13 @@ function BottomDayNav({
   activeDayId,
   dayOptions,
   dragState,
+  focusedDayId,
   onDayChange,
   onManageDays,
   canEdit,
   overbookingCountsByDay = {},
 }) {
+  const dayNavRef = useRef(null)
   const dayPressRef = useRef({
     timer: null,
     dayId: '',
@@ -2748,21 +2750,39 @@ function BottomDayNav({
 
   useEffect(() => clearDayPress, [])
 
+  useEffect(() => {
+    if (!focusedDayId) return
+    const target = dayNavRef.current?.querySelector(`[data-day-drop-id="${focusedDayId}"]`)
+    target?.scrollIntoView?.({ block: 'nearest', inline: 'center' })
+  }, [focusedDayId])
+
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 px-2.5 pb-[max(0.65rem,env(safe-area-inset-bottom))] sm:px-4">
-      <div className="mx-auto flex max-w-5xl items-center gap-1 rounded-[1.1rem] border border-white/80 bg-[rgba(255,253,249,0.98)] p-1.5 shadow-[0_-10px_24px_rgba(15,23,42,0.075)]">
+      <div className="mx-auto flex max-w-5xl items-center gap-1 rounded-[1.05rem] border border-white/80 bg-[rgba(255,253,249,0.98)] p-1.5 shadow-[0_-10px_24px_rgba(15,23,42,0.075)]">
         <button
           type="button"
           onClick={() => onDayChange(DAY_VIEW_ALL)}
-          className={`relative flex shrink-0 items-center whitespace-nowrap rounded-[0.8rem] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.06em] transition ${
+          aria-label="Trip overview"
+          className={`relative flex h-12 min-w-[4.7rem] shrink-0 flex-col items-center justify-center rounded-[0.8rem] px-3 text-center transition ${
             activeDayId === DAY_VIEW_ALL ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-white'
           }`}
         >
-          Overview
+          <span className="text-[10px] font-extrabold uppercase leading-3 tracking-[0.07em]">Trip</span>
+          <span className={`mt-0.5 text-[10px] font-semibold leading-3 ${activeDayId === DAY_VIEW_ALL ? 'text-white/70' : 'text-slate-400'}`}>
+            Overview
+          </span>
         </button>
-        <div className="no-scrollbar flex min-w-0 flex-1 gap-1 overflow-x-auto">
+        <div className="h-8 w-px shrink-0 bg-slate-200/70" />
+        <div className="relative min-w-0 flex-1">
+          <div
+            ref={dayNavRef}
+            className="no-scrollbar flex snap-x gap-1 overflow-x-auto scroll-px-1 pr-4 md:justify-center"
+            aria-label="Day navigation"
+          >
           {dayOptions.map((day, index) => {
             const overbookingCount = Number(overbookingCountsByDay[day.id] || 0)
+            const isActiveDay = activeDayId === day.id
+            const isFocusedOverviewDay = activeDayId === DAY_VIEW_ALL && focusedDayId === day.id
             return (
               <button
                 key={day.id}
@@ -2776,32 +2796,43 @@ function BottomDayNav({
                 onPointerCancel={clearDayPress}
                 onPointerLeave={clearDayPress}
                 onClick={(event) => handleDayClick(event, day.id)}
-                className={`relative shrink-0 whitespace-nowrap rounded-[0.8rem] px-2.5 py-2 text-[10px] font-bold uppercase tracking-[0.05em] transition ${
+                className={`relative flex h-12 min-w-[4.55rem] shrink-0 snap-start flex-col items-center justify-center rounded-[0.8rem] px-2 text-center transition ${
                   dragState?.overDayId === day.id
-                    ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200'
-                    : activeDayId === day.id
+                    ? 'bg-slate-200 text-slate-800 ring-1 ring-slate-300'
+                    : isActiveDay
                       ? 'bg-slate-900 text-white'
+                      : isFocusedOverviewDay
+                        ? 'bg-slate-700 text-white ring-1 ring-slate-600 shadow-[0_6px_16px_rgba(15,23,42,0.20)]'
                       : 'text-slate-600 hover:bg-white'
                 }`}
+                aria-label={`Day ${index + 1} ${formatDayDate(day.date)}`}
+                aria-current={isActiveDay || isFocusedOverviewDay ? 'true' : undefined}
               >
-                Day {index + 1}
-                <span className={`ml-1 font-semibold normal-case tracking-normal ${activeDayId === day.id ? 'text-white/68' : 'text-slate-400'}`}>
+                <span className="text-[10px] font-extrabold uppercase leading-3 tracking-[0.06em]">
+                  Day {index + 1}
+                </span>
+                <span className={`mt-0.5 text-[10px] font-semibold leading-3 ${
+                  isActiveDay || isFocusedOverviewDay ? 'text-white/72' : 'text-slate-400'
+                }`}>
                   {formatDayDate(day.date)}
                 </span>
                 {overbookingCount > 0 ? (
-                  <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold leading-none text-white shadow-[0_2px_8px_rgba(190,18,60,0.28)]">
+                  <span className="absolute right-1 top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold leading-none text-white shadow-[0_2px_8px_rgba(190,18,60,0.28)]">
                     {formatBadgeCount(overbookingCount)}
                   </span>
                 ) : null}
               </button>
             )
           })}
+          </div>
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-5 bg-gradient-to-l from-[rgba(255,253,249,0.98)] to-transparent" />
         </div>
+        <div className="h-8 w-px shrink-0 bg-slate-200/70" />
         <button
           type="button"
           onClick={onManageDays}
           disabled={!canEdit}
-          className="shrink-0 rounded-[0.8rem] bg-white/90 px-3 py-2 text-slate-600 transition hover:bg-white disabled:text-slate-300"
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[0.8rem] bg-white/90 text-slate-600 transition hover:bg-white disabled:text-slate-300"
           aria-label="Manage days"
         >
           <CalendarDays className="h-4 w-4" />
@@ -2880,7 +2911,7 @@ function CollaboratorsModal({
               Owners and admins can add collaborators and assign admin, editor, or read-only access.
             </p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
+          <button type="button" onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -2990,7 +3021,7 @@ function CollaboratorsModal({
                         type="button"
                         onClick={() => void onRemoveMember(member)}
                         disabled={busy}
-                        className="rounded-full bg-rose-50 p-2 text-rose-600 disabled:bg-slate-100 disabled:text-slate-300"
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600 disabled:bg-slate-100 disabled:text-slate-300"
                         aria-label={`Remove ${member.displayName || member.email || member.uid}`}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -3062,7 +3093,7 @@ function DayManagerModal({
               Long-pressing a day tab opens this reorder view. Move travel days with the arrows, then keep dates in trip order.
             </p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
+          <button type="button" onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -3072,7 +3103,7 @@ function DayManagerModal({
             <div
               key={day.id}
               className={`rounded-[1.3rem] bg-white p-4 shadow-[0_2px_10px_rgba(15,23,42,0.03)] ${
-                day.id === activeDayId ? 'ring-2 ring-indigo-200' : ''
+                day.id === activeDayId ? 'ring-2 ring-slate-300' : ''
               }`}
             >
               <div className="grid gap-3 sm:grid-cols-[1.2fr_1fr_auto] sm:items-end">
@@ -3099,7 +3130,7 @@ function DayManagerModal({
                     type="button"
                     onClick={() => onMoveDay(day.id, -1)}
                     disabled={!firestoreReady || !canEdit || index === 0}
-                    className="rounded-2xl bg-slate-100 p-3 text-slate-700 disabled:text-slate-300"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 disabled:text-slate-300"
                   >
                     <ArrowUp className="h-4 w-4" />
                   </button>
@@ -3107,7 +3138,7 @@ function DayManagerModal({
                     type="button"
                     onClick={() => onMoveDay(day.id, 1)}
                     disabled={!firestoreReady || !canEdit || index === days.length - 1}
-                    className="rounded-2xl bg-slate-100 p-3 text-slate-700 disabled:text-slate-300"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 disabled:text-slate-300"
                   >
                     <ArrowDown className="h-4 w-4" />
                   </button>
@@ -3115,7 +3146,7 @@ function DayManagerModal({
                     type="button"
                     onClick={() => onDeleteDay(day.id)}
                     disabled={!firestoreReady || !canEdit}
-                    className="rounded-2xl bg-rose-50 p-3 text-rose-600 disabled:text-slate-300"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-50 text-rose-600 disabled:text-slate-300"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -3197,7 +3228,7 @@ function NoteModal({
               <button
                 type="button"
                 onClick={() => void onDelete()}
-                className="rounded-full bg-rose-50 p-2 text-rose-600"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600"
                 aria-label="Delete item"
               >
                 <Trash2 className="h-5 w-5" />
@@ -3214,7 +3245,7 @@ function NoteModal({
                 <button
                   type="button"
                   onClick={onOpenDetails}
-                  className="rounded-full bg-slate-100 p-2 text-slate-600 transition hover:bg-slate-200"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200"
                   aria-label="Edit notes"
                 >
                   <Pencil className="h-4 w-4" />
@@ -3359,7 +3390,7 @@ function CancellationDeadlinesModal({
               Sorted by deadline. Check overdue and next 3-day cancellation windows first.
             </p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
+          <button type="button" onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -3373,7 +3404,7 @@ function CancellationDeadlinesModal({
           </div>
           <div className="rounded-[0.95rem] bg-white px-3 py-2.5">
             <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-400">Missing</div>
-            <div className={`mt-1 text-[1.25rem] font-bold leading-none ${missingDeadlineCount ? 'text-amber-800' : 'text-slate-900'}`}>
+            <div className="mt-1 text-[1.25rem] font-bold leading-none text-slate-900">
               {missingDeadlineCount}
             </div>
           </div>
@@ -3438,7 +3469,7 @@ function CancellationDeadlinesModal({
                       <button
                         type="button"
                         onClick={() => onOpenDetails(editableItem)}
-                        className="rounded-full bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 shadow-[0_4px_12px_rgba(15,23,42,0.035)]"
+                        className="flex min-h-11 items-center rounded-full bg-white px-4 text-[11px] font-bold text-slate-700 shadow-[0_4px_12px_rgba(15,23,42,0.035)]"
                       >
                         Details
                       </button>
@@ -3520,20 +3551,20 @@ function DetailModal({
                 type="button"
                 onClick={() => void onDelete()}
                 disabled={!firestoreReady}
-                className="rounded-full bg-rose-50 p-2 text-rose-600 disabled:bg-slate-100 disabled:text-slate-400"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600 disabled:bg-slate-100 disabled:text-slate-400"
                 aria-label="Delete item"
               >
                 <Trash2 className="h-5 w-5" />
               </button>
             ) : null}
-            <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
+            <button type="button" onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
               <X className="h-5 w-5" />
             </button>
           </div>
         </div>
 
         {isGenerated ? (
-          <div className="mt-4 rounded-[0.95rem] bg-amber-50/90 px-4 py-3 text-[13px] leading-6 text-amber-700">
+          <div className="mt-4 rounded-[0.95rem] bg-slate-100/90 px-4 py-3 text-[13px] leading-6 text-slate-600">
             This stop stays linked to the previous day hotel for place continuity. You can still edit its time, notes, and booking reference here.
           </div>
         ) : null}
@@ -4044,7 +4075,10 @@ function PlannerPanel({
               }`}
             >
               {showDayDivider ? (
-                <div className={`col-span-full flex items-center gap-3 px-1 first:pt-0 ${isMobilePortrait ? 'py-2.5' : 'py-4'}`}>
+                <div
+                  data-itinerary-day-id={item.dayId}
+                  className={`col-span-full flex items-center gap-3 px-1 first:pt-0 ${isMobilePortrait ? 'py-2.5' : 'py-4'}`}
+                >
                   <div className="min-w-0">
                     <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                       {dayContext?.label || 'Day'}
@@ -4063,7 +4097,7 @@ function PlannerPanel({
                   data-drop-slot-index={manualIndex}
                   className={`col-span-full block h-4 w-full rounded-full border border-dashed transition ${
                     dragState?.slot?.dayId === item.dayId && dragState?.slot?.index === manualIndex
-                      ? 'border-indigo-400 bg-indigo-100/70'
+                      ? 'border-slate-500 bg-slate-200/80'
                       : 'border-slate-300/80 bg-transparent'
                   }`}
                   aria-label={`Move before ${item.title}`}
@@ -4097,7 +4131,7 @@ function PlannerPanel({
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         {item.generated ? (
-                          <div className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">
+                          <div className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-600">
                             Linked
                           </div>
                         ) : canEdit ? (
@@ -4107,7 +4141,7 @@ function PlannerPanel({
                             onClick={(event) => event.stopPropagation()}
                             data-drag-handle="true"
                             title="Drag to reorder"
-                            className="inline-flex h-9 w-9 touch-none shrink-0 items-center justify-center rounded-full border border-slate-200/75 bg-white/86 text-slate-500 shadow-[0_4px_12px_rgba(15,23,42,0.035)] transition hover:border-slate-300 hover:bg-white hover:text-slate-800 active:scale-95"
+                            className="inline-flex h-11 w-11 touch-none shrink-0 items-center justify-center text-slate-500 transition hover:text-slate-800 active:scale-95"
                             aria-label={`Reorder ${item.title}`}
                           >
                             <ArrowUpDown className="h-4 w-4" />
@@ -4119,7 +4153,7 @@ function PlannerPanel({
                       <p className="mt-0.5 truncate text-[11px] text-slate-400 sm:mt-1">{item.address}</p>
                     ) : null}
                     {transitSummary ? (
-                      <div className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700">
+                      <div className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
                         <TrainFront className="h-3.5 w-3.5 shrink-0" />
                         <span className="truncate">{transitSummary}</span>
                       </div>
@@ -4421,7 +4455,7 @@ function PlannerPanel({
                   className={`col-span-full block h-4 w-full rounded-full border border-dashed transition ${
                     dragState?.slot?.dayId === item.dayId &&
                     dragState?.slot?.index === (manualOrderLookup.counts[item.dayId] || 0)
-                      ? 'border-indigo-400 bg-indigo-100/70'
+                      ? 'border-slate-500 bg-slate-200/80'
                       : 'border-slate-300/80 bg-transparent'
                   }`}
                   aria-label={`Move after ${item.title}`}
@@ -4437,7 +4471,7 @@ function PlannerPanel({
             data-drop-slot-index={0}
             className={`flex h-14 w-full items-center justify-center rounded-[1.15rem] border border-dashed text-sm font-medium transition ${
               dragState?.slot?.dayId === activeDayId && dragState?.slot?.index === 0
-                ? 'border-indigo-400 bg-indigo-100/70 text-indigo-700'
+                ? 'border-slate-500 bg-slate-200/80 text-slate-800'
                 : 'border-slate-300/80 text-slate-500'
             }`}
           >
@@ -4456,7 +4490,7 @@ function PlannerPanel({
             <button
               type="button"
               onClick={() => setIsComposerOpen((open) => !open)}
-              className={`rounded-[0.85rem] px-4 py-2.5 text-[13px] font-bold transition ${
+              className={`min-h-11 rounded-[0.85rem] px-4 text-[13px] font-bold transition ${
                 isComposerOpen ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'
               }`}
             >
@@ -4797,6 +4831,7 @@ function AppDialog({ dialog, onCancel, onSubmit }) {
 export default function App() {
   const googleMapsState = useGoogleMapsApi(MAPS_API_KEY)
   const [activeDayId, setActiveDayId] = useState(DAY_VIEW_ALL)
+  const [focusedOverviewDayId, setFocusedOverviewDayId] = useState('')
   const [activeTripId, setActiveTripId] = useState(() => {
     if (typeof window === 'undefined') return TRIP_ID
     return window.localStorage.getItem(ACTIVE_TRIP_STORAGE_KEY) || TRIP_ID
@@ -4921,6 +4956,54 @@ export default function App() {
     [resolvedActiveDayId, tripState],
   )
   const deferredItems = useDeferredValue(filteredItems)
+  const navFocusedDayId =
+    resolvedActiveDayId === DAY_VIEW_ALL ? focusedOverviewDayId || dayOptions[0]?.id || '' : ''
+
+  useEffect(() => {
+    if (resolvedActiveDayId !== DAY_VIEW_ALL || !dayOptions.length) {
+      setFocusedOverviewDayId('')
+      return undefined
+    }
+
+    let frame = 0
+    const fallbackDayId = dayOptions[0]?.id || ''
+
+    const updateFocusedDay = () => {
+      frame = 0
+      const markers = [...document.querySelectorAll('[data-itinerary-day-id]')]
+      if (!markers.length) {
+        setFocusedOverviewDayId(fallbackDayId)
+        return
+      }
+
+      const focusLine = Math.min(window.innerHeight * 0.34, 260)
+      let nextDayId = markers[0].getAttribute('data-itinerary-day-id') || fallbackDayId
+
+      markers.some((marker) => {
+        const markerTop = marker.getBoundingClientRect().top
+        if (markerTop > focusLine) return true
+        nextDayId = marker.getAttribute('data-itinerary-day-id') || nextDayId
+        return false
+      })
+
+      setFocusedOverviewDayId((current) => (current === nextDayId ? current : nextDayId))
+    }
+
+    const scheduleUpdate = () => {
+      if (frame) return
+      frame = window.requestAnimationFrame(updateFocusedDay)
+    }
+
+    scheduleUpdate()
+    window.addEventListener('scroll', scheduleUpdate, { passive: true })
+    window.addEventListener('resize', scheduleUpdate)
+
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', scheduleUpdate)
+      window.removeEventListener('resize', scheduleUpdate)
+    }
+  }, [dayOptions, filteredItems, resolvedActiveDayId])
 
   const closeAppDialog = useCallback((result) => {
     const resolve = appDialogResolveRef.current
@@ -6792,6 +6875,7 @@ export default function App() {
           canEdit={canEditCurrentTrip}
           dayOptions={dayOptions}
           dragState={dragState}
+          focusedDayId={navFocusedDayId}
           overbookingCountsByDay={overbookingCountsByDay}
           onDayChange={(dayId) => {
             startTransition(() => {
