@@ -2162,6 +2162,29 @@ function EndTimeModeToggle({ disabled, draft, onChange }) {
   )
 }
 
+function StartTimeModeRow({
+  conflict = false,
+  disabled = false,
+  draft,
+  onChange,
+  showModeToggle = true,
+}) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 sm:col-span-2">
+      <TimeField
+        label="Start time"
+        value={draft.startTime}
+        onChange={(event) => onChange({ startTime: event.target.value })}
+        disabled={disabled}
+        conflict={conflict}
+      />
+      {showModeToggle ? (
+        <EndTimeModeToggle disabled={disabled} draft={draft} onChange={onChange} />
+      ) : null}
+    </div>
+  )
+}
+
 function EndTimeModeField({ conflict = false, disabled, draft, onChange, showModeToggle = true }) {
   const derivedEndTime =
     draft.endTimeMode === 'duration'
@@ -3659,18 +3682,19 @@ function DetailModal({
               className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             />
           </Field>
-          <TimeField
-            label="Start time"
-            value={detailItem.startTime}
-            onChange={(event) => onChange({ startTime: event.target.value })}
+          <StartTimeModeRow
             disabled={fieldReadOnly}
+            draft={detailItem}
+            onChange={onChange}
             conflict={Boolean(scheduleConflict?.nextId === detailItem.id)}
+            showModeToggle={detailItem.category !== 'Flight'}
           />
           <EndTimeModeField
             disabled={fieldReadOnly}
             draft={detailItem}
             onChange={onChange}
             conflict={Boolean(scheduleConflict?.currentId === detailItem.id)}
+            showModeToggle={detailItem.category === 'Flight'}
           />
         </div>
 
@@ -4614,24 +4638,13 @@ function PlannerPanel({
                   className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
                 />
               </Field>
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 sm:col-span-2">
-                <TimeField
-                  label="Start time"
-                  value={draft.startTime}
-                  onChange={(event) =>
-                    setDraft((current) => applyItemDraftPatch(current, { startTime: event.target.value }))
-                  }
-                  disabled={draft.category === 'Flight'}
-                  conflict={Boolean(draftScheduleConflict?.nextId === draftConflictId)}
-                />
-                {draft.category !== 'Flight' ? (
-                  <EndTimeModeToggle
-                    disabled={false}
-                    draft={draft}
-                    onChange={(changes) => setDraft((current) => applyItemDraftPatch(current, changes))}
-                  />
-                ) : null}
-              </div>
+              <StartTimeModeRow
+                disabled={draft.category === 'Flight'}
+                draft={draft}
+                onChange={(changes) => setDraft((current) => applyItemDraftPatch(current, changes))}
+                conflict={Boolean(draftScheduleConflict?.nextId === draftConflictId)}
+                showModeToggle={draft.category !== 'Flight'}
+              />
               {draft.category === 'Flight' ? (
                 <TimeField
                   label="End time"
