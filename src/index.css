@@ -289,3 +289,18 @@ textarea:focus {
       inset 0 1px 0 rgba(255, 255, 255, 0.78);
   }
 }
+
+@media (max-width: 900px) {
+  .timeline-dot {
+    width: 1.25rem;
+    height: 1.25rem;
+    font-size: 0.58rem;
+    box-shadow: 0 0 0 2px #f7f8fa;
+  }
+
+  .timeline-route-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    box-shadow: 0 0 0 2px #f7f8fa;
+  }
+}

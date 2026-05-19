@@ -4037,9 +4037,11 @@ function PlannerPanel({
           return (
             <div
               key={`${entry.id}-${isExpandedStack ? 'expanded' : 'collapsed'}-${stackLayoutRefreshKey}`}
-              className={`itinerary-step grid grid-cols-[3.25rem_1.55rem_minmax(0,1fr)] gap-x-2 ${
-                isMobilePortrait ? 'gap-y-1.5' : 'gap-y-2'
-              } sm:grid-cols-[3.75rem_1.65rem_minmax(0,1fr)] sm:gap-x-3`}
+              className={`itinerary-step grid ${
+                isMobilePortrait
+                  ? 'grid-cols-[2.7rem_1.25rem_minmax(0,1fr)] gap-x-1.5 gap-y-1.5'
+                  : 'grid-cols-[3.25rem_1.55rem_minmax(0,1fr)] gap-x-2 gap-y-2 sm:grid-cols-[3.75rem_1.65rem_minmax(0,1fr)] sm:gap-x-3'
+              }`}
             >
               {showDayDivider ? (
                 <div className={`col-span-full flex items-center gap-3 px-1 first:pt-0 ${isMobilePortrait ? 'py-2.5' : 'py-4'}`}>
@@ -4078,20 +4080,22 @@ function PlannerPanel({
                   className="relative min-h-0 min-w-0 overflow-visible"
                 >
               <article
-                className={`timeline-card ${meta.card} relative z-10 rounded-[1.55rem] px-3.5 py-3.5 transition hover:bg-white active:bg-white sm:px-5 sm:py-4 ${
+                className={`timeline-card ${meta.card} relative z-10 rounded-[1.55rem] transition hover:bg-white active:bg-white ${
+                  isMobilePortrait ? 'px-3.5 py-3' : 'px-3.5 py-3.5 sm:px-5 sm:py-4'
+                } ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
                 } ${showCollapsedSubstituteStack ? 'shadow-[0_26px_56px_rgba(17,24,39,0.11)]' : ''}`}
                 {...cardPressProps(item)}
               >
                   <div className="relative z-10 min-w-0">
-                    <div className={`flex ${isMobilePortrait ? 'flex-col items-stretch gap-2' : 'items-start justify-between gap-3'}`}>
-                      <div className="min-w-0">
+                    <div className={`flex items-start justify-between ${isMobilePortrait ? 'gap-2' : 'gap-3'}`}>
+                      <div className="min-w-0 flex-1">
                         <h3 className={`${isMobilePortrait ? 'line-clamp-2 leading-5' : 'leading-6'} text-[0.98rem] font-bold tracking-[-0.02em] text-slate-950`}>{item.title}</h3>
                         {locationSummary ? (
                           <p className="mt-0.5 truncate text-[12px] text-slate-500 sm:mt-1">{locationSummary}</p>
                         ) : null}
                       </div>
-                      <div className={`flex items-center gap-2 ${isMobilePortrait ? 'justify-between' : ''}`}>
+                      <div className="flex shrink-0 items-center gap-2">
                         {item.generated ? (
                           <div className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">
                             Linked
@@ -4103,7 +4107,7 @@ function PlannerPanel({
                             onClick={(event) => event.stopPropagation()}
                             data-drag-handle="true"
                             title="Drag to reorder"
-                            className={`inline-flex h-9 w-9 touch-none shrink-0 items-center justify-center rounded-full border border-slate-200/75 bg-white/86 text-slate-500 shadow-[0_4px_12px_rgba(15,23,42,0.035)] transition hover:border-slate-300 hover:bg-white hover:text-slate-800 active:scale-95 ${isMobilePortrait ? 'ml-auto' : ''}`}
+                            className="inline-flex h-9 w-9 touch-none shrink-0 items-center justify-center rounded-full border border-slate-200/75 bg-white/86 text-slate-500 shadow-[0_4px_12px_rgba(15,23,42,0.035)] transition hover:border-slate-300 hover:bg-white hover:text-slate-800 active:scale-95"
                             aria-label={`Reorder ${item.title}`}
                           >
                             <ArrowUpDown className="h-4 w-4" />
@@ -4121,7 +4125,9 @@ function PlannerPanel({
                       </div>
                     ) : null}
                     {(item.description || item.generated) ? (
-                      <p className="mt-1.5 line-clamp-2 text-[12px] leading-5 text-slate-500 sm:mt-2 sm:leading-6">
+                      <p className={`line-clamp-2 text-[12px] text-slate-500 ${
+                        isMobilePortrait ? 'mt-1 leading-5' : 'mt-1.5 leading-5 sm:mt-2 sm:leading-6'
+                      }`}>
                         {item.generated ? 'Auto-carried from the previous day hotel stay.' : item.description}
                       </p>
                     ) : null}
