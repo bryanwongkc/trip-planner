@@ -2016,6 +2016,13 @@ function GooglePlaceField({
 }
 
 function PlaceFields({ draft, disabled, mapsReady, onChange }) {
+  function applyPlaceSelection(place) {
+    onChange({
+      ...place,
+      title: (draft.title || '').trim() ? draft.title : place.locationName || draft.title,
+    })
+  }
+
   return (
     <div className="space-y-3">
       <Field label="Location search">
@@ -2032,7 +2039,7 @@ function PlaceFields({ draft, disabled, mapsReady, onChange }) {
               lng: null,
             })
           }
-          onSelect={onChange}
+          onSelect={applyPlaceSelection}
         />
       </Field>
 
