@@ -3734,6 +3734,7 @@ function PlannerPanel({
       : dayOptions[0]?.id || ''
   const [draft, setDraft] = useState(() => buildEmptyDraft(defaultDayId))
   const [expandedStacks, setExpandedStacks] = useState({})
+  const promotingSubstituteIdRef = useRef('')
   const cardPressProps = (cardItem) => ({
     role: 'button',
     tabIndex: 0,
@@ -4004,13 +4005,20 @@ function PlannerPanel({
           }
           const promoteSubstitute = (event, stackItem) => {
             event?.stopPropagation?.()
+            event?.preventDefault?.()
             if (!onPromoteSubstitute) return
-            void onPromoteSubstitute(stackItem, entry.items).then(() => {
-              setExpandedStacks((current) => ({
-                ...current,
-                [entry.id]: false,
-              }))
-            })
+            if (promotingSubstituteIdRef.current === stackItem.id) return
+            promotingSubstituteIdRef.current = stackItem.id
+            void onPromoteSubstitute(stackItem, entry.items)
+              .then(() => {
+                setExpandedStacks((current) => ({
+                  ...current,
+                  [entry.id]: false,
+                }))
+              })
+              .finally(() => {
+                promotingSubstituteIdRef.current = ''
+              })
           }
           const showBeforeSlot = Boolean(dragState && isManual)
           const showAfterSlot =
@@ -4232,7 +4240,9 @@ function PlannerPanel({
                                 ) : canEdit ? (
                                   <button
                                     type="button"
-                                    onPointerDown={(event) => promoteSubstitute(event, stackItem)}
+                                    onPointerDown={(event) => {
+                                      event.stopPropagation()
+                                    }}
                                     onPointerUp={(event) => event.stopPropagation()}
                                     onKeyDown={(event) => {
                                       event.stopPropagation()
@@ -6334,9 +6344,12 @@ export default function App() {
       ),
     )
 
-    await saveTripPatch(resolvedTripId, {
+    const patch = {
       items: Object.fromEntries(nextGroupItems.map((candidate) => [candidate.id, candidate])),
-    })
+    }
+
+    setOverrides((current) => mergeTripOverrides(current, patch))
+    await saveTripPatch(resolvedTripId, patch)
   }
 
   async function updateTravelMode(itemId, travelModeToNext) {
