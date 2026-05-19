@@ -27,6 +27,7 @@ import {
   ExternalLink,
   Loader2,
   Menu,
+  Minus,
   Plus,
   Search,
   Share2,
@@ -2097,7 +2098,44 @@ function TransitFields({ disabled, isMobilePortrait, transit, onChange }) {
   )
 }
 
-function EndTimeModeField({ conflict = false, disabled, draft, onChange }) {
+function EndTimeModeToggle({ disabled, draft, onChange }) {
+  return (
+    <div className="inline-flex min-h-11 items-center rounded-full bg-slate-100 p-1">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onChange({ endTimeMode: 'time' })}
+        className={`min-h-9 rounded-full px-3 text-[11px] font-semibold transition ${
+          draft.endTimeMode === 'time'
+            ? 'bg-slate-900 text-white shadow-[0_6px_14px_rgba(15,23,42,0.12)]'
+            : 'text-slate-600'
+        } disabled:text-slate-400`}
+      >
+        End time
+      </button>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() =>
+          onChange({
+            endTimeMode: 'duration',
+            durationMinutes:
+              draft.durationMinutes ?? getDurationMinutes(draft.startTime, draft.endTime) ?? 60,
+          })
+        }
+        className={`min-h-9 rounded-full px-3 text-[11px] font-semibold transition ${
+          draft.endTimeMode === 'duration'
+            ? 'bg-slate-900 text-white shadow-[0_6px_14px_rgba(15,23,42,0.12)]'
+            : 'text-slate-600'
+        } disabled:text-slate-400`}
+      >
+        Duration
+      </button>
+    </div>
+  )
+}
+
+function EndTimeModeField({ conflict = false, disabled, draft, onChange, showModeToggle = true }) {
   const derivedEndTime =
     draft.endTimeMode === 'duration'
       ? deriveEndTimeFromDuration(draft.startTime, draft.durationMinutes)
@@ -2105,38 +2143,7 @@ function EndTimeModeField({ conflict = false, disabled, draft, onChange }) {
 
   return (
     <div className="space-y-3 sm:col-span-2">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => onChange({ endTimeMode: 'time' })}
-          className={`min-h-11 rounded-full px-3 text-[11px] font-semibold transition ${
-            draft.endTimeMode === 'time'
-              ? 'bg-slate-900 text-white'
-              : 'bg-slate-100 text-slate-600'
-          } disabled:bg-slate-100 disabled:text-slate-400`}
-        >
-          End time
-        </button>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() =>
-            onChange({
-              endTimeMode: 'duration',
-              durationMinutes:
-                draft.durationMinutes ?? getDurationMinutes(draft.startTime, draft.endTime) ?? 60,
-            })
-          }
-          className={`min-h-11 rounded-full px-3 text-[11px] font-semibold transition ${
-            draft.endTimeMode === 'duration'
-              ? 'bg-slate-900 text-white'
-              : 'bg-slate-100 text-slate-600'
-          } disabled:bg-slate-100 disabled:text-slate-400`}
-        >
-          Duration
-        </button>
-      </div>
+      {showModeToggle ? <EndTimeModeToggle disabled={disabled} draft={draft} onChange={onChange} /> : null}
 
       {draft.endTimeMode === 'time' ? (
         <TimeField
@@ -4495,11 +4502,14 @@ function PlannerPanel({
             <button
               type="button"
               onClick={() => setIsComposerOpen((open) => !open)}
-              className={`min-h-11 rounded-[0.85rem] px-4 text-[13px] font-bold transition ${
-                isComposerOpen ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border shadow-[0_8px_20px_rgba(15,23,42,0.05)] transition ${
+                isComposerOpen
+                  ? 'border-slate-900 bg-slate-900 text-white'
+                  : 'border-slate-200/90 bg-white text-slate-700'
               }`}
+              aria-label={isComposerOpen ? 'Hide add stop form' : 'Add new stop'}
             >
-              {isComposerOpen ? 'Hide form' : 'New stop'}
+              {isComposerOpen ? <Minus className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
             </button>
           ) : null}
         </div>
@@ -4563,7 +4573,7 @@ function PlannerPanel({
                   ))}
                 </select>
               </Field>
-              <Field label={draft.category === 'Flight' ? 'Flight code' : 'Title'}>
+              <Field label={draft.category === 'Flight' ? 'Flight code' : 'Name'}>
                 <input
                   value={draft.category === 'Flight' ? draftFlightCode : draft.title}
                   onChange={(event) =>
@@ -4577,15 +4587,24 @@ function PlannerPanel({
                   className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
                 />
               </Field>
-              <TimeField
-                label="Start time"
-                value={draft.startTime}
-                onChange={(event) =>
-                  setDraft((current) => applyItemDraftPatch(current, { startTime: event.target.value }))
-                }
-                disabled={draft.category === 'Flight'}
-                conflict={Boolean(draftScheduleConflict?.nextId === draftConflictId)}
-              />
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 sm:col-span-2">
+                <TimeField
+                  label="Start time"
+                  value={draft.startTime}
+                  onChange={(event) =>
+                    setDraft((current) => applyItemDraftPatch(current, { startTime: event.target.value }))
+                  }
+                  disabled={draft.category === 'Flight'}
+                  conflict={Boolean(draftScheduleConflict?.nextId === draftConflictId)}
+                />
+                {draft.category !== 'Flight' ? (
+                  <EndTimeModeToggle
+                    disabled={false}
+                    draft={draft}
+                    onChange={(changes) => setDraft((current) => applyItemDraftPatch(current, changes))}
+                  />
+                ) : null}
+              </div>
               {draft.category === 'Flight' ? (
                 <TimeField
                   label="End time"
@@ -4600,6 +4619,7 @@ function PlannerPanel({
                   draft={draft}
                   onChange={(changes) => setDraft((current) => applyItemDraftPatch(current, changes))}
                   conflict={Boolean(draftScheduleConflict?.currentId === draftConflictId)}
+                  showModeToggle={false}
                 />
               )}
             </div>
