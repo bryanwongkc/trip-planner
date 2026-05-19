@@ -4360,7 +4360,6 @@ function PlannerPanel({
                           <button
                             type="button"
                             key={`collapsed-summary-${stackItem.id}`}
-                            onPointerDown={expandStack}
                             onKeyDown={(event) => {
                               if (event.key === 'Enter' || event.key === ' ') {
                                 event.preventDefault()
@@ -4372,6 +4371,7 @@ function PlannerPanel({
                             style={{
                               marginTop: stackIndex === 0 ? 0 : -5,
                               opacity: layer.opacity,
+                              touchAction: 'pan-y',
                               transform: `translateY(${layer.y}px)`,
                               zIndex: SUBSTITUTE_STACK_VISIBLE_DEPTH - stackIndex,
                             }}
