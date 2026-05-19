@@ -52,6 +52,7 @@ import {
   acceptTripInvite,
   createTripRecordWithOwner,
   createTripInvite,
+  deleteTripRecord,
   ensureDemoTripForNewUser,
   ensureUserProfile,
   firebaseEnabled,
@@ -139,15 +140,33 @@ const GUEST_USER = {
 const LOCAL_TRIP_OVERRIDES_KEY = 'trip-planner-temporary-overrides'
 
 function canViewTrip(role) {
-  return ['owner', 'editor', 'viewer'].includes(role)
+  return ['owner', 'admin', 'editor', 'viewer'].includes(role)
 }
 
 function canEditTrip(role) {
-  return ['owner', 'editor'].includes(role)
+  return ['owner', 'admin', 'editor'].includes(role)
 }
 
-function canManageMembers(role) {
-  return role === 'owner'
+function canDeleteTrip(role, tripSummary = null, user = null) {
+  return (
+    role === 'owner' &&
+    Boolean(user?.uid && [tripSummary?.ownerId, tripSummary?.createdBy].includes(user.uid))
+  )
+}
+
+function canManageMembers(role, tripSummary = null, user = null) {
+  return (
+    ['owner', 'admin'].includes(role) ||
+    Boolean(user?.uid && [tripSummary?.ownerId, tripSummary?.createdBy].includes(user.uid))
+  )
+}
+
+function roleLabel(role) {
+  if (role === 'viewer') return 'Read-only'
+  if (role === 'owner') return 'Owner'
+  if (role === 'admin') return 'Admin'
+  if (role === 'editor') return 'Editor'
+  return role || 'Unknown'
 }
 
 function useResponsiveMode() {
@@ -2179,7 +2198,8 @@ function EndTimeModeField({ conflict = false, disabled, draft, onChange }) {
 
 function TripSwitcher({
   activeTripId,
-  canManageTrip,
+  canDeleteTrip,
+  canEditTrip,
   deletedTrips,
   disabled,
   isMobilePortrait,
@@ -2321,7 +2341,7 @@ function TripSwitcher({
                 <button
                   type="button"
                   onClick={() => void onRenameTrip()}
-                  disabled={disabled || !activeTrip || !canManageTrip}
+                  disabled={disabled || !activeTrip || !canEditTrip}
                   className="flex items-center justify-center gap-2 rounded-[0.78rem] px-3 py-2 text-[12px] font-semibold text-slate-600 transition hover:bg-white/80 disabled:text-slate-400"
                 >
                   <Pencil className="h-3.5 w-3.5" />
@@ -2330,7 +2350,7 @@ function TripSwitcher({
                 <button
                   type="button"
                   onClick={() => void handleCloneTrip()}
-                  disabled={disabled || !activeTrip || !canManageTrip}
+                  disabled={disabled || !activeTrip || !canEditTrip}
                   className="flex items-center justify-center gap-2 rounded-[0.78rem] px-3 py-2 text-[12px] font-semibold text-slate-600 transition hover:bg-white/80 disabled:text-slate-400"
                 >
                   <Copy className="h-3.5 w-3.5" />
@@ -2339,17 +2359,17 @@ function TripSwitcher({
                 <button
                   type="button"
                   onClick={() => void onDeleteTrip()}
-                  disabled={disabled || !activeTrip || !canManageTrip || activeTrip.id === TRIP_ID}
+                  disabled={disabled || !activeTrip || !canDeleteTrip || activeTrip.id === TRIP_ID}
                   className="flex items-center justify-center gap-2 rounded-[0.78rem] px-3 py-2 text-[12px] font-semibold text-rose-600 transition hover:bg-rose-50 disabled:text-slate-300"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   Delete
                 </button>
               </div>
-              {canManageTrip && deletedTrips.length ? (
+              {canDeleteTrip && deletedTrips.length ? (
                 <div className="border-t border-slate-200/70 px-1 pt-1.5">
                   <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                    Recently deleted
+                    Hidden trips
                   </div>
                   <div className="space-y-1 pb-1">
                     {deletedTrips.map((trip) => (
@@ -2452,7 +2472,8 @@ function AppDrawer({
   activeTripSummary,
   authError,
   availableTrips,
-  canManageCurrentTrip,
+  canDeleteCurrentTrip,
+  canEditCurrentTrip,
   canShare,
   currentUser,
   deletedTrips,
@@ -2504,7 +2525,8 @@ function AppDrawer({
         <div className="space-y-2.5">
           <TripSwitcher
             activeTripId={activeTripSummary.id}
-            canManageTrip={canManageCurrentTrip}
+            canDeleteTrip={canDeleteCurrentTrip}
+            canEditTrip={canEditCurrentTrip}
             deletedTrips={deletedTrips}
             disabled={disabled}
             isMobilePortrait={isMobilePortrait}
@@ -2790,6 +2812,7 @@ function BottomDayNav({
 }
 
 function CollaboratorsModal({
+  canManageTrip,
   currentRole,
   currentUser,
   isMobilePortrait,
@@ -2805,8 +2828,7 @@ function CollaboratorsModal({
   const [inviteRole, setInviteRole] = useState('viewer')
   const [inviteLink, setInviteLink] = useState('')
   const [busy, setBusy] = useState(false)
-  const ownerCount = members.filter((member) => member.role === 'owner').length
-  const canManage = canManageMembers(currentRole)
+  const canManage = canManageTrip ?? canManageMembers(currentRole)
 
   async function handleAddMember() {
     if (!email.trim()) return
@@ -2855,7 +2877,7 @@ function CollaboratorsModal({
             <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Collaborators</div>
             <h3 className="mt-1 text-[1.6rem] font-bold tracking-[-0.02em] text-slate-900">Share this trip</h3>
             <p className="mt-1 text-[13px] leading-6 text-slate-600">
-              Owners can add collaborators and assign editor or viewer access.
+              Owners and admins can add collaborators and assign admin, editor, or read-only access.
             </p>
           </div>
           <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
@@ -2875,14 +2897,15 @@ function CollaboratorsModal({
                     className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
                   />
                 </Field>
-                <Field label="Role">
+                <Field label="Access">
                   <select
                     value={role}
                     onChange={(event) => setRole(event.target.value)}
                     className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
                   >
+                    <option value="admin">Admin</option>
                     <option value="editor">Editor</option>
-                    <option value="viewer">Viewer</option>
+                    <option value="viewer">Read-only</option>
                   </select>
                 </Field>
                 <button
@@ -2904,8 +2927,9 @@ function CollaboratorsModal({
                     onChange={(event) => setInviteRole(event.target.value)}
                     className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
                   >
-                    <option value="viewer">Viewer</option>
+                    <option value="admin">Admin</option>
                     <option value="editor">Editor</option>
+                    <option value="viewer">Read-only</option>
                   </select>
                 </Field>
                 <button
@@ -2936,7 +2960,8 @@ function CollaboratorsModal({
         <div className="mt-5 space-y-2.5">
           {members.map((member) => {
             const isCurrentUser = member.uid === currentUser?.uid
-            const isOnlyOwner = member.role === 'owner' && ownerCount === 1
+            const isOwner = member.role === 'owner'
+            const canModifyMember = canManage && !isOwner && !isCurrentUser
             return (
               <div
                 key={member.uid}
@@ -2949,22 +2974,22 @@ function CollaboratorsModal({
                     </div>
                     <div className="truncate pt-0.5 text-[11px] text-slate-500">{member.email || member.uid}</div>
                   </div>
-                  {canManage ? (
+                  {canModifyMember ? (
                     <div className="flex items-center gap-2">
                       <select
                         value={member.role}
                         onChange={(event) => void onUpdateRole(member, event.target.value)}
-                        disabled={busy || (isCurrentUser && isOnlyOwner)}
+                        disabled={busy}
                         className="rounded-full border border-slate-200/90 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-700 disabled:bg-slate-100"
                       >
-                        <option value="owner">Owner</option>
+                        <option value="admin">Admin</option>
                         <option value="editor">Editor</option>
-                        <option value="viewer">Viewer</option>
+                        <option value="viewer">Read-only</option>
                       </select>
                       <button
                         type="button"
                         onClick={() => void onRemoveMember(member)}
-                        disabled={busy || isOnlyOwner}
+                        disabled={busy}
                         className="rounded-full bg-rose-50 p-2 text-rose-600 disabled:bg-slate-100 disabled:text-slate-300"
                         aria-label={`Remove ${member.displayName || member.email || member.uid}`}
                       >
@@ -2973,7 +2998,7 @@ function CollaboratorsModal({
                     </div>
                   ) : (
                     <div className="rounded-full bg-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
-                      {member.role}
+                      {roleLabel(member.role)}
                     </div>
                   )}
                 </div>
@@ -4659,6 +4684,7 @@ function AppDialog({ dialog, onCancel, onSubmit }) {
   if (!dialog) return null
 
   const isPrompt = dialog.type === 'prompt'
+  const isChoice = dialog.type === 'choice'
   const isDanger = dialog.tone === 'danger'
 
   return (
@@ -4669,7 +4695,7 @@ function AppDialog({ dialog, onCancel, onSubmit }) {
       <form
         onSubmit={(event) => {
           event.preventDefault()
-          onSubmit(isPrompt ? inputRef.current?.value.trim() || '' : true)
+          onSubmit(isChoice ? null : isPrompt ? inputRef.current?.value.trim() || '' : true)
         }}
         onClick={(event) => event.stopPropagation()}
         className="glass-panel w-full max-w-md rounded-[1.35rem] border border-white/70 p-4 shadow-[0_22px_60px_rgba(15,23,42,0.18)] sm:rounded-[1.55rem] sm:p-5"
@@ -4703,7 +4729,24 @@ function AppDialog({ dialog, onCancel, onSubmit }) {
         ) : null}
 
         <div className="mt-5 flex items-center justify-end gap-2">
-          {dialog.type !== 'alert' ? (
+          {isChoice ? (
+            dialog.choices.map((choice) => (
+              <button
+                key={choice.value}
+                type="button"
+                onClick={() => onSubmit(choice.value)}
+                className={`rounded-[0.9rem] px-4 py-2.5 text-[13px] font-bold ${
+                  choice.tone === 'danger'
+                    ? 'bg-rose-600 text-white'
+                    : choice.variant === 'primary'
+                      ? 'bg-slate-950 text-white'
+                      : 'border border-slate-200 bg-white text-slate-700'
+                }`}
+              >
+                {choice.label}
+              </button>
+            ))
+          ) : dialog.type !== 'alert' ? (
             <button
               type="button"
               onClick={onCancel}
@@ -4712,14 +4755,16 @@ function AppDialog({ dialog, onCancel, onSubmit }) {
               {dialog.cancelLabel || 'Cancel'}
             </button>
           ) : null}
-          <button
-            type="submit"
-            className={`rounded-[0.9rem] px-4 py-2.5 text-[13px] font-bold text-white ${
-              isDanger ? 'bg-rose-600' : 'bg-slate-950'
-            }`}
-          >
-            {dialog.confirmLabel || 'OK'}
-          </button>
+          {!isChoice ? (
+            <button
+              type="submit"
+              className={`rounded-[0.9rem] px-4 py-2.5 text-[13px] font-bold text-white ${
+                isDanger ? 'bg-rose-600' : 'bg-slate-950'
+              }`}
+            >
+              {dialog.confirmLabel || 'OK'}
+            </button>
+          ) : null}
         </div>
       </form>
     </div>
@@ -4821,7 +4866,10 @@ export default function App() {
     availableTrips.find((trip) => trip.id === resolvedTripId) || defaultTripSummary
   const activeRole = activeTripSummary?.role || ''
   const canEditCurrentTrip = canEditTrip(activeRole)
-  const canManageCurrentTrip = canManageMembers(activeRole)
+  const canManageCurrentTrip = canManageMembers(activeRole, activeTripSummary, currentUser)
+  const canDeleteCurrentTrip = isGuestMode
+    ? activeRole === 'owner'
+    : canDeleteTrip(activeRole, activeTripSummary, currentUser)
   const visibleDays = tripState.days
   const resolvedActiveDayId =
     activeDayId === DAY_VIEW_ALL || tripState.dayMap[activeDayId]
@@ -4889,6 +4937,18 @@ export default function App() {
         message,
         confirmLabel: options.confirmLabel || 'Confirm',
         cancelLabel: options.cancelLabel || 'Cancel',
+        tone: options.tone || 'default',
+      }),
+    [openAppDialog],
+  )
+
+  const showChoice = useCallback(
+    (message, options = {}) =>
+      openAppDialog({
+        type: 'choice',
+        title: options.title || 'Choose an action',
+        message,
+        choices: options.choices || [],
         tone: options.tone || 'default',
       }),
     [openAppDialog],
@@ -5230,6 +5290,8 @@ export default function App() {
                   endDate: invite.endDate || '',
                   hidden: false,
                   isDemo: Boolean(invite.isDemo),
+                  ownerId: invite.ownerId || '',
+                  createdBy: invite.createdBy || '',
                 },
               ],
         )
@@ -5290,18 +5352,28 @@ export default function App() {
 
     async function migrateGuestTrip() {
       try {
-        const confirmed = await showConfirm(
-          'Save your local guest itinerary to this Google account as a new Firestore trip?',
+        const migrationChoice = await showChoice(
+          'You have a local guest itinerary. Save it to this Google account or delete the local guest copy?',
           {
             title: 'Save local itinerary',
-            confirmLabel: 'Save to account',
-            cancelLabel: 'Keep local only',
+            choices: [
+              { value: 'save', label: 'Save to cloud', variant: 'primary' },
+              { value: 'delete', label: 'Delete local copy', tone: 'danger' },
+            ],
           },
         )
 
         if (!active) return
 
-        if (!confirmed) {
+        if (migrationChoice === 'delete') {
+          window.localStorage.removeItem(LOCAL_TRIP_OVERRIDES_KEY)
+          migration.localOverrides = null
+          migration.localTitle = ''
+          migration.declinedForUid = uid
+          return
+        }
+
+        if (migrationChoice !== 'save') {
           migration.declinedForUid = uid
           return
         }
@@ -5317,6 +5389,8 @@ export default function App() {
           hidden: false,
           startDate: snapshot.startDate,
           endDate: snapshot.endDate,
+          ownerId: currentUser.uid,
+          createdBy: currentUser.uid,
         }
 
         await createTripRecordWithOwner(
@@ -5374,7 +5448,7 @@ export default function App() {
     currentUser,
     isGuestMode,
     showAlert,
-    showConfirm,
+    showChoice,
     tripDirectoryLoaded,
     userProfileLoaded,
   ])
@@ -5874,6 +5948,8 @@ export default function App() {
       hidden: false,
       startDate: snapshot.startDate,
       endDate: snapshot.endDate,
+      ownerId: currentUser?.uid || '',
+      createdBy: currentUser?.uid || '',
     }
 
     if (isGuestMode) {
@@ -5923,7 +5999,7 @@ export default function App() {
   }
 
   async function cloneTrip() {
-    if (!firestoreReady || !canManageCurrentTrip || !activeTripSummary) return
+    if (!firestoreReady || !canEditCurrentTrip || !activeTripSummary) return
 
     const suggestedTitle = `${activeTripSummary.title || 'Trip'} copy`
     const title = await showPrompt('Clone trip as', {
@@ -5945,6 +6021,8 @@ export default function App() {
           hidden: false,
           startDate: snapshot.startDate,
           endDate: snapshot.endDate,
+          ownerId: currentUser?.uid || '',
+          createdBy: currentUser?.uid || '',
         },
       ])
       setOverrides({
@@ -5987,6 +6065,8 @@ export default function App() {
                 hidden: false,
                 startDate: snapshot.startDate,
                 endDate: snapshot.endDate,
+                ownerId: currentUser.uid,
+                createdBy: currentUser.uid,
               },
             ],
       )
@@ -6001,7 +6081,7 @@ export default function App() {
   }
 
   async function renameTrip() {
-    if (!firestoreReady || !canManageCurrentTrip) return
+    if (!firestoreReady || !canEditCurrentTrip) return
 
     const currentTitle = activeTripSummary?.title || 'Untitled trip'
     const nextTitle = await showPrompt('Rename trip', {
@@ -6025,14 +6105,14 @@ export default function App() {
   }
 
   async function deleteTrip() {
-    if (!firestoreReady || !canManageCurrentTrip) return
+    if (!firestoreReady || !canDeleteCurrentTrip) return
     if (resolvedTripId === defaultTripSummary.id) {
       await showAlert('The default trip cannot be deleted.')
       return
     }
 
     const tripTitle = activeTripSummary?.title || 'this trip'
-    const confirmed = await showConfirm(`Delete ${tripTitle}? This trip will be removed from the selector.`, {
+    const confirmed = await showConfirm(`Delete ${tripTitle}? This permanently removes the trip for every collaborator.`, {
       title: 'Delete trip',
       confirmLabel: 'Delete',
       tone: 'danger',
@@ -6043,16 +6123,12 @@ export default function App() {
       availableTrips.find((trip) => trip.id !== resolvedTripId && !trip.hidden) || defaultTripSummary
 
     if (isGuestMode) {
-      setTripSummaries((current) =>
-        current.map((trip) => (trip.id === resolvedTripId ? { ...trip, hidden: true } : trip)),
-      )
+      setTripSummaries((current) => current.filter((trip) => trip.id !== resolvedTripId))
       selectTrip(fallbackTrip.id)
       return
     }
 
-    await upsertTripMeta(resolvedTripId, {
-      hidden: true,
-    })
+    await deleteTripRecord(resolvedTripId)
 
     selectTrip(fallbackTrip.id)
   }
@@ -6316,6 +6392,7 @@ export default function App() {
 
   async function addCollaborator(email, role) {
     if (!canManageCurrentTrip) return
+    if (!['admin', 'editor', 'viewer'].includes(role)) return
     if (isGuestMode) {
       await showAlert('Sign in with Google to share trips and save collaborator access to Firestore.')
       return
@@ -6346,12 +6423,15 @@ export default function App() {
         startDate: activeTripSummary.startDate,
         endDate: activeTripSummary.endDate,
         hidden: false,
+        ownerId: activeTripSummary.ownerId || currentUser.uid,
+        createdBy: activeTripSummary.createdBy || currentUser.uid,
       },
     )
   }
 
   async function createInvitationLink(role) {
     if (!canManageCurrentTrip) return ''
+    if (!['admin', 'editor', 'viewer'].includes(role)) return ''
     if (isGuestMode) {
       await showAlert('Sign in with Google to create invitation links.')
       return ''
@@ -6368,6 +6448,8 @@ export default function App() {
         endDate: activeTripSummary.endDate,
         hidden: false,
         isDemo: activeTripSummary.isDemo,
+        ownerId: activeTripSummary.ownerId || currentUser.uid,
+        createdBy: activeTripSummary.createdBy || currentUser.uid,
       },
     )
     if (!invite?.inviteId) return ''
@@ -6383,10 +6465,14 @@ export default function App() {
 
   async function changeCollaboratorRole(member, role) {
     if (!canManageCurrentTrip) return
+    if (!['admin', 'editor', 'viewer'].includes(role)) return
+    if (member.uid === currentUser?.uid) {
+      await showAlert('You cannot change your own access.')
+      return
+    }
 
-    const ownerCount = tripMembers.filter((entry) => entry.role === 'owner').length
-    if (member.uid === currentUser?.uid && member.role === 'owner' && role !== 'owner' && ownerCount === 1) {
-      await showAlert('You cannot demote yourself as the only owner.')
+    if (member.role === 'owner') {
+      await showAlert('The trip owner access cannot be changed.')
       return
     }
 
@@ -6399,16 +6485,21 @@ export default function App() {
         startDate: activeTripSummary.startDate,
         endDate: activeTripSummary.endDate,
         hidden: false,
+        ownerId: activeTripSummary.ownerId || currentUser?.uid || '',
+        createdBy: activeTripSummary.createdBy || currentUser?.uid || '',
       },
     )
   }
 
   async function removeCollaborator(member) {
     if (!canManageCurrentTrip) return
+    if (member.uid === currentUser?.uid) {
+      await showAlert('You cannot remove your own access.')
+      return
+    }
 
-    const ownerCount = tripMembers.filter((entry) => entry.role === 'owner').length
-    if (member.role === 'owner' && ownerCount === 1) {
-      await showAlert('You cannot remove the last owner.')
+    if (member.role === 'owner') {
+      await showAlert('The trip owner cannot be removed.')
       return
     }
 
@@ -6547,7 +6638,8 @@ export default function App() {
         activeTripSummary={activeTripSummary}
         authError={authError}
         availableTrips={availableTrips}
-        canManageCurrentTrip={canManageCurrentTrip}
+        canDeleteCurrentTrip={canDeleteCurrentTrip}
+        canEditCurrentTrip={canEditCurrentTrip}
         canShare={isSignedIn && canViewTrip(activeRole)}
         currentUser={effectiveUser}
         deletedTrips={deletedTrips}
@@ -6597,7 +6689,7 @@ export default function App() {
       <AppDialog
         dialog={appDialog}
         onCancel={() =>
-          closeAppDialog(appDialog?.type === 'alert' ? true : appDialog?.type === 'prompt' ? null : false)
+          closeAppDialog(appDialog?.type === 'alert' ? true : appDialog?.type === 'confirm' ? false : null)
         }
         onSubmit={(result) => closeAppDialog(result)}
       />
@@ -6764,6 +6856,7 @@ export default function App() {
 
       {showCollaborators && canViewTrip(activeRole) ? (
         <CollaboratorsModal
+          canManageTrip={canManageCurrentTrip}
           currentRole={activeRole}
           currentUser={currentUser}
           isMobilePortrait={isMobilePortrait}

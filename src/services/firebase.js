@@ -109,6 +109,8 @@ function buildTripIndexPayload(tripId, role, tripMeta, serverTimestamp) {
     endDate: tripMeta?.endDate || '',
     hidden: Boolean(tripMeta?.hidden),
     isDemo: Boolean(tripMeta?.isDemo),
+    ownerId: tripMeta?.ownerId || '',
+    createdBy: tripMeta?.createdBy || '',
     updatedAt: serverTimestamp(),
   })
 }
@@ -245,7 +247,7 @@ export async function lookupUserByEmail(email) {
 
 export async function createTripInvite(tripId, actorUser, role, tripMeta = {}) {
   const { db, doc, serverTimestamp, setDoc } = await loadFirebaseServices()
-  if (!db || !tripId || !actorUser?.uid || !['editor', 'viewer'].includes(role)) return null
+  if (!db || !tripId || !actorUser?.uid || !['admin', 'editor', 'viewer'].includes(role)) return null
 
   const inviteId = `invite-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`}`
   const inviteDoc = doc(db, 'tripInvites', inviteId)
@@ -258,6 +260,7 @@ export async function createTripInvite(tripId, actorUser, role, tripMeta = {}) {
     endDate: tripMeta.endDate || '',
     hidden: false,
     isDemo: Boolean(tripMeta.isDemo),
+    ownerId: tripMeta.ownerId || '',
     active: true,
     createdBy: actorUser.uid,
     createdAt: serverTimestamp(),
@@ -279,7 +282,7 @@ export async function acceptTripInvite(inviteId, user) {
   }
 
   const invite = inviteSnapshot.data()
-  if (!invite?.active || !invite.tripId || !['editor', 'viewer'].includes(invite.role)) {
+  if (!invite?.active || !invite.tripId || !['admin', 'editor', 'viewer'].includes(invite.role)) {
     throw new Error('Invitation link is no longer active.')
   }
 
@@ -518,9 +521,26 @@ export async function upsertTripMeta(tripId, payload) {
   await batch.commit()
 }
 
+export async function deleteTripRecord(tripId) {
+  const { db, doc, writeBatch } = await loadFirebaseServices()
+  if (!db || !tripId) return
+
+  const { memberDocs } = await getTripMetaAndMembers(tripId)
+  const batch = writeBatch(db)
+
+  batch.delete(doc(db, 'trips', tripId, 'overrides', 'shared'))
+  memberDocs.forEach((member) => {
+    batch.delete(doc(db, 'trips', tripId, 'members', member.uid))
+    batch.delete(doc(db, 'users', member.uid, 'tripMemberships', tripId))
+  })
+  batch.delete(doc(db, 'trips', tripId))
+
+  await batch.commit()
+}
+
 export async function addTripMember(tripId, actorUser, memberUser, role, tripMeta = {}) {
   const { db, doc, serverTimestamp, writeBatch } = await loadFirebaseServices()
-  if (!db || !tripId || !memberUser?.uid) return
+  if (!db || !tripId || !memberUser?.uid || !['admin', 'editor', 'viewer'].includes(role)) return
 
   const batch = writeBatch(db)
   const memberDoc = doc(db, 'trips', tripId, 'members', memberUser.uid)
@@ -551,13 +571,14 @@ export async function addTripMember(tripId, actorUser, memberUser, role, tripMet
 
 export async function updateTripMemberRole(tripId, memberUid, role, tripMeta = {}) {
   const { db, doc, getDoc, serverTimestamp, writeBatch } = await loadFirebaseServices()
-  if (!db || !tripId || !memberUid) return
+  if (!db || !tripId || !memberUid || !['admin', 'editor', 'viewer'].includes(role)) return
 
   const memberDoc = doc(db, 'trips', tripId, 'members', memberUid)
   const memberSnapshot = await getDoc(memberDoc)
   if (!memberSnapshot.exists()) return
 
   const memberData = memberSnapshot.data()
+  if (memberData.role === 'owner') return
   const batch = writeBatch(db)
   batch.set(
     memberDoc,

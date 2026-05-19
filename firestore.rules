@@ -43,7 +43,7 @@ service cloud.firestore {
 
     function canEditTrip(tripId) {
       return canViewTrip(tripId) &&
-        memberRole(tripId) in ['owner', 'editor'];
+        memberRole(tripId) in ['owner', 'admin', 'editor'];
     }
 
     function isTripMemberAfter(tripId) {
@@ -57,11 +57,33 @@ service cloud.firestore {
 
     function canEditTripAfter(tripId) {
       return isTripMemberAfter(tripId) &&
-        memberRoleAfter(tripId) in ['owner', 'editor'];
+        memberRoleAfter(tripId) in ['owner', 'admin', 'editor'];
     }
 
     function isTripOwner(tripId) {
       return canViewTrip(tripId) && memberRole(tripId) == 'owner';
+    }
+
+    function canManageTripMembers(tripId) {
+      return isSignedIn() && (
+        (canViewTrip(tripId) && memberRole(tripId) in ['owner', 'admin']) ||
+        get(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid ||
+        get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid
+      );
+    }
+
+    function canDeleteTrip(tripId) {
+      return isSignedIn() &&
+        canViewTrip(tripId) &&
+        memberRole(tripId) == 'owner' &&
+        (
+          get(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid ||
+          get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid
+        );
+    }
+
+    function isManagedCollaboratorRole(role) {
+      return role in ['admin', 'editor', 'viewer'];
     }
 
     function isSharedOverrideDoc() {
@@ -99,7 +121,7 @@ service cloud.firestore {
         'updatedAt'
       ]) &&
       request.resource.data.uid == uid &&
-      request.resource.data.role in ['owner', 'editor', 'viewer'] &&
+      request.resource.data.role in ['owner', 'admin', 'editor', 'viewer'] &&
       (!('inviteId' in request.resource.data) || request.resource.data.inviteId is string);
     }
 
@@ -114,12 +136,13 @@ service cloud.firestore {
         'isDemo',
         'hidden',
         'active',
+        'ownerId',
         'createdBy',
         'createdAt',
         'updatedAt'
       ]) &&
       request.resource.data.inviteId == inviteId &&
-      request.resource.data.role in ['editor', 'viewer'] &&
+      request.resource.data.role in ['admin', 'editor', 'viewer'] &&
       request.resource.data.active is bool &&
       request.resource.data.createdBy == request.auth.uid &&
       (!('isDemo' in request.resource.data) || request.resource.data.isDemo is bool);
@@ -128,12 +151,13 @@ service cloud.firestore {
     function canAcceptInvite(tripId, uid) {
       return isSignedIn() &&
         ('inviteId' in request.resource.data) &&
+        exists(/databases/$(database)/documents/trips/$(tripId)) &&
         exists(/databases/$(database)/documents/tripInvites/$(request.resource.data.inviteId)) &&
         get(/databases/$(database)/documents/tripInvites/$(request.resource.data.inviteId)).data.tripId == tripId &&
         get(/databases/$(database)/documents/tripInvites/$(request.resource.data.inviteId)).data.role == request.resource.data.role &&
         get(/databases/$(database)/documents/tripInvites/$(request.resource.data.inviteId)).data.active == true &&
         request.auth.uid == uid &&
-        request.resource.data.role in ['editor', 'viewer'];
+        isManagedCollaboratorRole(request.resource.data.role);
     }
 
     function validTripMembershipIndex(tripId) {
@@ -145,10 +169,12 @@ service cloud.firestore {
         'endDate',
         'isDemo',
         'hidden',
+        'ownerId',
+        'createdBy',
         'updatedAt'
       ]) &&
       request.resource.data.tripId == tripId &&
-      request.resource.data.role in ['owner', 'editor', 'viewer'] &&
+      request.resource.data.role in ['owner', 'admin', 'editor', 'viewer'] &&
       (!('isDemo' in request.resource.data) || request.resource.data.isDemo is bool);
     }
 
@@ -159,8 +185,9 @@ service cloud.firestore {
 
       match /tripMemberships/{tripId} {
         allow read: if userOwnsProfile(uid);
-        allow create, update: if validTripMembershipIndex(tripId) && (userOwnsProfile(uid) || isTripOwner(tripId));
-        allow delete: if userOwnsProfile(uid) || isTripOwner(tripId);
+        allow create, update: if validTripMembershipIndex(tripId) && (userOwnsProfile(uid) || canManageTripMembers(tripId));
+        allow delete: if canDeleteTrip(tripId) ||
+          ((userOwnsProfile(uid) || canManageTripMembers(tripId)) && resource.data.role != 'owner');
       }
     }
 
@@ -170,14 +197,18 @@ service cloud.firestore {
         isTripMetaDoc() &&
         request.resource.data.ownerId == request.auth.uid &&
         request.resource.data.createdBy == request.auth.uid;
-      allow update: if isTripMetaDoc() && isTripOwner(tripId);
-      allow delete: if false;
+      allow update: if isTripMetaDoc() &&
+        canEditTrip(tripId) &&
+        request.resource.data.ownerId == resource.data.ownerId &&
+        request.resource.data.createdBy == resource.data.createdBy &&
+        (isTripOwner(tripId) || request.resource.data.hidden == resource.data.hidden);
+      allow delete: if canDeleteTrip(tripId);
     }
 
     match /trips/{tripId}/members/{uid} {
       allow read: if canViewTrip(tripId);
       allow create: if validTripMember(uid) && (
-        (isTripOwner(tripId) && request.resource.data.role in ['owner', 'editor', 'viewer']) ||
+        (canManageTripMembers(tripId) && isManagedCollaboratorRole(request.resource.data.role)) ||
         canAcceptInvite(tripId, uid) ||
         (isSignedIn() &&
           request.auth.uid == uid &&
@@ -185,9 +216,12 @@ service cloud.firestore {
           getAfter(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid &&
           request.resource.data.role == 'owner')
       );
-      allow update: if isTripOwner(tripId) &&
-        validTripMember(uid);
-      allow delete: if isTripOwner(tripId);
+      allow update: if canManageTripMembers(tripId) &&
+        validTripMember(uid) &&
+        resource.data.role != 'owner' &&
+        isManagedCollaboratorRole(request.resource.data.role);
+      allow delete: if canDeleteTrip(tripId) ||
+        (canManageTripMembers(tripId) && resource.data.role != 'owner');
     }
 
     match /tripInvites/{inviteId} {
@@ -195,18 +229,18 @@ service cloud.firestore {
       allow list: if false;
       allow create: if isSignedIn() &&
         validTripInvite(inviteId) &&
-        isTripOwner(request.resource.data.tripId);
+        canManageTripMembers(request.resource.data.tripId);
       allow update: if isSignedIn() &&
         validTripInvite(inviteId) &&
         resource.data.tripId == request.resource.data.tripId &&
-        isTripOwner(resource.data.tripId);
-      allow delete: if isSignedIn() && isTripOwner(resource.data.tripId);
+        canManageTripMembers(resource.data.tripId);
+      allow delete: if isSignedIn() && canManageTripMembers(resource.data.tripId);
     }
 
     match /trips/{tripId}/overrides/shared {
       allow read: if canViewTrip(tripId);
       allow create, update: if isSharedOverrideDoc() && (canEditTrip(tripId) || canEditTripAfter(tripId));
-      allow delete: if false;
+      allow delete: if canDeleteTrip(tripId);
     }
 
     match /{document=**} {
