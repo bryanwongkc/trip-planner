@@ -272,42 +272,81 @@ const CATEGORY_ICON_COMPONENTS = {
 }
 
 function CategoryControl({ disabled = false, label = 'Category', onChange, value }) {
+  const scrollerRef = useRef(null)
+  const [scrollHints, setScrollHints] = useState({ left: false, right: false })
+
+  const updateScrollHints = useCallback(() => {
+    const node = scrollerRef.current
+    if (!node) return
+    const maxScrollLeft = node.scrollWidth - node.clientWidth
+    setScrollHints({
+      left: node.scrollLeft > 4,
+      right: node.scrollLeft < maxScrollLeft - 4,
+    })
+  }, [])
+
+  useEffect(() => {
+    updateScrollHints()
+    const node = scrollerRef.current
+    if (!node) return undefined
+
+    node.addEventListener('scroll', updateScrollHints, { passive: true })
+    window.addEventListener('resize', updateScrollHints)
+    return () => {
+      node.removeEventListener('scroll', updateScrollHints)
+      window.removeEventListener('resize', updateScrollHints)
+    }
+  }, [updateScrollHints])
+
   return (
     <div className="block min-w-0">
       <div className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
         {label}
       </div>
-      <div
-        role="radiogroup"
-        aria-label={label}
-        className="no-scrollbar flex w-full max-w-full items-center gap-1.5 overflow-x-auto rounded-[1.15rem] border border-slate-200/90 bg-white p-1.5"
-      >
-        {categoryOptionsForValue(value).map((option) => {
-          const Icon = CATEGORY_ICON_COMPONENTS[option] || CircleEllipsis
-          const active = option === value
-          return (
-            <button
-              key={option}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              aria-label={option}
-              title={option}
-              disabled={disabled}
-              onClick={() => onChange(option)}
-              className={`flex min-h-[3.25rem] min-w-[4.8rem] flex-1 flex-col items-center justify-center gap-1 rounded-[0.95rem] px-2 transition ${
-                active
-                  ? 'bg-slate-900 text-white shadow-[0_8px_18px_rgba(15,23,42,0.12)]'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
-              } disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none`}
-            >
-              <Icon className="h-4.5 w-4.5" />
-              <span className="whitespace-nowrap text-[9px] font-semibold leading-none tracking-[-0.01em]">
-                {option}
-              </span>
-            </button>
-          )
-        })}
+      <div className="relative">
+        {scrollHints.left ? (
+          <div className="pointer-events-none absolute left-1 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200/80 bg-white/95 text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.12)]">
+            <ChevronDown className="h-4 w-4 rotate-90" />
+          </div>
+        ) : null}
+        {scrollHints.right ? (
+          <div className="pointer-events-none absolute right-1 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200/80 bg-white/95 text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.12)]">
+            <ChevronDown className="h-4 w-4 -rotate-90" />
+          </div>
+        ) : null}
+        <div
+          ref={scrollerRef}
+          role="radiogroup"
+          aria-label={label}
+          className="no-scrollbar flex w-full max-w-full items-center gap-1 overflow-x-auto rounded-[1.15rem] border border-slate-200/90 bg-white p-1"
+        >
+          {categoryOptionsForValue(value).map((option) => {
+            const Icon = CATEGORY_ICON_COMPONENTS[option] || CircleEllipsis
+            const active = option === value
+            return (
+              <button
+                key={option}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                aria-label={option}
+                title={option}
+                disabled={disabled}
+                onClick={() => onChange(option)}
+                className={`flex min-h-[3.15rem] min-w-[4.2rem] flex-1 flex-col items-center justify-center gap-1 rounded-[0.9rem] px-1.5 transition ${
+                  active
+                    ? 'bg-slate-900 text-white shadow-[0_8px_18px_rgba(15,23,42,0.12)]'
+                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                } disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none`}
+              >
+                <Icon className="h-4.5 w-4.5" />
+                <span className="whitespace-nowrap text-[9px] font-semibold leading-none tracking-[-0.01em]">
+                  {option}
+                </span>
+              </button>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
@@ -2188,12 +2227,12 @@ function TransitFields({ disabled, isMobilePortrait, transit, onChange }) {
 
 function EndTimeModeToggle({ disabled, draft, onChange }) {
   return (
-    <div className="inline-flex min-h-11 items-center rounded-full bg-slate-100 p-1">
+    <div className="inline-flex min-h-11 w-[11.2rem] items-center rounded-full border border-slate-200/90 bg-slate-100 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
       <button
         type="button"
         disabled={disabled}
         onClick={() => onChange({ endTimeMode: 'time' })}
-        className={`min-h-9 rounded-full px-3 text-[11px] font-semibold transition ${
+        className={`min-h-9 flex-1 rounded-full px-3 text-[11px] font-semibold transition ${
           draft.endTimeMode === 'time'
             ? 'bg-slate-900 text-white shadow-[0_6px_14px_rgba(15,23,42,0.12)]'
             : 'text-slate-600'
@@ -2211,7 +2250,7 @@ function EndTimeModeToggle({ disabled, draft, onChange }) {
               draft.durationMinutes ?? getDurationMinutes(draft.startTime, draft.endTime) ?? 60,
           })
         }
-        className={`min-h-9 rounded-full px-3 text-[11px] font-semibold transition ${
+        className={`min-h-9 flex-1 rounded-full px-3 text-[11px] font-semibold transition ${
           draft.endTimeMode === 'duration'
             ? 'bg-slate-900 text-white shadow-[0_6px_14px_rgba(15,23,42,0.12)]'
             : 'text-slate-600'
@@ -2219,6 +2258,18 @@ function EndTimeModeToggle({ disabled, draft, onChange }) {
       >
         Duration
       </button>
+    </div>
+  )
+}
+
+function EndTimeModeSpacer() {
+  return (
+    <div
+      className="invisible inline-flex min-h-11 w-[11.2rem] items-center rounded-full border border-slate-200/90 bg-slate-100 p-1"
+      aria-hidden="true"
+    >
+      <span className="min-h-9 flex-1 rounded-full px-3 text-[11px] font-semibold">End time</span>
+      <span className="min-h-9 flex-1 rounded-full px-3 text-[11px] font-semibold">Duration</span>
     </div>
   )
 }
@@ -2231,7 +2282,7 @@ function StartTimeModeRow({
   showModeToggle = true,
 }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 sm:col-span-2">
+    <div className="grid grid-cols-[minmax(0,1fr)_11.2rem] items-end gap-3 sm:col-span-2">
       <TimeField
         label="Start time"
         value={draft.startTime}
@@ -2257,36 +2308,41 @@ function EndTimeModeField({ conflict = false, disabled, draft, onChange, showMod
       {showModeToggle ? <EndTimeModeToggle disabled={disabled} draft={draft} onChange={onChange} /> : null}
 
       {draft.endTimeMode === 'time' ? (
-        <TimeField
-          label="End time"
-          value={draft.endTime}
-          onChange={(event) => onChange({ endTime: event.target.value })}
-          disabled={disabled}
-          conflict={conflict}
-        />
+        <div className="grid grid-cols-[minmax(0,1fr)_11.2rem] items-end gap-3">
+          <TimeField
+            label="End time"
+            value={draft.endTime}
+            onChange={(event) => onChange({ endTime: event.target.value })}
+            disabled={disabled}
+            conflict={conflict}
+          />
+          {!showModeToggle ? <EndTimeModeSpacer /> : null}
+        </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-          <Field label="Duration (minutes)">
-            <input
-              type="number"
-              min="0"
-              step="5"
-              value={draft.durationMinutes ?? ''}
-              onChange={(event) =>
-                onChange({
-                  durationMinutes: event.target.value === '' ? null : Number(event.target.value),
-                })
-              }
-              disabled={disabled}
-              className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-[14px] tracking-[-0.01em] disabled:bg-slate-100"
-            />
-          </Field>
-          <Field label="End time">
-            <div className="w-full rounded-[1.15rem] border border-slate-200/90 bg-slate-50 px-4 py-3 text-[14px] font-semibold tracking-[-0.01em] text-slate-700">
-              {derivedEndTime || '--:--'}
-            </div>
-          </Field>
-          <div className="sm:col-span-2">
+        <div className="space-y-3">
+          <div className="grid grid-cols-[minmax(0,1fr)_11.2rem] items-end gap-3">
+            <Field label="End time">
+              <div className="w-full rounded-[1.15rem] border border-slate-200/90 bg-slate-50 px-4 py-3 text-[14px] font-semibold tracking-[-0.01em] text-slate-700">
+                {derivedEndTime || '--:--'}
+              </div>
+            </Field>
+            <Field label="Duration (minutes)" className="min-w-0">
+              <input
+                type="number"
+                min="0"
+                step="5"
+                value={draft.durationMinutes ?? ''}
+                onChange={(event) =>
+                  onChange({
+                    durationMinutes: event.target.value === '' ? null : Number(event.target.value),
+                  })
+                }
+                disabled={disabled}
+                className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-[14px] tracking-[-0.01em] disabled:bg-slate-100"
+              />
+            </Field>
+          </div>
+          <div>
             <div className="text-[11px] leading-5 text-slate-500">
               Enter a duration and the itinerary will calculate the end time.
             </div>
