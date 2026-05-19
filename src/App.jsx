@@ -3734,6 +3734,7 @@ function PlannerPanel({
       : dayOptions[0]?.id || ''
   const [draft, setDraft] = useState(() => buildEmptyDraft(defaultDayId))
   const [expandedStacks, setExpandedStacks] = useState({})
+  const [stackLayoutRefreshKey, setStackLayoutRefreshKey] = useState(0)
   const promotingSubstituteIdRef = useRef('')
   const cardPressProps = (cardItem) => ({
     role: 'button',
@@ -3985,16 +3986,22 @@ function PlannerPanel({
               [entry.id]: !current[entry.id],
             }))
           }
+          const refreshStackLayout = () => {
+            window.requestAnimationFrame(() => {
+              setStackLayoutRefreshKey((current) => current + 1)
+              window.requestAnimationFrame(() => {
+                document.documentElement.getBoundingClientRect()
+                window.dispatchEvent(new Event('resize'))
+              })
+            })
+          }
           const collapseStack = (event) => {
             event?.stopPropagation?.()
             setExpandedStacks((current) => ({
               ...current,
               [entry.id]: false,
             }))
-            window.requestAnimationFrame(() => {
-              document.body.getBoundingClientRect()
-              window.dispatchEvent(new Event('resize'))
-            })
+            refreshStackLayout()
           }
           const expandStack = (event) => {
             event?.stopPropagation?.()
@@ -4015,6 +4022,7 @@ function PlannerPanel({
                   ...current,
                   [entry.id]: false,
                 }))
+                refreshStackLayout()
               })
               .finally(() => {
                 promotingSubstituteIdRef.current = ''
@@ -4028,7 +4036,7 @@ function PlannerPanel({
           const RouteIcon = nextSegment ? routeIconForMode(nextSegment.mode) : null
           return (
             <div
-              key={entry.id}
+              key={`${entry.id}-${isExpandedStack ? 'expanded' : 'collapsed'}-${stackLayoutRefreshKey}`}
               className={`itinerary-step grid grid-cols-[3.25rem_1.55rem_minmax(0,1fr)] gap-x-2 ${
                 isMobilePortrait ? 'gap-y-1.5' : 'gap-y-2'
               } sm:grid-cols-[3.75rem_1.65rem_minmax(0,1fr)] sm:gap-x-3`}
@@ -4067,8 +4075,7 @@ function PlannerPanel({
                 <span className={`timeline-dot ${meta.tone}`}>{index + 1}</span>
               </div>
                 <div
-                  key={`${entry.id}-${isExpandedStack ? 'expanded' : 'collapsed'}`}
-                  className="relative min-w-0 overflow-visible"
+                  className="relative min-h-0 min-w-0 overflow-visible"
                 >
               <article
                 className={`timeline-card ${meta.card} relative z-10 rounded-[1.55rem] px-3.5 py-3.5 transition hover:bg-white active:bg-white sm:px-5 sm:py-4 ${
