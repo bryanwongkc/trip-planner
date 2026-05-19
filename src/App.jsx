@@ -91,6 +91,7 @@ import {
   normalizeItemTimeFields,
   reorderTripItems,
   renumberDays,
+  sortItemsByTimeline,
   slugId,
   stripFlightLocationFields,
   timeToMinutes,
@@ -734,7 +735,7 @@ function getWeatherDisplay(activeDayId, weatherState, selectedWeather) {
   if (weatherState.loading) {
     return {
       headline: 'Loading weather',
-      detail: 'Checking the Open-Meteo forecast for this day.',
+      detail: 'Checking weather for this day.',
       icon: Cloud,
       compact: 'Loading weather',
     }
@@ -750,6 +751,18 @@ function getWeatherDisplay(activeDayId, weatherState, selectedWeather) {
   }
 
   if (selectedWeather) {
+    const tempMax = typeof selectedWeather.tempMax === 'number' ? Math.round(selectedWeather.tempMax) : null
+    const rainProbability = selectedWeather.rainProbability ?? 0
+
+    if (selectedWeather.historical) {
+      return {
+        headline: tempMax === null ? 'Typical weather' : `Typical ${tempMax}°C`,
+        detail: '',
+        icon: rainProbability >= 40 ? CloudRain : Sun,
+        compact: tempMax === null ? 'Typical weather' : `Typical ${tempMax}°C`,
+      }
+    }
+
     return {
       headline: `${Math.round(selectedWeather.tempMax)}° · Rain ${selectedWeather.rainProbability ?? 0}%`,
       detail: selectedWeather.label,
@@ -1720,25 +1733,39 @@ function buildFallbackRouteSummary(from, to, mode) {
   }
 }
 
-function getWeatherTarget(items) {
-  const locatedItems = items.filter(
-    (item) => typeof item?.lat === 'number' && typeof item?.lng === 'number',
-  )
+function isLocatedItem(item) {
+  return typeof item?.lat === 'number' && typeof item?.lng === 'number'
+}
 
-  if (!locatedItems.length) return null
-
-  const total = locatedItems.reduce(
-    (sum, item) => ({
-      lat: sum.lat + item.lat,
-      lng: sum.lng + item.lng,
-    }),
-    { lat: 0, lng: 0 },
-  )
+function buildWeatherTargetFromItem(item, day) {
+  if (!item || !day) return null
 
   return {
-    lat: total.lat / locatedItems.length,
-    lng: total.lng / locatedItems.length,
+    lat: item.lat,
+    lng: item.lng,
+    date: day.date,
+    label: item.locationName || item.address || item.title || '',
   }
+}
+
+function getWeatherTargetForDay(activeDayId, tripState) {
+  if (activeDayId === DAY_VIEW_ALL) return null
+
+  const activeDayIndex = tripState.days.findIndex((day) => day.id === activeDayId)
+  const activeDay = tripState.days[activeDayIndex]
+  if (!activeDay) return null
+
+  const activeDayLocation = sortItemsByTimeline(activeDay.items || []).find(isLocatedItem)
+  if (activeDayLocation) return buildWeatherTargetFromItem(activeDayLocation, activeDay)
+
+  for (let dayIndex = activeDayIndex - 1; dayIndex >= 0; dayIndex -= 1) {
+    const day = tripState.days[dayIndex]
+    const previousLocations = sortItemsByTimeline(day.items || []).filter(isLocatedItem)
+    const previousLocation = previousLocations[previousLocations.length - 1]
+    if (previousLocation) return buildWeatherTargetFromItem(previousLocation, activeDay)
+  }
+
+  return null
 }
 
 async function requestDirectionsRoute(from, to, mode) {
@@ -5099,20 +5126,19 @@ export default function App() {
     [openAppDialog],
   )
 
-  const selectedWeather =
-    resolvedActiveDayId === DAY_VIEW_ALL
-      ? null
-      : weatherState.data?.dailyByDate?.[tripState.dayMap[resolvedActiveDayId]?.date || ''] ?? null
-  const weatherTarget = useMemo(() => {
-    const sourceItems =
-      resolvedActiveDayId === DAY_VIEW_ALL
-        ? tripState.items
-        : tripState.dayMap[resolvedActiveDayId]?.items || []
-    return getWeatherTarget(sourceItems)
-  }, [resolvedActiveDayId, tripState.dayMap, tripState.items])
+  const weatherTarget = useMemo(
+    () => getWeatherTargetForDay(resolvedActiveDayId, tripState),
+    [resolvedActiveDayId, tripState],
+  )
   const weatherTargetKey = weatherTarget
-    ? `${weatherTarget.lat.toFixed(4)},${weatherTarget.lng.toFixed(4)}`
+    ? `${weatherTarget.date}|${weatherTarget.lat.toFixed(4)},${weatherTarget.lng.toFixed(4)}`
     : ''
+  const selectedWeather =
+    resolvedActiveDayId === DAY_VIEW_ALL || weatherState.targetKey !== weatherTargetKey
+      ? null
+      : (weatherState.data?.dailyByDate?.[tripState.dayMap[resolvedActiveDayId]?.date || ''] ??
+        weatherState.data?.historicalByDate?.[tripState.dayMap[resolvedActiveDayId]?.date || ''] ??
+        null)
   const effectiveWeatherState = weatherTarget
     ? {
         ...weatherState,
