@@ -30,8 +30,44 @@ const minimalMapStyles = [
     stylers: [{ color: '#f8fafc' }],
   },
   {
+    featureType: 'administrative.locality',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#64748b' }],
+  },
+  {
+    featureType: 'administrative.neighborhood',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#94a3b8' }],
+  },
+  {
+    featureType: 'landscape',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#94a3b8' }],
+  },
+  {
+    featureType: 'landscape',
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#f8fafc' }],
+  },
+  {
     featureType: 'poi',
+    elementType: 'geometry',
     stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'poi',
+    elementType: 'labels.icon',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'poi',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#94a3b8' }],
+  },
+  {
+    featureType: 'poi',
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#f8fafc' }],
   },
   {
     featureType: 'road',
@@ -55,7 +91,23 @@ const minimalMapStyles = [
   },
   {
     featureType: 'transit',
+    elementType: 'geometry',
     stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'transit',
+    elementType: 'labels.icon',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'transit',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#94a3b8' }],
+  },
+  {
+    featureType: 'transit',
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#f8fafc' }],
   },
   {
     featureType: 'water',
