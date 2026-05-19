@@ -695,10 +695,10 @@ function RouteModeControl({ currentMode, onSelect }) {
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="inline-flex min-h-11 items-center gap-1.5 rounded-full bg-white/96 px-3 text-[10px] font-semibold tracking-[-0.01em] text-slate-600 transition hover:bg-white"
+        className="inline-flex h-6 items-center gap-1 rounded-full bg-white/96 px-2 text-[10px] font-semibold tracking-[-0.01em] text-slate-600 transition hover:bg-white"
       >
         <span>{activeOption.label}</span>
-        <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`h-3 w-3 text-slate-400 transition ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open ? (
@@ -713,7 +713,7 @@ function RouteModeControl({ currentMode, onSelect }) {
                   onSelect(option.value)
                   setOpen(false)
                 }}
-                className={`flex min-h-11 w-full items-center justify-between rounded-[0.75rem] px-2.5 text-left text-[11px] font-medium tracking-[-0.01em] transition ${
+                className={`flex min-h-9 w-full items-center justify-between rounded-[0.75rem] px-2.5 text-left text-[11px] font-medium tracking-[-0.01em] transition ${
                   active ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
                 }`}
               >
@@ -4435,7 +4435,7 @@ function PlannerPanel({
 
               {nextSegment ? (
                 <>
-                  <div className="timeline-time py-2 text-right">
+                  <div className="timeline-time py-1 text-right">
                     {item.endTime ? (
                       <div className="text-[11px] font-semibold tracking-[-0.01em] text-slate-500">{item.endTime}</div>
                     ) : null}
@@ -4443,7 +4443,7 @@ function PlannerPanel({
                   <div className="timeline-rail timeline-rail--route">
                     <span className="timeline-route-dot" />
                   </div>
-                  <div className="timeline-route-row flex items-center justify-between gap-3 rounded-[0.9rem] px-2 py-2 text-slate-500 sm:px-3">
+                  <div className="timeline-route-row flex items-center justify-between gap-3 rounded-[0.9rem] px-2 py-0 text-slate-500 sm:px-3">
                     <div className="flex min-w-0 items-center gap-2.5" aria-label={`${routeLabel(nextSegment.mode)} ${routeDurationText(nextSegment)}`}>
                       {RouteIcon ? <RouteIcon className="h-4 w-4 shrink-0 text-slate-400" /> : null}
                       <span className="truncate text-[13px] font-bold tracking-[-0.02em] text-slate-500">
