@@ -1903,7 +1903,7 @@ function GooglePlaceField({
       </div>
 
       <div className="text-[11px] leading-5 text-slate-500">
-        Select a Google Places suggestion to attach a reliable map pin.
+        Select a Google Places suggestion
       </div>
 
       {error ? (
@@ -2148,7 +2148,7 @@ function EndTimeModeField({ conflict = false, disabled, draft, onChange }) {
         />
       ) : (
         <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-          <Field label="Duration">
+          <Field label="Duration (minutes)">
             <input
               type="number"
               min="0"
@@ -2163,7 +2163,7 @@ function EndTimeModeField({ conflict = false, disabled, draft, onChange }) {
               className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-[14px] tracking-[-0.01em] disabled:bg-slate-100"
             />
           </Field>
-          <Field label="Derived end">
+          <Field label="End time">
             <div className="w-full rounded-[1.15rem] border border-slate-200/90 bg-slate-50 px-4 py-3 text-[14px] font-semibold tracking-[-0.01em] text-slate-700">
               {derivedEndTime || '--:--'}
             </div>
@@ -4708,14 +4708,14 @@ function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, map
         </div>
 
         <div
-          className={`mt-3.5 overflow-hidden rounded-[1rem] border border-slate-200/80 bg-slate-100 sm:mt-4 ${
+          className={`mt-3.5 overflow-hidden rounded-[1rem] border border-slate-100 bg-slate-50 sm:mt-4 ${
             isMobilePortrait ? 'h-[240px]' : 'h-[320px]'
           }`}
         >
           {mapsReady ? (
             <Suspense
               fallback={
-                <div className="flex h-full items-center justify-center bg-slate-100 text-sm font-medium text-slate-500">
+                <div className="flex h-full items-center justify-center bg-slate-50 text-sm font-medium text-slate-500">
                   Loading map...
                 </div>
               }
@@ -4723,7 +4723,7 @@ function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, map
               <TripMap filteredItems={mapItems} routeSegments={routeSegments} />
             </Suspense>
           ) : (
-            <div className="flex h-full items-center justify-center bg-slate-100 px-6 text-center text-sm font-medium text-slate-500">
+            <div className="flex h-full items-center justify-center bg-slate-50 px-6 text-center text-sm font-medium text-slate-500">
               {mapsError || 'Map preview is not available yet.'}
             </div>
           )}

@@ -1,17 +1,78 @@
 import React, { memo, useEffect, useRef, useState } from 'react'
 
 function typeColor(category) {
-  if (category === 'Flight') return '#0ea5e9'
-  if (category === 'Car') return '#4f46e5'
+  if (category === 'Flight') return '#38bdf8'
+  if (category === 'Car') return '#64748b'
   if (category === 'Hotel') return '#f59e0b'
   if (category === 'Wedding') return '#ec4899'
-  return '#10b981'
+  return '#14b8a6'
 }
 
 function getTimeRange(item) {
   if (item.generated) return 'Linked from previous day'
   if (item.endTime) return `${item.startTime} - ${item.endTime}`
   return item.startTime
+}
+
+const minimalMapStyles = [
+  {
+    featureType: 'administrative',
+    elementType: 'geometry',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'administrative.land_parcel',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'landscape',
+    elementType: 'geometry',
+    stylers: [{ color: '#f8fafc' }],
+  },
+  {
+    featureType: 'poi',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'road',
+    elementType: 'geometry',
+    stylers: [{ color: '#e5e7eb' }, { weight: 0.65 }],
+  },
+  {
+    featureType: 'road',
+    elementType: 'labels.icon',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'road',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#94a3b8' }],
+  },
+  {
+    featureType: 'road',
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#f8fafc' }],
+  },
+  {
+    featureType: 'transit',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'water',
+    elementType: 'geometry',
+    stylers: [{ color: '#e0f2fe' }],
+  },
+  {
+    featureType: 'water',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#7c8fa3' }],
+  },
+]
+
+function routeColor(mode) {
+  if (mode === 'walking') return '#0f766e'
+  if (mode === 'transit') return '#475569'
+  return '#334155'
 }
 
 function TripMap({ filteredItems, routeSegments }) {
@@ -29,6 +90,8 @@ function TripMap({ filteredItems, routeSegments }) {
       disableDefaultUI: true,
       clickableIcons: false,
       gestureHandling: 'greedy',
+      backgroundColor: '#f8fafc',
+      styles: minimalMapStyles,
     })
 
     overlaysRef.current.infoWindow = new window.google.maps.InfoWindow()
@@ -68,9 +131,9 @@ function TripMap({ filteredItems, routeSegments }) {
           path: window.google.maps.SymbolPath.CIRCLE,
           fillColor: typeColor(item.category),
           fillOpacity: 0.95,
-          strokeColor: '#111111',
-          strokeWeight: 2,
-          scale: 11,
+          strokeColor: '#ffffff',
+          strokeWeight: 2.5,
+          scale: 9.5,
         },
       })
 
@@ -85,9 +148,9 @@ function TripMap({ filteredItems, routeSegments }) {
         const polyline = new window.google.maps.Polyline({
           map,
           path: segment.route.path,
-          strokeColor: segment.mode === 'walking' ? '#0f766e' : '#2563eb',
-          strokeOpacity: 0.72,
-          strokeWeight: 4,
+          strokeColor: routeColor(segment.mode),
+          strokeOpacity: 0.58,
+          strokeWeight: 2.4,
         })
         overlaysRef.current.polylines.push(polyline)
       })
