@@ -133,7 +133,7 @@ const DURATION_PRESETS = [
 ]
 const GUEST_USER = {
   uid: '',
-  displayName: 'Guest mode',
+  displayName: 'Offline mode',
   email: '',
   photoURL: '',
 }
@@ -211,7 +211,7 @@ function useGoogleMapsApi(apiKey) {
         setLoaded(true)
         setError('')
       }
-      const handleError = () => setError('Google Maps failed to load')
+      const handleError = () => setError('Map preview is temporarily unavailable.')
       existing.addEventListener('load', handleLoad)
       existing.addEventListener('error', handleError)
       return () => {
@@ -229,7 +229,7 @@ function useGoogleMapsApi(apiKey) {
       setLoaded(true)
       setError('')
     })
-    script.addEventListener('error', () => setError('Google Maps failed to load'))
+    script.addEventListener('error', () => setError('Map preview is temporarily unavailable.'))
     document.head.appendChild(script)
 
     return () => {
@@ -540,7 +540,7 @@ function cancellationUrgencyMeta(item) {
   if (state === 'overdue') {
     return {
       label: 'Overdue',
-      note: 'Action needed',
+      note: 'Review now',
       card: 'border-rose-200 bg-rose-50/85',
       rail: 'bg-rose-500',
       badge: 'bg-rose-100 text-rose-700',
@@ -552,7 +552,7 @@ function cancellationUrgencyMeta(item) {
     const label = days === 0 ? 'Due today' : days === 1 ? 'Due tomorrow' : `${days} days left`
     return {
       label,
-      note: 'Cancel soon',
+      note: 'Upcoming deadline',
       card: 'border-amber-200 bg-amber-50/80',
       rail: 'bg-amber-500',
       badge: 'bg-amber-100 text-amber-800',
@@ -562,8 +562,8 @@ function cancellationUrgencyMeta(item) {
 
   if (state === 'no_deadline') {
     return {
-      label: 'No deadline',
-      note: 'Add date',
+      label: 'No deadline added',
+      note: 'Add deadline',
       card: 'border-slate-200 bg-white',
       rail: 'bg-slate-300',
       badge: 'bg-slate-100 text-slate-600',
@@ -573,7 +573,7 @@ function cancellationUrgencyMeta(item) {
 
   if (state === 'invalid_deadline') {
     return {
-      label: 'Check date',
+      label: 'Review date',
       note: 'Invalid',
       card: 'border-slate-200 bg-white',
       rail: 'bg-slate-400',
@@ -1324,7 +1324,7 @@ function buildClonedTripSnapshot(tripState) {
 }
 
 function formatBookingDateTime(value) {
-  if (!value) return 'No deadline'
+  if (!value) return 'No deadline added'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return new Intl.DateTimeFormat('en-HK', {
@@ -1833,7 +1833,7 @@ function GooglePlaceField({
           }
           if (status !== window.google.maps.places.PlacesServiceStatus.OK) {
             setPredictions([])
-            setError('Google place search failed')
+            setError('Place search is temporarily unavailable.')
             return
           }
           setPredictions(results.slice(0, 5))
@@ -1858,7 +1858,7 @@ function GooglePlaceField({
       },
       (place, status) => {
         if (status !== window.google.maps.places.PlacesServiceStatus.OK || !place) {
-          setError('Unable to load place details')
+          setError('We could not load that place. Try another result.')
           return
         }
 
@@ -2170,7 +2170,7 @@ function EndTimeModeField({ conflict = false, disabled, draft, onChange }) {
           </Field>
           <div className="sm:col-span-2">
             <div className="text-[11px] leading-5 text-slate-500">
-              Use duration when you know how long the stop takes. The app will calculate the end time.
+              Enter a duration and the itinerary will calculate the end time.
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
               {DURATION_PRESETS.map((preset) => (
@@ -2401,7 +2401,7 @@ function TripSwitcher({
               >
                 <div>
                   <div className="text-[13px] font-semibold tracking-[-0.01em]">New trip</div>
-                  <div className="pt-0.5 text-[11px] text-slate-500">Create a separate itinerary workspace.</div>
+                  <div className="pt-0.5 text-[11px] text-slate-500">Create another itinerary.</div>
                 </div>
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white">
                   <Plus className="h-4 w-4" />
@@ -2432,10 +2432,10 @@ function AccountPanel({ authError, canShare, isGuestMode, user, onShare, onSignI
         </div>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-semibold tracking-[-0.01em] text-slate-900">
-            {user?.displayName || (isGuestMode ? 'Guest mode' : 'Signed in')}
+            {user?.displayName || (isGuestMode ? 'Offline mode' : 'Signed in')}
           </div>
           <div className="mt-0.5 truncate text-[11px] text-slate-500">
-            {isGuestMode ? 'Local changes only' : user?.email || ''}
+            {isGuestMode ? 'Saved on this device' : user?.email || ''}
           </div>
         </div>
       </div>
@@ -2511,7 +2511,7 @@ function AppDrawer({
         }`}
       >
         <div className="flex items-center justify-between px-1 pb-3">
-          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Trip controls</div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Trip menu</div>
           <button
             type="button"
             onClick={onClose}
@@ -2610,7 +2610,7 @@ function PdfExportSheet({ loading, onClose, onDownload, onShare, open }) {
               Export overview
             </h2>
             <p className="mt-1 text-[13px] leading-5 text-slate-500">
-              Choose how to use the generated itinerary PDF.
+              Choose how to save or share this itinerary.
             </p>
           </div>
           <button
@@ -2632,7 +2632,7 @@ function PdfExportSheet({ loading, onClose, onDownload, onShare, open }) {
           >
             <span>
               <span className="block text-sm font-bold text-slate-900">Share</span>
-              <span className="mt-0.5 block text-xs font-medium text-slate-500">Open the device share sheet</span>
+              <span className="mt-0.5 block text-xs font-medium text-slate-500">Share from this device</span>
             </span>
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4 text-slate-500" />}
           </button>
@@ -2644,7 +2644,7 @@ function PdfExportSheet({ loading, onClose, onDownload, onShare, open }) {
           >
             <span>
               <span className="block text-sm font-bold text-slate-900">Download</span>
-              <span className="mt-0.5 block text-xs font-medium text-slate-500">Save the PDF to this device</span>
+              <span className="mt-0.5 block text-xs font-medium text-slate-500">Download itinerary PDF</span>
             </span>
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-slate-500" />}
           </button>
@@ -2908,7 +2908,7 @@ function CollaboratorsModal({
             <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Collaborators</div>
             <h3 className="mt-1 text-[1.6rem] font-bold tracking-[-0.02em] text-slate-900">Share this trip</h3>
             <p className="mt-1 text-[13px] leading-6 text-slate-600">
-              Owners and admins can add collaborators and assign admin, editor, or read-only access.
+              Invite people and choose what they can edit or view.
             </p>
           </div>
           <button type="button" onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
@@ -2952,7 +2952,7 @@ function CollaboratorsModal({
 
             <div className="rounded-[1.2rem] bg-slate-50/90 p-4">
               <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                <Field label="Invitation link role">
+                <Field label="Link access">
                   <select
                     value={inviteRole}
                     onChange={(event) => setInviteRole(event.target.value)}
@@ -3090,7 +3090,7 @@ function DayManagerModal({
               Reorder, rename, edit dates, add, or delete trip days.
             </p>
             <p className="mt-2 max-w-md text-[12px] leading-5 text-slate-500">
-              Long-pressing a day tab opens this reorder view. Move travel days with the arrows, then keep dates in trip order.
+              Reorder travel days or update their dates.
             </p>
           </div>
           <button type="button" onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
@@ -3255,7 +3255,7 @@ function NoteModal({
             <div className="mt-2 whitespace-pre-wrap text-[13px] leading-6 text-slate-700">
               {item.generated
                 ? 'This hotel stop stays linked to the previous day hotel. You can still adjust time, notes, and booking details here.'
-                : item.description || 'No notes yet.'}
+                : item.description || 'No notes added.'}
             </div>
           </div>
           {item.bookingRef ? (
@@ -3275,7 +3275,7 @@ function NoteModal({
               <div className="mt-1 text-[12px] text-slate-500">
                 {item.cancellationDeadline
                   ? `Deadline ${formatBookingDateTime(item.cancellationDeadline)}`
-                  : 'No cancellation deadline'}
+                  : 'No deadline added'}
               </div>
             </div>
           ) : null}
@@ -3384,10 +3384,10 @@ function CancellationDeadlinesModal({
               Cancellation deadlines
             </div>
             <h3 className="mt-1 text-[1.45rem] font-bold tracking-[-0.025em] text-slate-900">
-              Free-cancel tracker
+              Cancellation tracker
             </h3>
             <p className="mt-1 max-w-xl text-[12px] leading-5 text-slate-600">
-              Sorted by deadline. Check overdue and next 3-day cancellation windows first.
+              Deadlines are sorted by date. Review overdue and upcoming windows first.
             </p>
           </div>
           <button type="button" onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
@@ -3454,7 +3454,7 @@ function CancellationDeadlinesModal({
                     <div className={`mt-1 text-[13px] font-bold ${meta.deadline}`}>
                       {item.cancellationDeadline
                         ? formatBookingDateTime(item.cancellationDeadline)
-                        : 'No deadline set'}
+                        : 'No deadline added'}
                     </div>
                   </div>
 
@@ -3481,9 +3481,9 @@ function CancellationDeadlinesModal({
           })}
           {!monitoredItems.length ? (
             <div className="rounded-[1.15rem] bg-white px-4 py-7 text-center">
-              <div className="text-[14px] font-bold text-slate-900">No cancellation deadlines yet</div>
+              <div className="text-[14px] font-bold text-slate-900">No deadlines tracked</div>
               <div className="mx-auto mt-1 max-w-xs text-[12px] leading-5 text-slate-500">
-                Add a hotel or restaurant item with a cancellation deadline and it will appear here.
+                Add cancellation details to a hotel or restaurant booking to track it here.
               </div>
             </div>
           ) : null}
@@ -3542,7 +3542,7 @@ function DetailModal({
             <h3 className="text-[1.45rem] font-bold tracking-[-0.025em] text-slate-900">{detailItem.title}</h3>
             <div className="mt-1.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
               <Check className="h-3.5 w-3.5" />
-              {isGenerated ? 'Linked hotel item' : 'Editing draft'}
+              {isGenerated ? 'Linked stay' : 'Editing itinerary item'}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -3565,7 +3565,7 @@ function DetailModal({
 
         {isGenerated ? (
           <div className="mt-4 rounded-[0.95rem] bg-slate-100/90 px-4 py-3 text-[13px] leading-6 text-slate-600">
-            This stop stays linked to the previous day hotel for place continuity. You can still edit its time, notes, and booking reference here.
+            This stay continues from the previous night. You can still edit its time, notes, and booking reference.
           </div>
         ) : null}
 
@@ -4162,7 +4162,7 @@ function PlannerPanel({
                       <p className={`line-clamp-2 text-[12px] text-slate-500 ${
                         isMobilePortrait ? 'mt-1 leading-5' : 'mt-1.5 leading-5 sm:mt-2 sm:leading-6'
                       }`}>
-                        {item.generated ? 'Auto-carried from the previous day hotel stay.' : item.description}
+                        {item.generated ? 'Continued from the previous night’s stay.' : item.description}
                       </p>
                     ) : null}
                     {showOptionsRow && (!isSubstituteStack || !isExpandedStack) ? (
@@ -4392,7 +4392,7 @@ function PlannerPanel({
                   {itemBookingOptions.map((booking) => {
                     const bookingDeadline = booking.cancellationDeadline
                       ? formatBookingDateTime(booking.cancellationDeadline)
-                      : 'No deadline set'
+                      : 'No deadline added'
                     return (
                       <article
                         key={booking.id}
@@ -4475,7 +4475,7 @@ function PlannerPanel({
                 : 'border-slate-300/80 text-slate-500'
             }`}
           >
-            Drop stop into this day
+            Move stop here
           </button>
         ) : null}
       </div>
@@ -4484,7 +4484,7 @@ function PlannerPanel({
         <div className="flex items-center justify-between gap-3">
           <div>
             <h3 className="headline text-[1.18rem] leading-none text-slate-950 sm:text-[1.35rem]">Add stop</h3>
-            <p className="mt-1 hidden text-[13px] text-slate-500 sm:block">Open the composer only when you need it.</p>
+            <p className="mt-1 hidden text-[13px] text-slate-500 sm:block">Add a stop when you need another itinerary item.</p>
           </div>
           {canEdit ? (
             <button
@@ -4683,8 +4683,8 @@ function PlannerPanel({
         ) : (
               <div className="mt-3 hidden rounded-[0.95rem] bg-white px-4 py-3 text-[13px] leading-6 text-slate-500 sm:block">
             {canEdit
-              ? 'Open the composer only when you need to add a new stop.'
-              : 'You have view-only access on this trip.'}
+              ? 'Add another stop when your itinerary needs one.'
+              : 'You can view this trip, but editing is limited.'}
           </div>
         )}
       </div>
@@ -4724,7 +4724,7 @@ function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, map
             </Suspense>
           ) : (
             <div className="flex h-full items-center justify-center bg-slate-100 px-6 text-center text-sm font-medium text-slate-500">
-              {mapsError || 'Add VITE_GOOGLE_MAPS_API_KEY to enable Google Maps.'}
+              {mapsError || 'Map preview is not available yet.'}
             </div>
           )}
         </div>
@@ -4961,7 +4961,7 @@ export default function App() {
 
   useEffect(() => {
     if (resolvedActiveDayId !== DAY_VIEW_ALL || !dayOptions.length) {
-      setFocusedOverviewDayId('')
+      queueMicrotask(() => setFocusedOverviewDayId(''))
       return undefined
     }
 
@@ -5206,7 +5206,7 @@ export default function App() {
         setUserProfile(null)
         setUserProfileLoaded(true)
         setOverrides(readLocalTripOverrides())
-        setFirestoreState({ status: 'disabled', error: 'Firebase env vars missing' })
+        setFirestoreState({ status: 'disabled', error: 'Saved on this device' })
       })
       return () => {
         active = false
@@ -5248,7 +5248,7 @@ export default function App() {
           console.error(error)
           if (active) {
             setAuthReady(true)
-            setAuthError(error?.message || 'Authentication failed')
+            setAuthError('Sign-in could not be completed. Please try again.')
             setCurrentUser(null)
             setTripSummaries([buildDefaultTripSummary()])
             setTripDirectoryLoaded(true)
@@ -5274,7 +5274,9 @@ export default function App() {
 
     let active = true
     let unsubscribe = () => {}
-    setTripDirectoryLoaded(false)
+    queueMicrotask(() => {
+      if (active) setTripDirectoryLoaded(false)
+    })
 
     async function connectDirectory() {
       unsubscribe = await subscribeToUserTripDirectory(
@@ -5288,7 +5290,7 @@ export default function App() {
           console.error(error)
           if (active) {
             setTripDirectoryLoaded(true)
-            setFirestoreState({ status: 'error', error: error?.message || 'Trip list failed' })
+            setFirestoreState({ status: 'error', error: 'We could not save that change. Please try again.' })
           }
         },
       )
@@ -5307,8 +5309,11 @@ export default function App() {
 
     let active = true
     let unsubscribe = () => {}
-    setUserProfile(null)
-    setUserProfileLoaded(false)
+    queueMicrotask(() => {
+      if (!active) return
+      setUserProfile(null)
+      setUserProfileLoaded(false)
+    })
 
     async function connectUserProfile() {
       unsubscribe = await subscribeToUserProfile(
@@ -5345,9 +5350,9 @@ export default function App() {
 
     async function promptForInviteSignIn() {
       const confirmed = await showConfirm(
-        'Sign in with Google to accept this trip invitation.',
+        'Sign in with Google to open this shared trip.',
         {
-          title: 'Trip invitation',
+          title: 'Shared trip',
           confirmLabel: 'Sign in',
           cancelLabel: 'Not now',
         },
@@ -5358,7 +5363,7 @@ export default function App() {
         await signInWithGoogle()
       } catch (error) {
         console.error(error)
-        setAuthError(error?.message || 'Google sign-in failed')
+        setAuthError('Sign-in could not be completed. Please try again.')
       }
     }
 
@@ -5404,16 +5409,16 @@ export default function App() {
         selectTrip(invite.tripId)
         setPendingInviteId('')
         clearInviteUrl()
-        await showAlert(`You now have ${invite.role} access to ${invite.title || 'this trip'}.`, {
-          title: 'Invitation accepted',
+        await showAlert('This shared trip has been added to your trips.', {
+          title: 'Trip added',
         })
       } catch (error) {
         console.error(error)
         if (active) {
           setPendingInviteId('')
           clearInviteUrl()
-          await showAlert(error?.message || 'Could not accept this invitation.', {
-            title: 'Invitation failed',
+          await showAlert('This invitation could not be opened. Ask the trip owner for a new link.', {
+            title: 'Invitation unavailable',
             tone: 'danger',
           })
         }
@@ -5459,12 +5464,12 @@ export default function App() {
     async function migrateGuestTrip() {
       try {
         const migrationChoice = await showChoice(
-          'You have a local guest itinerary. Save it to this Google account or delete the local guest copy?',
+          'You have an itinerary saved on this device. Save it to your Google account or remove the device copy?',
           {
-            title: 'Save local itinerary',
+            title: 'Save device itinerary',
             choices: [
-              { value: 'save', label: 'Save to cloud', variant: 'primary' },
-              { value: 'delete', label: 'Delete local copy', tone: 'danger' },
+              { value: 'save', label: 'Save to account', variant: 'primary' },
+              { value: 'delete', label: 'Remove device copy', tone: 'danger' },
             ],
           },
         )
@@ -5487,7 +5492,7 @@ export default function App() {
         const localTripState = deriveTripState(localOverrides)
         const snapshot = buildClonedTripSnapshot(localTripState)
         const tripId = slugId('trip')
-        const title = migration.localTitle || 'Imported guest itinerary'
+        const title = migration.localTitle || 'Imported itinerary'
         const nextSummary = {
           id: tripId,
           title,
@@ -5521,9 +5526,9 @@ export default function App() {
         setFirestoreState({ status: 'ready', error: '' })
 
         await showAlert(
-          'Your local guest itinerary has been saved to your Google account. The local guest copy will be removed now.',
+          'Your device itinerary has been saved to your Google account.',
           {
-            title: 'Itinerary saved',
+            title: 'Saved to account',
             confirmLabel: 'OK',
           },
         )
@@ -5536,7 +5541,7 @@ export default function App() {
       } catch (error) {
         console.error(error)
         if (active) {
-          const message = error?.message || 'Local itinerary migration failed'
+          const message = 'We could not save that change. Please try again.'
           setFirestoreState((current) => ({ ...current, status: 'error', error: message }))
           await showAlert(message, { title: 'Save failed', tone: 'danger' })
         }
@@ -5588,7 +5593,7 @@ export default function App() {
           setFirestoreState((current) => ({
             ...current,
             status: 'error',
-            error: error?.message || 'Demo trip creation failed',
+            error: 'We could not save that change. Please try again.',
           }))
         }
       }
@@ -5630,7 +5635,7 @@ export default function App() {
         (error) => {
           console.error(error)
           if (active) {
-            setFirestoreState({ status: 'error', error: error?.message || 'Snapshot failed' })
+            setFirestoreState({ status: 'error', error: 'We could not save that change. Please try again.' })
           }
         },
       )
@@ -6008,7 +6013,7 @@ export default function App() {
       await signInWithGoogle()
     } catch (error) {
       console.error(error)
-      setAuthError(error?.message || 'Google sign-in failed')
+      setAuthError('Sign-in could not be completed. Please try again.')
     }
   }
 
@@ -6021,7 +6026,7 @@ export default function App() {
       setTripMembers([])
     } catch (error) {
       console.error(error)
-      setAuthError(error?.message || 'Sign out failed')
+      setAuthError('Sign-out could not be completed. Please try again.')
     }
   }
 
@@ -6098,9 +6103,9 @@ export default function App() {
       setFirestoreState((current) => ({ ...current, error: '' }))
     } catch (error) {
       console.error(error)
-      const message = error?.message || 'Trip creation failed'
+      const message = 'We could not save that change. Please try again.'
       setFirestoreState((current) => ({ ...current, status: 'error', error: message }))
-      await showAlert(message, { title: 'Trip creation failed', tone: 'danger' })
+      await showAlert(message, { title: 'Save failed', tone: 'danger' })
     }
   }
 
@@ -6180,9 +6185,9 @@ export default function App() {
       setFirestoreState((current) => ({ ...current, error: '' }))
     } catch (error) {
       console.error(error)
-      const message = error?.message || 'Trip clone failed'
+      const message = 'We could not save that change. Please try again.'
       setFirestoreState((current) => ({ ...current, status: 'error', error: message }))
-      await showAlert(message, { title: 'Trip clone failed', tone: 'danger' })
+      await showAlert(message, { title: 'Save failed', tone: 'danger' })
     }
   }
 
@@ -6213,12 +6218,12 @@ export default function App() {
   async function deleteTrip() {
     if (!firestoreReady || !canDeleteCurrentTrip) return
     if (resolvedTripId === defaultTripSummary.id) {
-      await showAlert('The default trip cannot be deleted.')
+      await showAlert('This starter trip cannot be deleted.')
       return
     }
 
     const tripTitle = activeTripSummary?.title || 'this trip'
-    const confirmed = await showConfirm(`Delete ${tripTitle}? This permanently removes the trip for every collaborator.`, {
+    const confirmed = await showConfirm(`Delete ${tripTitle}? This will remove the trip for everyone with access.`, {
       title: 'Delete trip',
       confirmLabel: 'Delete',
       tone: 'danger',
@@ -6258,7 +6263,7 @@ export default function App() {
     if (changes.date) {
       const duplicate = visibleDays.find((day) => day.id !== dayId && day.date === changes.date)
       if (duplicate) {
-        await showAlert('Each day needs a unique date.')
+        await showAlert('Each day must use a different date.')
         return
       }
     }
@@ -6268,7 +6273,7 @@ export default function App() {
   async function addDay(draft) {
     if (!firestoreReady || !canEditCurrentTrip || !draft.date) return
     if (visibleDays.some((day) => day.date === draft.date)) {
-      await showAlert('That date already exists in the itinerary.')
+      await showAlert('That date is already in this itinerary.')
       return
     }
 
@@ -6306,7 +6311,7 @@ export default function App() {
     if (!canEditCurrentTrip) return
     const day = tripState.dayMap[dayId]
     if (!day) return
-    const confirmed = await showConfirm(`Delete ${day.label}? This will delete every item under that day.`, {
+    const confirmed = await showConfirm(`Delete ${day.label}? All stops on this day will be removed.`, {
       title: 'Delete day',
       confirmLabel: 'Delete',
       tone: 'danger',
@@ -6339,7 +6344,7 @@ export default function App() {
     if (!canEditCurrentTrip) return false
     const targetItem = tripState.items.find((item) => item.id === itemId)
     const confirmed = await showConfirm(
-      `Delete ${targetItem?.title || 'this event'}? This event will be removed from the itinerary.`,
+      `Delete ${targetItem?.title || 'this event'}? This stop will be removed from the itinerary.`,
       {
         title: 'Delete event',
         confirmLabel: 'Delete',
@@ -6503,18 +6508,18 @@ export default function App() {
     if (!canManageCurrentTrip) return
     if (!['admin', 'editor', 'viewer'].includes(role)) return
     if (isGuestMode) {
-      await showAlert('Sign in with Google to share trips and save collaborator access to Firestore.')
+      await showAlert('Sign in with Google to share trips and manage collaborator access.')
       return
     }
     if (!currentUser?.uid) return
 
     const match = await lookupUserByEmail(email)
     if (!match) {
-      await showAlert('This person needs to sign in once before they can be added.')
+      await showAlert('Ask this person to sign in once before adding them.')
       return
     }
     if (match.uid === currentUser.uid) {
-      await showAlert('You already have access to this trip.')
+      await showAlert('You are already on this trip.')
       return
     }
     if (tripMembers.some((member) => member.uid === match.uid)) {
@@ -6581,7 +6586,7 @@ export default function App() {
     }
 
     if (member.role === 'owner') {
-      await showAlert('The trip owner access cannot be changed.')
+      await showAlert('The owner’s access cannot be changed.')
       return
     }
 
@@ -6608,7 +6613,7 @@ export default function App() {
     }
 
     if (member.role === 'owner') {
-      await showAlert('The trip owner cannot be removed.')
+      await showAlert('The owner cannot be removed from the trip.')
       return
     }
 
@@ -6694,7 +6699,7 @@ export default function App() {
       setShowPdfExportOptions(false)
     } catch (error) {
       if (error?.name === 'NotSupportedError') {
-        await showAlert('This browser cannot share PDF files directly. Use Download instead.')
+        await showAlert('Sharing is not available on this device. Download the itinerary instead.')
       } else if (error?.name !== 'AbortError') {
         console.error('PDF share failed', error)
         await showAlert('Could not share the overview PDF. Please try again.', {
@@ -6734,7 +6739,7 @@ export default function App() {
     return (
       <main className="mx-auto flex min-h-screen max-w-7xl items-center justify-center px-4 py-10 text-slate-600">
         <div className="glass-panel rounded-[1.25rem] border border-white/60 px-5 py-4 text-sm font-medium">
-          Loading trip access...
+          Opening your trip...
         </div>
       </main>
     )
@@ -6805,9 +6810,9 @@ export default function App() {
       {!availableTrips.length ? (
         <div className="glass-panel max-w-md rounded-[1.08rem] px-5 py-5">
           <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Trips</div>
-          <h2 className="mt-2 text-[1.35rem] font-extrabold tracking-[-0.03em] text-slate-950">No trips yet</h2>
+          <h2 className="mt-2 text-[1.35rem] font-extrabold tracking-[-0.03em] text-slate-950">Start a trip</h2>
           <p className="mt-2 text-[13px] leading-6 text-slate-600">
-            Create your first trip, or ask the trip owner to add you as a collaborator.
+            Create a new itinerary or open an invitation from a trip owner.
           </p>
           <button
             type="button"
