@@ -2415,7 +2415,7 @@ function TripSwitcher({
   )
 }
 
-function AccountPanel({ authError, canShare, isGuestMode, user, onShare, onSignIn, onSignOut }) {
+function AccountPanel({ authError, isGuestMode, user, onSignIn, onSignOut }) {
   return (
     <div className="rounded-[1rem] border border-slate-200/70 bg-white/78 p-2.5">
       <div className="flex items-center gap-3 px-1 py-1">
@@ -2439,21 +2439,12 @@ function AccountPanel({ authError, canShare, isGuestMode, user, onShare, onSignI
           </div>
         </div>
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-1.5">
-        <button
-          type="button"
-          onClick={onShare}
-          disabled={!canShare}
-          className="flex min-h-11 items-center justify-center gap-2 rounded-[0.8rem] bg-white px-3 text-[12px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:text-slate-400"
-        >
-          <Users className="h-3.5 w-3.5" />
-          Share
-        </button>
+      <div className="mt-2">
         <button
           type="button"
           onClick={isGuestMode ? onSignIn : onSignOut}
           disabled={isGuestMode && !firebaseEnabled}
-          className="flex min-h-11 items-center justify-center gap-2 rounded-[0.8rem] bg-white px-3 text-[12px] font-semibold text-slate-700 transition hover:bg-slate-50"
+          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-[0.8rem] bg-white px-3 text-[12px] font-semibold text-slate-700 transition hover:bg-slate-50"
         >
           {isGuestMode ? <Cloud className="h-3.5 w-3.5" /> : <LogOut className="h-3.5 w-3.5" />}
           {isGuestMode ? 'Sign in' : 'Sign out'}
@@ -2542,6 +2533,22 @@ function AppDrawer({
             <>
               <button
                 type="button"
+                onClick={onShare}
+                disabled={!canShare}
+                className="flex w-full items-center justify-between rounded-[0.95rem] border border-slate-200/70 bg-white/90 px-3.5 py-3 text-left text-slate-800 transition hover:bg-white disabled:text-slate-400"
+              >
+                <span>
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                    Share trip
+                  </span>
+                  <span className="mt-1 block text-[13px] font-semibold">
+                    Invite people to this itinerary
+                  </span>
+                </span>
+                <Users className="h-4 w-4 text-slate-500" />
+              </button>
+              <button
+                type="button"
                 onClick={onExportOverview}
                 disabled={pdfExporting}
                 className="flex w-full items-center justify-between rounded-[0.95rem] border border-slate-200/70 bg-white/90 px-3.5 py-3 text-left text-slate-800 transition hover:bg-white disabled:cursor-wait disabled:text-slate-400"
@@ -2578,10 +2585,8 @@ function AppDrawer({
         <div className="mt-auto pt-4">
           <AccountPanel
             authError={authError}
-            canShare={canShare}
             isGuestMode={isGuestMode}
             user={currentUser}
-            onShare={onShare}
             onSignIn={onSignIn}
             onSignOut={onSignOut}
           />
