@@ -14,26 +14,30 @@ import {
   ArrowDown,
   ArrowUp,
   AlertTriangle,
+  BedDouble,
   CalendarDays,
   Check,
   ChevronDown,
+  CircleEllipsis,
   Cloud,
   CloudRain,
   Copy,
   Download,
+  Landmark,
   LogOut,
   Pencil,
   Footprints,
   ExternalLink,
   Loader2,
   Menu,
-  Minus,
+  Plane,
   Plus,
   Search,
   Share2,
   Star,
   Sun,
   Trash2,
+  Utensils,
   Users,
   X,
   ArrowUpDown,
@@ -249,14 +253,64 @@ function typeMeta(category) {
   if (category === 'Transport') return { tone: 'bg-indigo-50 text-indigo-600', card: 'timeline-card--transport' }
   if (category === 'Hotel') return { tone: 'bg-amber-50 text-amber-600', card: 'timeline-card--hotel' }
   if (category === 'Restaurant') return { tone: 'bg-orange-50 text-orange-600', card: 'timeline-card--restaurant' }
-  if (category === 'Wedding') return { tone: 'bg-pink-50 text-pink-600', card: 'timeline-card--event' }
   if (category === 'Others') return { tone: 'bg-slate-100 text-slate-600', card: 'timeline-card--other' }
   return { tone: 'bg-emerald-50 text-emerald-600', card: 'timeline-card--activity' }
 }
 
-function categoryOptionsForValue(category) {
-  if (!category || CATEGORY_OPTIONS.includes(category)) return CATEGORY_OPTIONS
-  return [category, ...CATEGORY_OPTIONS]
+function categoryOptionsForValue() {
+  return CATEGORY_OPTIONS
+}
+
+const CATEGORY_ICON_COMPONENTS = {
+  Car: CarFront,
+  Activity: Landmark,
+  Restaurant: Utensils,
+  Transport: TrainFront,
+  Flight: Plane,
+  Hotel: BedDouble,
+  Others: CircleEllipsis,
+}
+
+function CategoryControl({ disabled = false, label = 'Category', onChange, value }) {
+  return (
+    <div className="block min-w-0">
+      <div className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+        {label}
+      </div>
+      <div
+        role="radiogroup"
+        aria-label={label}
+        className="no-scrollbar flex w-full max-w-full items-center gap-1.5 overflow-x-auto rounded-[1.15rem] border border-slate-200/90 bg-white p-1.5"
+      >
+        {categoryOptionsForValue(value).map((option) => {
+          const Icon = CATEGORY_ICON_COMPONENTS[option] || CircleEllipsis
+          const active = option === value
+          return (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              aria-label={option}
+              title={option}
+              disabled={disabled}
+              onClick={() => onChange(option)}
+              className={`flex min-h-[3.25rem] min-w-[4.8rem] flex-1 flex-col items-center justify-center gap-1 rounded-[0.95rem] px-2 transition ${
+                active
+                  ? 'bg-slate-900 text-white shadow-[0_8px_18px_rgba(15,23,42,0.12)]'
+                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+              } disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none`}
+            >
+              <Icon className="h-4.5 w-4.5" />
+              <span className="whitespace-nowrap text-[9px] font-semibold leading-none tracking-[-0.01em]">
+                {option}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 function defaultTransitDetails() {
@@ -2658,11 +2712,11 @@ function PdfExportSheet({ loading, onClose, onDownload, onShare, open }) {
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-end bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
+      className="fixed inset-0 z-[70] flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-sm rounded-[1.45rem] border border-white/70 bg-[rgba(255,253,249,0.98)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.18)]"
+        className="w-full max-w-[min(24rem,calc(100vw-1.5rem))] overflow-x-hidden rounded-[1.45rem] border border-white/70 bg-[rgba(255,253,249,0.98)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.18)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
@@ -2956,12 +3010,12 @@ function CollaboratorsModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        className={`glass-panel w-full max-h-[82svh] overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+        className={`glass-panel w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
           isMobilePortrait ? 'rounded-[1.5rem] sm:max-w-md' : 'max-w-2xl rounded-[1.8rem]'
         }`}
       >
@@ -3136,12 +3190,12 @@ function DayManagerModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        className={`glass-panel w-full max-h-[82svh] overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+        className={`glass-panel w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
           isMobilePortrait ? 'rounded-[1.55rem] sm:max-w-md' : 'max-w-3xl rounded-[1.8rem]'
         }`}
       >
@@ -3269,12 +3323,12 @@ function NoteModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        className={`glass-panel browse-ui w-full max-h-[78svh] overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+        className={`glass-panel browse-ui w-full max-w-[calc(100vw-1.5rem)] max-h-[78svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
           isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-lg rounded-[1.65rem]'
         }`}
       >
@@ -3431,12 +3485,12 @@ function CancellationDeadlinesModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        className={`glass-panel browse-ui w-full max-h-[82svh] overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+        className={`glass-panel browse-ui w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
           isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-4xl rounded-[1.65rem]'
         }`}
       >
@@ -3590,12 +3644,12 @@ function DetailModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        className={`glass-panel w-full max-h-[78svh] overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+        className={`glass-panel w-full max-w-[calc(100vw-1.5rem)] max-h-[78svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
           isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-xl rounded-[1.7rem]'
         }`}
       >
@@ -3653,20 +3707,11 @@ function DetailModal({
               ))}
             </select>
           </Field>
-          <Field label="Category">
-            <select
-              value={detailItem.category}
-              onChange={(event) => onChange({ category: event.target.value })}
-              disabled={fieldReadOnly || linkedLocked}
-              className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
-            >
-              {categoryOptionsForValue(detailItem.category).map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </Field>
+          <CategoryControl
+            value={detailItem.category}
+            disabled={fieldReadOnly || linkedLocked}
+            onChange={(category) => onChange({ category })}
+          />
           <Field label={detailItem.category === 'Flight' ? 'Flight code' : 'Title'}>
             <input
               value={detailItem.category === 'Flight' ? effectiveFlightCode : detailItem.title}
@@ -3808,6 +3853,7 @@ function PlannerPanel({
   dayMap,
   dragState,
   filteredItems,
+  focusedDayId,
   firestoreReady,
   getFlightRecord,
   isMobilePortrait,
@@ -3825,7 +3871,9 @@ function PlannerPanel({
   const defaultDayId =
     activeDayId !== DAY_VIEW_ALL && dayOptions.some((day) => day.id === activeDayId)
       ? activeDayId
-      : dayOptions[0]?.id || ''
+      : focusedDayId && dayOptions.some((day) => day.id === focusedDayId)
+        ? focusedDayId
+        : dayOptions[0]?.id || ''
   const [draft, setDraft] = useState(() => buildEmptyDraft(defaultDayId))
   const [expandedStacks, setExpandedStacks] = useState({})
   const [stackLayoutRefreshKey, setStackLayoutRefreshKey] = useState(0)
@@ -3853,7 +3901,7 @@ function PlannerPanel({
       : draft.dayId && dayOptions.some((day) => day.id === draft.dayId)
         ? draft.dayId
         : dayOptions[0]?.id || ''
-  const [isComposerOpen, setIsComposerOpen] = useState(activeDayId !== DAY_VIEW_ALL)
+  const [isComposerOpen, setIsComposerOpen] = useState(false)
   const draftFlightCode = draft.flightCode || extractFlightNumber(draft.title || '')
   const draftDayDate = dayMap[effectiveDraftDayId]?.date || ''
   const draftAppliedLookupKey = draft.flightInfo?.lookupKey || ''
@@ -3894,6 +3942,29 @@ function PlannerPanel({
       { ...draft, id: draftConflictId, dayId: effectiveDraftDayId },
     ])
   }, [dayMap, draft, effectiveDraftDayId])
+
+  function getComposerDayId() {
+    if (activeDayId !== DAY_VIEW_ALL && dayOptions.some((day) => day.id === activeDayId)) {
+      return activeDayId
+    }
+    if (focusedDayId && dayOptions.some((day) => day.id === focusedDayId)) {
+      return focusedDayId
+    }
+    if (draft.dayId && dayOptions.some((day) => day.id === draft.dayId)) {
+      return draft.dayId
+    }
+    return dayOptions[0]?.id || ''
+  }
+
+  function openAddComposer() {
+    const nextDayId = getComposerDayId()
+    setDraft(buildEmptyDraft(nextDayId))
+    setIsComposerOpen(true)
+  }
+
+  function closeAddComposer() {
+    setIsComposerOpen(false)
+  }
 
   useEffect(() => {
     if (!canEdit) return undefined
@@ -3996,7 +4067,7 @@ function PlannerPanel({
       id: slugId('item'),
     })
 
-    setDraft(buildEmptyDraft(activeDayId !== DAY_VIEW_ALL ? activeDayId : dayOptions[0]?.id || ''))
+    setDraft(buildEmptyDraft(getComposerDayId()))
     setIsComposerOpen(false)
   }
 
@@ -4022,6 +4093,7 @@ function PlannerPanel({
         {timelineEntries.map((entry, index) => {
           const item = entry.item
           const meta = typeMeta(item.category)
+          const CategoryIcon = CATEGORY_ICON_COMPONENTS[item.category] || CircleEllipsis
           const nextSegment = routeSegmentMap[item.id]
           const isOverview = activeDayId === DAY_VIEW_ALL
           const previousItem = timelineEntries[index - 1]?.item
@@ -4184,6 +4256,12 @@ function PlannerPanel({
                 } ${showCollapsedSubstituteStack ? 'shadow-[0_26px_56px_rgba(17,24,39,0.11)]' : ''}`}
                 {...cardPressProps(item)}
               >
+                  <span
+                    className={`pointer-events-none absolute left-0 top-1/2 z-20 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white shadow-[0_8px_18px_rgba(15,23,42,0.10)] ${meta.tone}`}
+                    aria-hidden="true"
+                  >
+                    <CategoryIcon className="h-3.5 w-3.5" />
+                  </span>
                   <div className="relative z-10 min-w-0">
                     <div className={`flex items-start justify-between ${isMobilePortrait ? 'gap-2' : 'gap-3'}`}>
                       <div className="min-w-0 flex-1">
@@ -4323,16 +4401,23 @@ function PlannerPanel({
                       </div>
                       {stackAlternatives.map((stackItem) => {
                         const stackMeta = typeMeta(stackItem.category)
+                        const StackCategoryIcon = CATEGORY_ICON_COMPONENTS[stackItem.category] || CircleEllipsis
                         const stackHasActive = hasActiveSelectionStatus(stackItem)
                         return (
                           <article
                             key={stackItem.id}
-                            className={`timeline-card ${stackMeta.card} rounded-[1.25rem] px-3.5 py-3 transition hover:bg-white sm:px-4 sm:py-3.5`}
+                            className={`timeline-card ${stackMeta.card} relative rounded-[1.25rem] px-3.5 py-3 transition hover:bg-white sm:px-4 sm:py-3.5`}
                             style={{
                               borderLeftColor: stackHasActive ? '#10b981' : '#94a3b8',
                             }}
                             {...cardPressProps(stackItem)}
                           >
+                            <span
+                              className={`pointer-events-none absolute left-0 top-1/2 z-20 flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white shadow-[0_8px_18px_rgba(15,23,42,0.10)] ${stackMeta.tone}`}
+                              aria-hidden="true"
+                            >
+                              <StackCategoryIcon className="h-3 w-3" />
+                            </span>
                             <div className="min-w-0">
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
@@ -4543,31 +4628,48 @@ function PlannerPanel({
         ) : null}
       </div>
 
-      <div className="glass-panel rounded-[1.15rem] px-3.5 py-3.5 sm:px-5 sm:py-4 browse-ui">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 className="headline text-[1.18rem] leading-none text-slate-950 sm:text-[1.35rem]">Add stop</h3>
-            <p className="mt-1 hidden text-[13px] text-slate-500 sm:block">Add a stop when you need another itinerary item.</p>
-          </div>
-          {canEdit ? (
-            <button
-              type="button"
-              onClick={() => setIsComposerOpen((open) => !open)}
-              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border shadow-[0_8px_20px_rgba(15,23,42,0.05)] transition ${
-                isComposerOpen
-                  ? 'border-slate-900 bg-slate-900 text-white'
-                  : 'border-slate-200/90 bg-white text-slate-700'
-              }`}
-              aria-label={isComposerOpen ? 'Hide add stop form' : 'Add new stop'}
-            >
-              {isComposerOpen ? <Minus className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
-            </button>
-          ) : null}
-        </div>
+      {canEdit ? (
+        <button
+          type="button"
+          onClick={openAddComposer}
+          className="fixed bottom-[6.2rem] right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full border border-white/70 bg-slate-950 text-white shadow-[0_18px_42px_rgba(15,23,42,0.22)] transition hover:bg-slate-800 active:scale-95 sm:bottom-8 sm:right-8"
+          aria-label="Add stop"
+        >
+          <Plus className="h-6 w-6" />
+        </button>
+      ) : null}
 
-        {isComposerOpen && canEdit ? (
-          <>
-            <div className={`mt-3.5 grid gap-3 ${isMobilePortrait ? '' : 'sm:grid-cols-2 sm:gap-3.5 sm:mt-5'}`}>
+      {isComposerOpen && canEdit ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
+          onClick={closeAddComposer}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            className={`glass-panel browse-ui w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 shadow-[0_24px_70px_rgba(15,23,42,0.18)] sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+              isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-xl rounded-[1.7rem]'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="headline text-[1.35rem] leading-none text-slate-950">Add stop</h3>
+                <p className="mt-1 text-[12px] leading-5 text-slate-500">
+                  {dayMap[effectiveDraftDayId]?.date
+                    ? `Add a stop to ${formatDayDate(dayMap[effectiveDraftDayId].date)}.`
+                    : 'Add a stop to this trip.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeAddComposer}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600"
+                aria-label="Close add stop form"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className={`mt-4 grid gap-3 ${isMobilePortrait ? '' : 'sm:grid-cols-2 sm:gap-3.5 sm:mt-5'}`}>
               <Field label="Day">
                 <select
                   value={effectiveDraftDayId}
@@ -4581,49 +4683,39 @@ function PlannerPanel({
                   ))}
                 </select>
               </Field>
-              <Field label="Category">
-                <select
-                  value={draft.category}
-                  onChange={(event) =>
-                    setDraft((current) => {
-                      const nextCategory = event.target.value
-                      if (nextCategory === 'Flight') {
-                        return {
-                          ...current,
-                          category: nextCategory,
-                          startTime: '',
-                          endTime: '',
-                          endTimeMode: 'time',
-                          durationMinutes: null,
-                          transit: null,
-                        }
-                      }
-
+              <CategoryControl
+                value={draft.category}
+                onChange={(nextCategory) =>
+                  setDraft((current) => {
+                    if (nextCategory === 'Flight') {
                       return {
                         ...current,
                         category: nextCategory,
-                        transit: nextCategory === 'Transport' ? normalizeTransitDetails(current.transit) : null,
-                        startTime: current.startTime || '10:00',
-                        endTime: current.endTime || '11:00',
-                        endTimeMode: current.endTimeMode || 'time',
-                        status: isMonitoredCancellationItem({ category: nextCategory })
-                          ? current.status || 'considering'
-                          : '',
-                        cancellationDeadline: isMonitoredCancellationItem({ category: nextCategory })
-                          ? current.cancellationDeadline || ''
-                          : '',
+                        startTime: '',
+                        endTime: '',
+                        endTimeMode: 'time',
+                        durationMinutes: null,
+                        transit: null,
                       }
-                    })
-                  }
-                  className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
-                >
-                  {categoryOptionsForValue(draft.category).map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+                    }
+
+                    return {
+                      ...current,
+                      category: nextCategory,
+                      transit: nextCategory === 'Transport' ? normalizeTransitDetails(current.transit) : null,
+                      startTime: current.startTime || '10:00',
+                      endTime: current.endTime || '11:00',
+                      endTimeMode: current.endTimeMode || 'time',
+                      status: isMonitoredCancellationItem({ category: nextCategory })
+                        ? current.status || 'considering'
+                        : '',
+                      cancellationDeadline: isMonitoredCancellationItem({ category: nextCategory })
+                        ? current.cancellationDeadline || ''
+                        : '',
+                    }
+                  })
+                }
+              />
               <Field label={draft.category === 'Flight' ? 'Flight code' : 'Name'}>
                 <input
                   value={draft.category === 'Flight' ? draftFlightCode : draft.title}
@@ -4744,15 +4836,9 @@ function PlannerPanel({
             >
               Save new itinerary detail
             </button>
-          </>
-        ) : (
-              <div className="mt-3 hidden rounded-[0.95rem] bg-white px-4 py-3 text-[13px] leading-6 text-slate-500 sm:block">
-            {canEdit
-              ? 'Add another stop when your itinerary needs one.'
-              : 'You can view this trip, but editing is limited.'}
           </div>
-        )}
-      </div>
+        </div>
+      ) : null}
     </>
   )
 }
@@ -4811,7 +4897,7 @@ function AppDialog({ dialog, onCancel, onSubmit }) {
 
   return (
     <div
-      className="fixed inset-0 z-[90] flex items-end bg-slate-950/40 p-3 pt-10 backdrop-blur-[2px] sm:items-center sm:justify-center sm:p-4"
+      className="fixed inset-0 z-[90] flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 backdrop-blur-[2px] sm:items-center sm:justify-center sm:p-4"
       onClick={onCancel}
     >
       <form
@@ -4820,7 +4906,7 @@ function AppDialog({ dialog, onCancel, onSubmit }) {
           onSubmit(isChoice ? null : isPrompt ? inputRef.current?.value.trim() || '' : true)
         }}
         onClick={(event) => event.stopPropagation()}
-        className="glass-panel w-full max-w-md rounded-[1.35rem] border border-white/70 p-4 shadow-[0_22px_60px_rgba(15,23,42,0.18)] sm:rounded-[1.55rem] sm:p-5"
+        className="glass-panel w-full max-w-[min(28rem,calc(100vw-1.5rem))] overflow-x-hidden rounded-[1.35rem] border border-white/70 p-4 shadow-[0_22px_60px_rgba(15,23,42,0.18)] sm:rounded-[1.55rem] sm:p-5"
       >
         <div className="flex items-start gap-3">
           <div
@@ -6905,6 +6991,7 @@ export default function App() {
             dayMap={tripState.dayMap}
             dragState={dragState}
             filteredItems={filteredItems}
+            focusedDayId={navFocusedDayId}
             firestoreReady={firestoreReady}
             getFlightRecord={getFlightRecord}
             isMobilePortrait={isMobilePortrait}

@@ -3,7 +3,7 @@ export const DEFAULT_TRIP_TITLE = 'My trip'
 
 export const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
 
-export const CATEGORY_OPTIONS = ['Activity', 'Restaurant', 'Transport', 'Flight', 'Hotel', 'Others']
+export const CATEGORY_OPTIONS = ['Car', 'Activity', 'Restaurant', 'Transport', 'Flight', 'Hotel', 'Others']
 
 export const SEED_DAYS = [
   {
@@ -95,7 +95,7 @@ export const SEED_ITEMS = [
     title: 'Wedding ceremony',
     locationName: 'Keisei Hotel Miramare',
     address: '15-1 Honchibacho, Chuo Ward, Chiba, Japan',
-    category: 'Wedding',
+    category: 'Activity',
     startTime: '12:45',
     endTime: '14:00',
     description: 'Wedding ceremony.',
@@ -127,7 +127,7 @@ export const SEED_ITEMS = [
     title: 'Wedding dinner at KISAKU',
     locationName: 'KISAKU',
     address: 'aune Building Kaihin Makuhari, 1-14 Hibino, Mihama Ward, Chiba, Japan',
-    category: 'Wedding',
+    category: 'Restaurant',
     startTime: '17:00',
     endTime: '19:00',
     description: 'Wedding dinner.',
