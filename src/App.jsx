@@ -2146,9 +2146,11 @@ function Field({ label, children, className = '' }) {
   )
 }
 
+const TIME_MODE_ROW_CLASS = 'time-mode-row'
+
 function TimeField({ conflict, disabled, label, onChange, value }) {
   return (
-    <label className="block">
+    <label className="block min-w-0">
       <span
         className={`mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] ${
           conflict ? 'font-bold text-rose-600' : 'text-slate-500'
@@ -2162,7 +2164,7 @@ function TimeField({ conflict, disabled, label, onChange, value }) {
         value={value}
         onChange={onChange}
         disabled={disabled}
-        className={`w-full rounded-[1.15rem] border bg-white px-4 py-3 text-[14px] tracking-[-0.01em] disabled:bg-slate-100 ${
+        className={`time-field-input w-full min-w-0 rounded-[1.15rem] border bg-white px-3.5 py-3 text-[14px] tracking-[-0.01em] disabled:bg-slate-100 ${
           conflict
             ? 'border-rose-300 font-bold text-rose-700 ring-1 ring-rose-200'
             : 'border-slate-200/90'
@@ -2323,7 +2325,7 @@ function StartTimeModeRow({
   showModeToggle = true,
 }) {
   return (
-    <div className="grid grid-cols-[minmax(9.5rem,1fr)_minmax(7.75rem,9.6rem)] items-end gap-3 sm:col-span-2 max-[380px]:grid-cols-[minmax(8.25rem,1fr)_minmax(7.4rem,8.4rem)] max-[380px]:gap-2">
+    <div className={`${TIME_MODE_ROW_CLASS} sm:col-span-2`}>
       <TimeField
         label="Start time"
         value={draft.startTime}
@@ -2349,7 +2351,7 @@ function EndTimeModeField({ conflict = false, disabled, draft, onChange, showMod
       {showModeToggle ? <EndTimeModeToggle disabled={disabled} draft={draft} onChange={onChange} /> : null}
 
       {draft.endTimeMode === 'time' ? (
-        <div className="grid grid-cols-[minmax(9.5rem,1fr)_minmax(7.75rem,9.6rem)] items-end gap-3 max-[380px]:grid-cols-[minmax(8.25rem,1fr)_minmax(7.4rem,8.4rem)] max-[380px]:gap-2">
+        <div className={TIME_MODE_ROW_CLASS}>
           <TimeField
             label="End time"
             value={draft.endTime}
@@ -2361,9 +2363,9 @@ function EndTimeModeField({ conflict = false, disabled, draft, onChange, showMod
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="grid grid-cols-[minmax(9.5rem,1fr)_minmax(7.75rem,9.6rem)] items-end gap-3 max-[380px]:grid-cols-[minmax(8.25rem,1fr)_minmax(7.4rem,8.4rem)] max-[380px]:gap-2">
-            <Field label="End time">
-              <div className="w-full rounded-[1.15rem] border border-slate-200/90 bg-slate-50 px-4 py-3 text-[14px] font-semibold tracking-[-0.01em] text-slate-700">
+          <div className={TIME_MODE_ROW_CLASS}>
+            <Field label="End time" className="min-w-0">
+              <div className="time-field-input w-full min-w-0 rounded-[1.15rem] border border-slate-200/90 bg-slate-50 px-3.5 py-3 text-[14px] font-semibold tracking-[-0.01em] text-slate-700">
                 {derivedEndTime || '--:--'}
               </div>
             </Field>
