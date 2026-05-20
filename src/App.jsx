@@ -2916,7 +2916,7 @@ function MenuButton({ onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="glass-panel fixed left-3 top-3 z-30 flex h-11 w-11 items-center justify-center rounded-full text-slate-700 transition hover:bg-white sm:left-5 sm:top-5"
+      className="glass-panel floating-menu-button fixed z-30 flex h-11 w-11 items-center justify-center rounded-full text-slate-700 transition hover:bg-white"
       aria-label="Open menu"
     >
       <Menu className="h-4 w-4" />
@@ -7804,7 +7804,7 @@ export default function App() {
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl overflow-x-clip px-3 py-3.5 pb-24 pt-14 text-slate-900 sm:px-6 sm:py-5 sm:pb-24 sm:pt-16 lg:px-8">
+    <main className="app-main mx-auto min-h-screen max-w-7xl overflow-x-clip px-3 py-3.5 pb-24 text-slate-900 sm:px-6 sm:py-5 sm:pb-24 lg:px-8">
       <MenuButton onClick={() => setShowMenu(true)} />
       <AppDrawer
         activeTripSummary={activeTripSummary}
