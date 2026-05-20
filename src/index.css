@@ -13,12 +13,17 @@
 
 html {
   scroll-behavior: smooth;
+  overscroll-behavior-x: none;
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
   min-width: 320px;
   overflow-x: clip;
+  overscroll-behavior-x: none;
+  touch-action: manipulation;
 }
 
 body::before {
@@ -276,6 +281,11 @@ input,
 select,
 textarea {
   -webkit-tap-highlight-color: transparent;
+}
+
+img,
+a {
+  -webkit-user-drag: none;
 }
 
 button:focus-visible,
