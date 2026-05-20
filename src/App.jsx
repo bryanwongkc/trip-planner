@@ -12,6 +12,7 @@ import React, {
 } from 'react'
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   AlertTriangle,
   BedDouble,
@@ -30,6 +31,7 @@ import {
   ExternalLink,
   Loader2,
   Menu,
+  PackageOpen,
   Plane,
   Plus,
   Search,
@@ -82,6 +84,7 @@ import {
 import { fetchWeatherSnapshot } from './services/weather'
 import {
   DAY_VIEW_ALL,
+  PARKING_LOT_DATE,
   buildDayLabel,
   compareTime,
   deriveEndTimeFromDuration,
@@ -173,6 +176,17 @@ function roleLabel(role) {
   if (role === 'admin') return 'Admin'
   if (role === 'editor') return 'Editor'
   return role || 'Unknown'
+}
+
+function normalizeTripCity(city) {
+  return String(city || '').replace(/\s+/g, ' ').trim()
+}
+
+function roleAccessDescription(role) {
+  if (role === 'admin') return 'Admin: full control of trip details and collaborators.'
+  if (role === 'editor') return 'Editor: add/update trip details, cannot manage collaborators.'
+  if (role === 'viewer') return 'Read-only: can view the trip without making changes.'
+  return 'Choose what this person can view or edit.'
 }
 
 function useResponsiveMode() {
@@ -899,6 +913,7 @@ function buildEmptyDraft(dayId = '') {
     transit: null,
     travelModeToNext: '',
     flightInfo: null,
+    date: '',
     lat: null,
     lng: null,
     placeId: '',
@@ -913,6 +928,7 @@ function buildDefaultTripSummary() {
     hidden: false,
     startDate: SEED_DAYS[0]?.date || '',
     endDate: SEED_DAYS[SEED_DAYS.length - 1]?.date || '',
+    city: 'Chiba, Japan',
   }
 }
 
@@ -1326,20 +1342,44 @@ function localTodayIso() {
   return local.toISOString().slice(0, 10)
 }
 
-function buildBlankTripSnapshot(date = localTodayIso()) {
-  const dayId = slugId('day')
+function isoDateToUtcMs(date) {
+  const [year, month, day] = String(date || '').split('-').map(Number)
+  if (!year || !month || !day) return NaN
+  return Date.UTC(year, month - 1, day)
+}
+
+function utcMsToIsoDate(value) {
+  return new Date(value).toISOString().slice(0, 10)
+}
+
+function enumerateTripDates(startDate, endDate) {
+  const start = isoDateToUtcMs(startDate)
+  const end = isoDateToUtcMs(endDate)
+  if (!Number.isFinite(start)) return [localTodayIso()]
+
+  const safeEnd = Number.isFinite(end) && end >= start ? end : start
+  const dates = []
+  for (let cursor = start; cursor <= safeEnd; cursor += 86_400_000) {
+    dates.push(utcMsToIsoDate(cursor))
+  }
+  return dates
+}
+
+function buildBlankTripSnapshot(startDate = localTodayIso(), endDate = startDate) {
+  const dates = enumerateTripDates(startDate, endDate)
+  const days = dates.map((date, index) => ({
+    id: slugId('day'),
+    date,
+    name: '',
+    order: index,
+  }))
 
   return {
-    startDate: date,
-    endDate: date,
+    startDate: dates[0],
+    endDate: dates[dates.length - 1],
     days: {
       ...Object.fromEntries(SEED_DAYS.map((day) => [day.id, { ...day, hidden: true }])),
-      [dayId]: {
-        id: dayId,
-        date,
-        name: '',
-        order: 0,
-      },
+      ...Object.fromEntries(days.map((day) => [day.id, day])),
     },
     items: Object.fromEntries(SEED_ITEMS.map((item) => [item.id, { ...item, hidden: true }])),
     bookingOptions: {},
@@ -1360,10 +1400,11 @@ function normalizeItemForSave(item) {
 
 function buildClonedTripSnapshot(tripState) {
   const dayIdMap = Object.fromEntries(tripState.days.map((day) => [day.id, slugId('day')]))
+  const cloneableItems = [...tripState.items, ...(tripState.parkingLotItems || [])].filter(
+    (item) => !item.generated && !item.hidden,
+  )
   const itemIdMap = Object.fromEntries(
-    tripState.items
-      .filter((item) => !item.generated && !item.hidden)
-      .map((item) => [item.id, slugId('item')]),
+    cloneableItems.map((item) => [item.id, slugId('item')]),
   )
 
   const days = {
@@ -1387,8 +1428,8 @@ function buildClonedTripSnapshot(tripState) {
   const items = {
     ...Object.fromEntries(SEED_ITEMS.map((item) => [item.id, { ...item, hidden: true }])),
     ...Object.fromEntries(
-      tripState.items
-        .filter((item) => !item.generated && !item.hidden && itemIdMap[item.id])
+      cloneableItems
+        .filter((item) => itemIdMap[item.id])
         .map((item) => {
           const id = itemIdMap[item.id]
           return [
@@ -2227,12 +2268,12 @@ function TransitFields({ disabled, isMobilePortrait, transit, onChange }) {
 
 function EndTimeModeToggle({ disabled, draft, onChange }) {
   return (
-    <div className="inline-flex min-h-11 w-[11.2rem] items-center rounded-full border border-slate-200/90 bg-slate-100 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+    <div className="inline-flex min-h-11 w-full min-w-0 items-center rounded-full border border-slate-200/90 bg-slate-100 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
       <button
         type="button"
         disabled={disabled}
         onClick={() => onChange({ endTimeMode: 'time' })}
-        className={`min-h-9 flex-1 rounded-full px-3 text-[11px] font-semibold transition ${
+        className={`min-h-9 flex-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold transition ${
           draft.endTimeMode === 'time'
             ? 'bg-slate-900 text-white shadow-[0_6px_14px_rgba(15,23,42,0.12)]'
             : 'text-slate-600'
@@ -2250,7 +2291,7 @@ function EndTimeModeToggle({ disabled, draft, onChange }) {
               draft.durationMinutes ?? getDurationMinutes(draft.startTime, draft.endTime) ?? 60,
           })
         }
-        className={`min-h-9 flex-1 rounded-full px-3 text-[11px] font-semibold transition ${
+        className={`min-h-9 flex-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold transition ${
           draft.endTimeMode === 'duration'
             ? 'bg-slate-900 text-white shadow-[0_6px_14px_rgba(15,23,42,0.12)]'
             : 'text-slate-600'
@@ -2265,11 +2306,11 @@ function EndTimeModeToggle({ disabled, draft, onChange }) {
 function EndTimeModeSpacer() {
   return (
     <div
-      className="invisible inline-flex min-h-11 w-[11.2rem] items-center rounded-full border border-slate-200/90 bg-slate-100 p-1"
+      className="invisible inline-flex min-h-11 w-full min-w-0 items-center rounded-full border border-slate-200/90 bg-slate-100 p-1"
       aria-hidden="true"
     >
-      <span className="min-h-9 flex-1 rounded-full px-3 text-[11px] font-semibold">End time</span>
-      <span className="min-h-9 flex-1 rounded-full px-3 text-[11px] font-semibold">Duration</span>
+      <span className="min-h-9 flex-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold">End time</span>
+      <span className="min-h-9 flex-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold">Duration</span>
     </div>
   )
 }
@@ -2282,7 +2323,7 @@ function StartTimeModeRow({
   showModeToggle = true,
 }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_11.2rem] items-end gap-3 sm:col-span-2">
+    <div className="grid grid-cols-[minmax(9.5rem,1fr)_minmax(7.75rem,9.6rem)] items-end gap-3 sm:col-span-2 max-[380px]:grid-cols-[minmax(8.25rem,1fr)_minmax(7.4rem,8.4rem)] max-[380px]:gap-2">
       <TimeField
         label="Start time"
         value={draft.startTime}
@@ -2308,7 +2349,7 @@ function EndTimeModeField({ conflict = false, disabled, draft, onChange, showMod
       {showModeToggle ? <EndTimeModeToggle disabled={disabled} draft={draft} onChange={onChange} /> : null}
 
       {draft.endTimeMode === 'time' ? (
-        <div className="grid grid-cols-[minmax(0,1fr)_11.2rem] items-end gap-3">
+        <div className="grid grid-cols-[minmax(9.5rem,1fr)_minmax(7.75rem,9.6rem)] items-end gap-3 max-[380px]:grid-cols-[minmax(8.25rem,1fr)_minmax(7.4rem,8.4rem)] max-[380px]:gap-2">
           <TimeField
             label="End time"
             value={draft.endTime}
@@ -2320,7 +2361,7 @@ function EndTimeModeField({ conflict = false, disabled, draft, onChange, showMod
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="grid grid-cols-[minmax(0,1fr)_11.2rem] items-end gap-3">
+          <div className="grid grid-cols-[minmax(9.5rem,1fr)_minmax(7.75rem,9.6rem)] items-end gap-3 max-[380px]:grid-cols-[minmax(8.25rem,1fr)_minmax(7.4rem,8.4rem)] max-[380px]:gap-2">
             <Field label="End time">
               <div className="w-full rounded-[1.15rem] border border-slate-200/90 bg-slate-50 px-4 py-3 text-[14px] font-semibold tracking-[-0.01em] text-slate-700">
                 {derivedEndTime || '--:--'}
@@ -2465,7 +2506,7 @@ function TripSwitcher({
 
       {open ? (
         <div className="absolute inset-x-0 top-[calc(100%+0.55rem)] z-50">
-          <div className="overflow-hidden rounded-[1rem] border border-slate-200/90 bg-[rgba(255,253,250,0.99)] p-1.5 shadow-[0_16px_30px_rgba(15,23,42,0.075)]">
+          <div className="overflow-hidden rounded-[1rem] border border-slate-200/90 bg-white/95 p-1.5 shadow-[0_16px_30px_rgba(15,23,42,0.075)]">
             <div className="no-scrollbar max-h-[min(24rem,56svh)] overflow-y-auto pr-0.5">
               {tripSummaries.map((trip) => {
                 const selected = trip.id === activeTripId
@@ -2651,6 +2692,8 @@ function AppDrawer({
   onDeleteTrip,
   onExportOverview,
   onOpenDeadlines,
+  onOpenItinerary,
+  onOpenParkingLot,
   onRenameTrip,
   onRestoreTrip,
   onSelectTrip,
@@ -2659,6 +2702,7 @@ function AppDrawer({
   onSignOut,
   open,
   pdfExporting,
+  showingUtilityScreen,
   urgentDeadlineCount,
 }) {
   return (
@@ -2671,7 +2715,7 @@ function AppDrawer({
         aria-hidden="true"
       />
       <aside
-        className={`fixed bottom-0 left-0 top-0 z-50 flex w-[min(22rem,calc(100vw-1.4rem))] flex-col border-r border-white/70 bg-[rgba(255,253,249,0.98)] px-3.5 py-4 shadow-[18px_0_42px_rgba(15,23,42,0.11)] transition-transform duration-200 ${
+        className={`fixed bottom-0 left-0 top-0 z-50 flex w-[min(22rem,calc(100vw-1.4rem))] flex-col border-r border-white/70 bg-white/96 px-3.5 py-4 shadow-[18px_0_42px_rgba(15,23,42,0.11)] transition-transform duration-200 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -2703,6 +2747,23 @@ function AppDrawer({
             onSelectTrip={onSelectTrip}
             tripSummaries={availableTrips}
           />
+          {showingUtilityScreen ? (
+            <button
+              type="button"
+              onClick={onOpenItinerary}
+              className="flex w-full items-center justify-between rounded-[0.95rem] border border-slate-200/70 bg-white/90 px-3.5 py-3 text-left text-slate-800 transition hover:bg-white"
+            >
+              <span>
+                <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  Itinerary
+                </span>
+                <span className="mt-1 block text-[13px] font-semibold">
+                  Back to main trip screen
+                </span>
+              </span>
+              <ArrowLeft className="h-4 w-4 text-slate-500" />
+            </button>
+          ) : null}
           {availableTrips.length ? (
             <>
               <button
@@ -2752,6 +2813,21 @@ function AppDrawer({
                 </span>
                 <CalendarDays className="h-4 w-4 text-slate-500" />
               </button>
+              <button
+                type="button"
+                onClick={onOpenParkingLot}
+                className="flex w-full items-center justify-between rounded-[0.95rem] border border-slate-200/70 bg-white/90 px-3.5 py-3 text-left text-slate-800 transition hover:bg-white"
+              >
+                <span>
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                    The Parking Lot
+                  </span>
+                  <span className="mt-1 block text-[13px] font-semibold">
+                    Park your ideas here. Figure it out later!
+                  </span>
+                </span>
+                <PackageOpen className="h-4 w-4 text-slate-500" />
+              </button>
             </>
           ) : null}
         </div>
@@ -2779,7 +2855,7 @@ function PdfExportSheet({ loading, onClose, onDownload, onShare, open }) {
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[min(24rem,calc(100vw-1.5rem))] overflow-x-hidden rounded-[1.45rem] border border-white/70 bg-[rgba(255,253,249,0.98)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.18)]"
+        className="w-full max-w-[min(24rem,calc(100vw-1.5rem))] overflow-x-hidden rounded-[1.45rem] border border-white/70 bg-white/96 p-4 shadow-[0_24px_70px_rgba(15,23,42,0.18)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
@@ -2937,7 +3013,7 @@ function BottomDayNav({
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 px-2.5 pb-[max(0.65rem,env(safe-area-inset-bottom))] sm:px-4">
-      <div className="mx-auto flex max-w-5xl items-center gap-1 rounded-[1.05rem] border border-white/80 bg-[rgba(255,253,249,0.98)] p-1.5 shadow-[0_-10px_24px_rgba(15,23,42,0.075)]">
+      <div className="mx-auto flex max-w-5xl items-center gap-1 rounded-[1.05rem] border border-white/80 bg-white/95 p-1.5 shadow-[0_-10px_24px_rgba(15,23,42,0.075)]">
         <button
           type="button"
           onClick={() => onDayChange(DAY_VIEW_ALL)}
@@ -3004,7 +3080,7 @@ function BottomDayNav({
             )
           })}
           </div>
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-5 bg-gradient-to-l from-[rgba(255,253,249,0.98)] to-transparent" />
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-5 bg-gradient-to-l from-white/95 to-transparent" />
         </div>
         <div className="h-8 w-px shrink-0 bg-slate-200/70" />
         <button
@@ -3127,6 +3203,9 @@ function CollaboratorsModal({
                   Add
                 </button>
               </div>
+              <p className="mt-3 text-[12px] leading-5 text-slate-500">
+                {roleAccessDescription(role)}
+              </p>
             </div>
 
             <div className="rounded-[1.2rem] bg-slate-50/90 p-4">
@@ -3529,12 +3608,569 @@ function NoteModal({
   )
 }
 
-function CancellationDeadlinesModal({
+function AddStopComposer({
+  activeDayId,
+  canEdit,
+  defaultParkingLot = false,
+  dayMap,
+  dayOptions,
+  focusedDayId,
+  firestoreReady,
+  getFlightRecord,
+  isMobilePortrait,
+  mapsReady,
+  onSaveNewItem,
+}) {
+  const defaultDayId =
+    activeDayId !== DAY_VIEW_ALL && dayOptions.some((day) => day.id === activeDayId)
+      ? activeDayId
+      : focusedDayId && dayOptions.some((day) => day.id === focusedDayId)
+        ? focusedDayId
+        : dayOptions[0]?.id || ''
+  const [draft, setDraft] = useState(() => ({
+    ...buildEmptyDraft(defaultDayId),
+    date: defaultParkingLot ? PARKING_LOT_DATE : '',
+  }))
+  const [isComposerOpen, setIsComposerOpen] = useState(false)
+  const draftConflictId = '__draft__'
+  const effectiveDraftDayId =
+    activeDayId !== DAY_VIEW_ALL && dayOptions.some((day) => day.id === activeDayId)
+      ? activeDayId
+      : draft.dayId && dayOptions.some((day) => day.id === draft.dayId)
+        ? draft.dayId
+        : dayOptions[0]?.id || ''
+  const isDraftParkingLotItem = draft.date === PARKING_LOT_DATE
+  const draftFlightCode = draft.flightCode || extractFlightNumber(draft.title || '')
+  const draftDayDate = dayMap[effectiveDraftDayId]?.date || ''
+  const draftAppliedLookupKey = draft.flightInfo?.lookupKey || ''
+  const draftFlightLookup = inferFlightLookupFromItem({
+    ...draft,
+    flightCode: draftFlightCode,
+    dayDate: draftDayDate,
+  })
+  const draftLookupKey = buildFlightLookupKey(draftFlightLookup?.flightNumber, draftFlightLookup?.date)
+  const draftScheduleConflict = useMemo(() => {
+    if (isDraftParkingLotItem) return null
+    if (!effectiveDraftDayId) return null
+    const existingItems = dayMap[effectiveDraftDayId]?.items || []
+    return getScheduleConflictMeta([
+      ...existingItems,
+      { ...draft, id: draftConflictId, dayId: effectiveDraftDayId },
+    ])
+  }, [dayMap, draft, effectiveDraftDayId, isDraftParkingLotItem])
+
+  function getComposerDayId() {
+    if (activeDayId !== DAY_VIEW_ALL && dayOptions.some((day) => day.id === activeDayId)) {
+      return activeDayId
+    }
+    if (focusedDayId && dayOptions.some((day) => day.id === focusedDayId)) {
+      return focusedDayId
+    }
+    if (draft.dayId && dayOptions.some((day) => day.id === draft.dayId)) {
+      return draft.dayId
+    }
+    return dayOptions[0]?.id || ''
+  }
+
+  function buildComposerDraft(dayId = getComposerDayId()) {
+    return {
+      ...buildEmptyDraft(dayId),
+      date: defaultParkingLot ? PARKING_LOT_DATE : '',
+    }
+  }
+
+  function openAddComposer() {
+    setDraft(buildComposerDraft())
+    setIsComposerOpen(true)
+  }
+
+  function closeAddComposer() {
+    setIsComposerOpen(false)
+  }
+
+  useEffect(() => {
+    if (!canEdit) return undefined
+    if (draft.category !== 'Flight' || !draftFlightLookup?.flightNumber || !draftFlightLookup.date) return undefined
+    if (!isCurrentDate(draftDayDate) && draftAppliedLookupKey === draftLookupKey) {
+      return undefined
+    }
+
+    let active = true
+
+    async function syncDraftFlight() {
+      try {
+        const record = await getFlightRecord({
+          date: draftFlightLookup.date,
+          flightCode: draftFlightLookup.flightNumber,
+          forceRefresh: isCurrentDate(draftFlightLookup.date),
+        })
+
+        if (!active || !record) return
+
+        setDraft((current) => {
+          const currentFlightCode = current.flightCode || extractFlightNumber(current.title || '')
+          const currentDayDate = dayMap[
+            current.dayId && dayOptions.some((day) => day.id === current.dayId)
+              ? current.dayId
+              : effectiveDraftDayId
+          ]?.date || ''
+          const currentLookupKey = buildFlightLookupKey(currentFlightCode, currentDayDate)
+
+          if (
+            current.category !== 'Flight' ||
+            currentFlightCode !== draftFlightLookup.flightNumber ||
+            currentLookupKey !== draftLookupKey
+          ) {
+            return current
+          }
+
+          if (!isCurrentDate(draftFlightLookup.date) && hasAppliedFlightLookup(current, draftLookupKey)) {
+            return current
+          }
+
+          return applyFlightRecordToDraft(current, record, draftFlightLookup.flightNumber, draftLookupKey)
+        })
+      } catch (error) {
+        console.error(error)
+      }
+    }
+
+    void syncDraftFlight()
+    return () => {
+      active = false
+    }
+  }, [
+    canEdit,
+    dayMap,
+    dayOptions,
+    draft.category,
+    draftAppliedLookupKey,
+    draft.dayId,
+    draft.title,
+    draftDayDate,
+    draftFlightLookup,
+    draftLookupKey,
+    effectiveDraftDayId,
+    getFlightRecord,
+  ])
+
+  async function saveNewItem() {
+    if (!firestoreReady || !effectiveDraftDayId || !canEdit) return
+
+    let nextDraft = normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields({
+      ...draft,
+      dayId: effectiveDraftDayId,
+    })))
+
+    if (nextDraft.category === 'Flight' && draftFlightLookup?.flightNumber && draftFlightLookup.date) {
+      try {
+        const record = await getFlightRecord({
+          date: draftFlightLookup.date,
+          flightCode: draftFlightLookup.flightNumber,
+          forceRefresh: isCurrentDate(draftFlightLookup.date),
+        })
+
+        if (record) {
+          nextDraft = applyFlightRecordToDraft(
+            nextDraft,
+            record,
+            draftFlightLookup.flightNumber,
+            draftLookupKey,
+          )
+        }
+      } catch (error) {
+        console.error(error)
+      }
+    }
+
+    await onSaveNewItem({
+      ...normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields(nextDraft))),
+      dayId: effectiveDraftDayId,
+      id: slugId('item'),
+    })
+
+    setDraft(buildComposerDraft())
+    setIsComposerOpen(false)
+  }
+
+  return (
+    <>
+      {canEdit ? (
+        <button
+          type="button"
+          onClick={openAddComposer}
+          className="fixed bottom-[6.2rem] right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full border border-white/70 bg-slate-950 text-white shadow-[0_18px_42px_rgba(15,23,42,0.22)] transition hover:bg-slate-800 active:scale-95 sm:bottom-8 sm:right-8"
+          aria-label="Add stop"
+        >
+          <Plus className="h-6 w-6" />
+        </button>
+      ) : null}
+
+      {isComposerOpen && canEdit ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
+          onClick={closeAddComposer}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            className={`glass-panel browse-ui w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 shadow-[0_24px_70px_rgba(15,23,42,0.18)] sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+              isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-xl rounded-[1.7rem]'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="headline text-[1.35rem] leading-none text-slate-950">Add stop</h3>
+                <p className="mt-1 text-[12px] leading-5 text-slate-500">
+                  {isDraftParkingLotItem
+                    ? 'Add a stop to The Parking Lot.'
+                    : dayMap[effectiveDraftDayId]?.date
+                      ? `Add a stop to ${formatDayDate(dayMap[effectiveDraftDayId].date)}.`
+                      : 'Add a stop to this trip.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeAddComposer}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600"
+                aria-label="Close add stop form"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className={`mt-4 grid gap-3 ${isMobilePortrait ? '' : 'sm:grid-cols-2 sm:gap-3.5 sm:mt-5'}`}>
+              <Field label="Day">
+                <div className="grid grid-cols-[minmax(0,1fr)_5.75rem] gap-2">
+                  <select
+                    value={isDraftParkingLotItem ? '' : effectiveDraftDayId}
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, dayId: event.target.value, date: '' }))
+                    }
+                    disabled={isDraftParkingLotItem}
+                    className={`w-full rounded-[1.15rem] border px-4 py-3 text-sm ${
+                      isDraftParkingLotItem
+                        ? 'cursor-not-allowed border-slate-200/80 bg-slate-100 text-slate-400'
+                        : 'border-slate-200/90 bg-white text-slate-900'
+                    }`}
+                  >
+                    <option value="" aria-label="No day" />
+                    {dayOptions.map((day) => (
+                      <option key={day.id} value={day.id}>
+                        {formatDayDate(day.date)}
+                      </option>
+                    ))}
+                  </select>
+                  <label
+                    className={`flex min-h-11 items-center justify-center gap-2 rounded-[1.15rem] border px-3 text-[12px] font-bold transition ${
+                      isDraftParkingLotItem
+                        ? 'border-slate-900 bg-slate-900 text-white shadow-[0_8px_18px_rgba(15,23,42,0.12)]'
+                        : 'border-slate-200/90 bg-white text-slate-700 hover:border-slate-300'
+                    } cursor-pointer`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isDraftParkingLotItem}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          date: event.target.checked ? PARKING_LOT_DATE : '',
+                        }))
+                      }
+                      className="sr-only"
+                    />
+                    <span
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[0.35rem] border transition ${
+                        isDraftParkingLotItem ? 'border-white bg-white text-slate-900' : 'border-slate-300 bg-slate-50'
+                      }`}
+                      aria-hidden="true"
+                    >
+                      {isDraftParkingLotItem ? <Check className="h-3 w-3 stroke-[3]" /> : null}
+                    </span>
+                    TBD
+                  </label>
+                </div>
+                {isDraftParkingLotItem ? (
+                  <p className="mt-2 text-[12px] leading-5 text-slate-500">
+                    item will be moved to The Parking Lot.
+                  </p>
+                ) : null}
+              </Field>
+              <CategoryControl
+                value={draft.category}
+                onChange={(nextCategory) =>
+                  setDraft((current) => {
+                    if (nextCategory === 'Flight') {
+                      return {
+                        ...current,
+                        category: nextCategory,
+                        startTime: '',
+                        endTime: '',
+                        endTimeMode: 'time',
+                        durationMinutes: null,
+                        transit: null,
+                      }
+                    }
+
+                    return {
+                      ...current,
+                      category: nextCategory,
+                      transit: nextCategory === 'Transport' ? normalizeTransitDetails(current.transit) : null,
+                      startTime: current.startTime || '10:00',
+                      endTime: current.endTime || '11:00',
+                      endTimeMode: current.endTimeMode || 'time',
+                      status: isMonitoredCancellationItem({ category: nextCategory })
+                        ? current.status || 'considering'
+                        : '',
+                      cancellationDeadline: isMonitoredCancellationItem({ category: nextCategory })
+                        ? current.cancellationDeadline || ''
+                        : '',
+                    }
+                  })
+                }
+              />
+              <Field label={draft.category === 'Flight' ? 'Flight code' : 'Name'}>
+                <input
+                  value={draft.category === 'Flight' ? draftFlightCode : draft.title}
+                  onChange={(event) =>
+                    setDraft((current) =>
+                      draft.category === 'Flight'
+                        ? { ...current, flightCode: event.target.value.toUpperCase().replace(/\s+/g, '') }
+                        : { ...current, title: event.target.value },
+                    )
+                  }
+                  placeholder={draft.category === 'Flight' ? 'CX549' : ''}
+                  className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                />
+              </Field>
+              <StartTimeModeRow
+                disabled={draft.category === 'Flight'}
+                draft={draft}
+                onChange={(changes) => setDraft((current) => applyItemDraftPatch(current, changes))}
+                conflict={Boolean(draftScheduleConflict?.nextId === draftConflictId)}
+                showModeToggle
+              />
+              <EndTimeModeField
+                disabled={draft.category === 'Flight'}
+                draft={draft}
+                onChange={(changes) => setDraft((current) => applyItemDraftPatch(current, changes))}
+                conflict={Boolean(draftScheduleConflict?.currentId === draftConflictId)}
+                showModeToggle={false}
+              />
+            </div>
+
+            {getEndTimeWarning(draft) ? (
+              <div className="mt-3 rounded-[0.95rem] bg-amber-50/90 px-4 py-3 text-[13px] leading-6 text-amber-700">
+                {getEndTimeWarning(draft)}
+              </div>
+            ) : null}
+
+            <div className="mt-3 space-y-3 sm:mt-4">
+              {draft.category !== 'Flight' ? (
+                <PlaceFields
+                  draft={draft}
+                  disabled={!firestoreReady}
+                  mapsReady={mapsReady}
+                  onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
+                />
+              ) : null}
+
+              {draft.category === 'Transport' ? (
+                <TransitFields
+                  disabled={!firestoreReady}
+                  isMobilePortrait={isMobilePortrait}
+                  transit={draft.transit}
+                  onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
+                />
+              ) : null}
+
+              <Field label="Notes">
+                <textarea
+                  rows={3}
+                  value={draft.description}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, description: event.target.value }))
+                  }
+                  className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                />
+              </Field>
+              <Field label="Booking ref">
+                <input
+                  value={draft.bookingRef}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, bookingRef: event.target.value }))
+                  }
+                  className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                />
+              </Field>
+              {isMonitoredCancellationItem(draft) ? (
+                <div className={`grid gap-3.5 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
+                  <Field label="Status">
+                    <select
+                      value={draft.status === 'active' ? 'active' : 'considering'}
+                      onChange={(event) =>
+                        setDraft((current) => ({ ...current, status: event.target.value }))
+                      }
+                      className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                    >
+                      <option value="considering">Considering</option>
+                      <option value="active">Active</option>
+                    </select>
+                  </Field>
+                  <Field label="Cancellation deadline">
+                    <input
+                      type="datetime-local"
+                      value={formatDateTimeInputValue(draft.cancellationDeadline || '')}
+                      onChange={(event) =>
+                        setDraft((current) => ({ ...current, cancellationDeadline: event.target.value }))
+                      }
+                      className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                    />
+                  </Field>
+                </div>
+              ) : null}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void saveNewItem()}
+              disabled={!firestoreReady || !effectiveDraftDayId}
+              className="mt-5 w-full rounded-[1.1rem] bg-slate-900 px-4 py-4 text-sm font-bold text-white disabled:bg-slate-300"
+            >
+              Save new itinerary detail
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </>
+  )
+}
+
+function ParkingLotScreen({
+  activeDayId,
+  canEdit,
+  dayMap,
+  dayOptions,
+  firestoreReady,
+  focusedDayId,
+  getFlightRecord,
+  isMobilePortrait,
+  items,
+  mapsReady,
+  onOpenDetails,
+  onSaveNewItem,
+}) {
+  const cardPressProps = (cardItem) => ({
+    role: 'button',
+    tabIndex: 0,
+    onKeyDown: (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+      }
+    },
+    onContextMenu: (event) => event.preventDefault(),
+    onClick: (event) => event.preventDefault(),
+    onPointerDown: (event) => onOpenDetails.startPress(event, cardItem),
+    onPointerMove: onOpenDetails.movePress,
+    onPointerUp: (event) => onOpenDetails.endPress(event, cardItem),
+    onPointerCancel: onOpenDetails.cancelPress,
+    onPointerLeave: onOpenDetails.cancelPress,
+  })
+
+  return (
+    <div className={`browse-ui ${isMobilePortrait ? 'space-y-3' : 'mx-auto max-w-3xl space-y-3'}`}>
+      <div className="px-1">
+        <h2 className="headline text-[1.7rem] leading-none text-slate-950 sm:text-[2rem]">
+          The Parking Lot
+        </h2>
+        <p className="mt-2 max-w-xl text-[13px] leading-6 text-slate-600">
+          Park unscheduled ideas here until they have a day.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {items.map((item) => {
+          const meta = typeMeta(item.category)
+          const CategoryIcon = CATEGORY_ICON_COMPONENTS[item.category] || CircleEllipsis
+          const locationSummary = itemLocationSummary(item)
+          const transitSummary = buildTransitSummary(item)
+          return (
+            <article
+              key={item.id}
+              className={`timeline-card ${meta.card} relative z-10 rounded-[1.55rem] transition hover:bg-white active:bg-white ${
+                isMobilePortrait ? 'ml-3 px-3.5 py-3' : 'ml-3 px-3.5 py-3.5 sm:px-5 sm:py-4'
+              }`}
+              {...cardPressProps(item)}
+            >
+              <span
+                className={`pointer-events-none absolute left-0 top-1/2 z-20 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white shadow-[0_8px_18px_rgba(15,23,42,0.10)] ${meta.tone}`}
+                aria-hidden="true"
+              >
+                <CategoryIcon className="h-3.5 w-3.5" />
+              </span>
+              <div className="relative z-10 min-w-0">
+                <div className={`flex items-start justify-between ${isMobilePortrait ? 'gap-2' : 'gap-3'}`}>
+                  <div className="min-w-0 flex-1">
+                    <h3 className={`${isMobilePortrait ? 'line-clamp-2 leading-5' : 'leading-6'} text-[0.98rem] font-bold tracking-[-0.02em] text-slate-950`}>
+                      {item.title}
+                    </h3>
+                    {locationSummary ? (
+                      <p className="mt-0.5 truncate text-[12px] text-slate-500 sm:mt-1">
+                        {locationSummary}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+                {item.address && item.address !== item.locationName ? (
+                  <p className="mt-0.5 truncate text-[11px] text-slate-400 sm:mt-1">{item.address}</p>
+                ) : null}
+                {transitSummary ? (
+                  <div className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                    <TrainFront className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{transitSummary}</span>
+                  </div>
+                ) : null}
+                {item.description ? (
+                  <p className={`line-clamp-2 text-[12px] text-slate-500 ${
+                    isMobilePortrait ? 'mt-1 leading-5' : 'mt-1.5 leading-5 sm:mt-2 sm:leading-6'
+                  }`}>
+                    {item.description}
+                  </p>
+                ) : null}
+                {isMonitoredCancellationItem(item) && item.cancellationDeadline ? (
+                  <div className="mt-2 rounded-[0.8rem] bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-600 sm:mt-3">
+                    <span className="font-semibold text-slate-800">{itemStatusLabel(item.status)}</span>
+                    <span className="block">
+                      Cancellation deadline: {formatBookingDateTime(item.cancellationDeadline)}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            </article>
+          )
+        })}
+      </div>
+      <AddStopComposer
+        activeDayId={activeDayId}
+        canEdit={canEdit}
+        dayMap={dayMap}
+        dayOptions={dayOptions}
+        defaultParkingLot
+        focusedDayId={focusedDayId}
+        firestoreReady={firestoreReady}
+        getFlightRecord={getFlightRecord}
+        isMobilePortrait={isMobilePortrait}
+        mapsReady={mapsReady}
+        onSaveNewItem={onSaveNewItem}
+      />
+    </div>
+  )
+}
+
+function CancellationDeadlinesScreen({
   bookingOptions,
   canEdit,
   isMobilePortrait,
   items,
-  onClose,
   onOpenDetails,
 }) {
   const monitoredItems = sortedCancellationEntries(items, bookingOptions)
@@ -3547,126 +4183,111 @@ function CancellationDeadlinesModal({
   const nextDeadline = monitoredItems.find((item) => item.cancellationDeadline)
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
-      onClick={onClose}
-    >
-      <div
-        onClick={(event) => event.stopPropagation()}
-        className={`glass-panel browse-ui w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
-          isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-4xl rounded-[1.65rem]'
-        }`}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Cancellation deadlines
-            </div>
-            <h3 className="mt-1 text-[1.45rem] font-bold tracking-[-0.025em] text-slate-900">
-              Cancellation tracker
-            </h3>
-            <p className="mt-1 max-w-xl text-[12px] leading-5 text-slate-600">
-              Deadlines are sorted by date. Review overdue and upcoming windows first.
-            </p>
-          </div>
-          <button type="button" onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
-            <X className="h-5 w-5" />
-          </button>
+    <div className={`browse-ui ${isMobilePortrait ? 'space-y-3' : 'mx-auto max-w-4xl space-y-4'}`}>
+      <div className="px-1">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+          Cancellation deadlines
         </div>
+        <h2 className="headline mt-2 text-[1.7rem] leading-none text-slate-950 sm:text-[2rem]">
+          Cancellation tracker
+        </h2>
+        <p className="mt-2 max-w-xl text-[13px] leading-6 text-slate-600">
+          Deadlines are sorted by date. Review overdue and upcoming windows first.
+        </p>
+      </div>
 
-        <div className="mt-4 grid grid-cols-3 gap-2">
-          <div className="rounded-[0.95rem] bg-white px-3 py-2.5">
-            <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-400">Urgent</div>
-            <div className={`mt-1 text-[1.25rem] font-bold leading-none ${urgentCount ? 'text-rose-700' : 'text-slate-900'}`}>
-              {urgentCount}
-            </div>
-          </div>
-          <div className="rounded-[0.95rem] bg-white px-3 py-2.5">
-            <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-400">Missing</div>
-            <div className="mt-1 text-[1.25rem] font-bold leading-none text-slate-900">
-              {missingDeadlineCount}
-            </div>
-          </div>
-          <div className="rounded-[0.95rem] bg-white px-3 py-2.5">
-            <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-400">Next</div>
-            <div className="mt-1 truncate text-[12px] font-bold leading-5 text-slate-900">
-              {nextDeadline ? formatBookingDateTime(nextDeadline.cancellationDeadline) : 'None'}
-            </div>
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-[0.95rem] bg-white px-3 py-2.5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+          <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-400">Urgent</div>
+          <div className={`mt-1 text-[1.25rem] font-bold leading-none ${urgentCount ? 'text-rose-700' : 'text-slate-900'}`}>
+            {urgentCount}
           </div>
         </div>
+        <div className="rounded-[0.95rem] bg-white px-3 py-2.5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+          <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-400">Missing</div>
+          <div className="mt-1 text-[1.25rem] font-bold leading-none text-slate-900">
+            {missingDeadlineCount}
+          </div>
+        </div>
+        <div className="rounded-[0.95rem] bg-white px-3 py-2.5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+          <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-400">Next</div>
+          <div className="mt-1 truncate text-[12px] font-bold leading-5 text-slate-900">
+            {nextDeadline ? formatBookingDateTime(nextDeadline.cancellationDeadline) : 'None'}
+          </div>
+        </div>
+      </div>
 
-        <div className="mt-4 space-y-2">
-          {monitoredItems.map((item) => {
-            const meta = cancellationUrgencyMeta(item)
-            const name = item.locationName || item.title
-            const editableItem = item.isBookingOption
-              ? items.find((candidate) => candidate.id === item.sourceItemId)
-              : item
-            return (
-              <div
-                key={item.id}
-                className={`relative overflow-hidden rounded-[1.05rem] border px-3.5 py-3 ${meta.card}`}
-              >
-                <div className={`absolute inset-y-0 left-0 w-1 ${meta.rail}`} />
-                <div className={`grid gap-3 ${isMobilePortrait ? '' : 'sm:grid-cols-[minmax(0,1.35fr)_10rem_11rem_auto] sm:items-center'}`}>
-                  <div className="min-w-0 pl-1">
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-slate-600">
-                        {item.category}
-                      </span>
-                      <span className="text-[11px] font-medium text-slate-500">{itemStatusLabel(item.status)}</span>
-                    </div>
-                    <div className="mt-1.5 truncate text-[14px] font-bold tracking-[-0.015em] text-slate-950">
-                      {name}
-                    </div>
+      <div className="space-y-2">
+        {monitoredItems.map((item) => {
+          const meta = cancellationUrgencyMeta(item)
+          const name = item.locationName || item.title
+          const editableItem = item.isBookingOption
+            ? items.find((candidate) => candidate.id === item.sourceItemId)
+            : item
+          return (
+            <div
+              key={item.id}
+              className={`relative overflow-hidden rounded-[1.05rem] border px-3.5 py-3 ${meta.card}`}
+            >
+              <div className={`absolute inset-y-0 left-0 w-1 ${meta.rail}`} />
+              <div className={`grid gap-3 ${isMobilePortrait ? '' : 'sm:grid-cols-[minmax(0,1.35fr)_10rem_11rem_auto] sm:items-center'}`}>
+                <div className="min-w-0 pl-1">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                      {item.category}
+                    </span>
+                    <span className="text-[11px] font-medium text-slate-500">{itemStatusLabel(item.status)}</span>
                   </div>
-
-                  <div className="pl-1 sm:pl-0">
-                    <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Booking</div>
-                    <div className="mt-1 text-[12px] font-semibold text-slate-700">
-                      {formatItemBookingDateTime(item)}
-                    </div>
-                  </div>
-
-                  <div className="pl-1 sm:pl-0">
-                    <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Cancel by</div>
-                    <div className={`mt-1 text-[13px] font-bold ${meta.deadline}`}>
-                      {item.cancellationDeadline
-                        ? formatBookingDateTime(item.cancellationDeadline)
-                        : 'No deadline added'}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 pl-1 sm:justify-end sm:pl-0">
-                    <div>
-                      <div className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${meta.badge}`}>
-                        {meta.label}
-                      </div>
-                      <div className="mt-1 text-[10px] font-medium text-slate-500 sm:text-right">{meta.note}</div>
-                    </div>
-                    {canEdit && editableItem ? (
-                      <button
-                        type="button"
-                        onClick={() => onOpenDetails(editableItem)}
-                        className="flex min-h-11 items-center rounded-full bg-white px-4 text-[11px] font-bold text-slate-700 shadow-[0_4px_12px_rgba(15,23,42,0.035)]"
-                      >
-                        Details
-                      </button>
-                    ) : null}
+                  <div className="mt-1.5 truncate text-[14px] font-bold tracking-[-0.015em] text-slate-950">
+                    {name}
                   </div>
                 </div>
-              </div>
-            )
-          })}
-          {!monitoredItems.length ? (
-            <div className="rounded-[1.15rem] bg-white px-4 py-7 text-center">
-              <div className="text-[14px] font-bold text-slate-900">No deadlines tracked</div>
-              <div className="mx-auto mt-1 max-w-xs text-[12px] leading-5 text-slate-500">
-                Add cancellation details to a hotel or restaurant booking to track it here.
+
+                <div className="pl-1 sm:pl-0">
+                  <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Booking</div>
+                  <div className="mt-1 text-[12px] font-semibold text-slate-700">
+                    {formatItemBookingDateTime(item)}
+                  </div>
+                </div>
+
+                <div className="pl-1 sm:pl-0">
+                  <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Cancel by</div>
+                  <div className={`mt-1 text-[13px] font-bold ${meta.deadline}`}>
+                    {item.cancellationDeadline
+                      ? formatBookingDateTime(item.cancellationDeadline)
+                      : 'No deadline added'}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pl-1 sm:justify-end sm:pl-0">
+                  <div>
+                    <div className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${meta.badge}`}>
+                      {meta.label}
+                    </div>
+                    <div className="mt-1 text-[10px] font-medium text-slate-500 sm:text-right">{meta.note}</div>
+                  </div>
+                  {canEdit && editableItem ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenDetails(editableItem)}
+                      className="flex min-h-11 items-center rounded-full bg-white px-4 text-[11px] font-bold text-slate-700 shadow-[0_4px_12px_rgba(15,23,42,0.035)]"
+                    >
+                      Details
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
-          ) : null}
-        </div>
+          )
+        })}
+        {!monitoredItems.length ? (
+          <div className="rounded-[1.15rem] bg-white px-4 py-7 text-center">
+            <div className="text-[14px] font-bold text-slate-900">No deadlines tracked</div>
+            <div className="mx-auto mt-1 max-w-xs text-[12px] leading-5 text-slate-500">
+              Add cancellation details to a hotel or restaurant booking to track it here.
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   )
@@ -3689,6 +4310,11 @@ function DetailModal({
 }) {
   const fieldReadOnly = !firestoreReady || !canEdit
   const linkedLocked = isGenerated
+  const isParkingLotItem = detailItem.date === PARKING_LOT_DATE
+  const selectedDayId =
+    detailItem.dayId && dayOptions.some((day) => day.id === detailItem.dayId)
+      ? detailItem.dayId
+      : dayOptions[0]?.id || ''
   const effectiveFlightCode = detailItem.flightCode || extractFlightNumber(detailItem.title || '')
   const mapsUrl = detailItem.category === 'Flight' ? '' : getGoogleMapsUrl(detailItem)
   const travelModeMeta = useMemo(() => {
@@ -3757,18 +4383,60 @@ function DetailModal({
 
         <div className={`mt-3.5 grid gap-3.5 ${isMobilePortrait ? '' : 'sm:grid-cols-2'}`}>
           <Field label="Day">
-            <select
-              value={detailItem.dayId}
-              onChange={(event) => onChange({ dayId: event.target.value })}
-              disabled={fieldReadOnly || linkedLocked}
-              className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
-            >
-              {dayOptions.map((day) => (
-                <option key={day.id} value={day.id}>
-                  {formatDayDate(day.date)}
-                </option>
-              ))}
-            </select>
+            <div className="grid grid-cols-[minmax(0,1fr)_5.75rem] gap-2">
+              <select
+                value={isParkingLotItem ? '' : selectedDayId}
+                onChange={(event) => onChange({ dayId: event.target.value, date: '' })}
+                disabled={fieldReadOnly || linkedLocked || isParkingLotItem}
+                className={`w-full rounded-[1.15rem] border px-4 py-3 text-sm ${
+                  isParkingLotItem
+                    ? 'cursor-not-allowed border-slate-200/80 bg-slate-100 text-slate-400'
+                    : 'border-slate-200/90 bg-white text-slate-900 disabled:bg-slate-100'
+                }`}
+              >
+                <option value="" aria-label="No day" />
+                {dayOptions.map((day) => (
+                  <option key={day.id} value={day.id}>
+                    {formatDayDate(day.date)}
+                  </option>
+                ))}
+              </select>
+              <label
+                className={`flex min-h-11 items-center justify-center gap-2 rounded-[1.15rem] border px-3 text-[12px] font-bold transition ${
+                  isParkingLotItem
+                    ? 'border-slate-900 bg-slate-900 text-white shadow-[0_8px_18px_rgba(15,23,42,0.12)]'
+                    : 'border-slate-200/90 bg-white text-slate-700 hover:border-slate-300'
+                } ${fieldReadOnly || linkedLocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isParkingLotItem}
+                  onChange={(event) =>
+                    onChange(
+                      event.target.checked
+                        ? { date: PARKING_LOT_DATE }
+                        : { dayId: selectedDayId, date: '' },
+                    )
+                  }
+                  disabled={fieldReadOnly || linkedLocked}
+                  className="sr-only"
+                />
+                <span
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[0.35rem] border transition ${
+                    isParkingLotItem ? 'border-white bg-white text-slate-900' : 'border-slate-300 bg-slate-50'
+                  }`}
+                  aria-hidden="true"
+                >
+                  {isParkingLotItem ? <Check className="h-3 w-3 stroke-[3]" /> : null}
+                </span>
+                TBD
+              </label>
+            </div>
+            {isParkingLotItem ? (
+              <p className="mt-2 text-[12px] leading-5 text-slate-500">
+                item will be moved to The Parking Lot.
+              </p>
+            ) : null}
           </Field>
           <CategoryControl
             value={detailItem.category}
@@ -3795,14 +4463,14 @@ function DetailModal({
             draft={detailItem}
             onChange={onChange}
             conflict={Boolean(scheduleConflict?.nextId === detailItem.id)}
-            showModeToggle={detailItem.category !== 'Flight'}
+            showModeToggle
           />
           <EndTimeModeField
             disabled={fieldReadOnly}
             draft={detailItem}
             onChange={onChange}
             conflict={Boolean(scheduleConflict?.currentId === detailItem.id)}
-            showModeToggle={detailItem.category === 'Flight'}
+            showModeToggle={false}
           />
         </div>
 
@@ -3964,6 +4632,7 @@ function PlannerPanel({
       : draft.dayId && dayOptions.some((day) => day.id === draft.dayId)
         ? draft.dayId
         : dayOptions[0]?.id || ''
+  const isDraftParkingLotItem = draft.date === PARKING_LOT_DATE
   const [isComposerOpen, setIsComposerOpen] = useState(false)
   const draftFlightCode = draft.flightCode || extractFlightNumber(draft.title || '')
   const draftDayDate = dayMap[effectiveDraftDayId]?.date || ''
@@ -3998,13 +4667,14 @@ function PlannerPanel({
   )
   const WeatherIcon = weatherDisplay?.icon
   const draftScheduleConflict = useMemo(() => {
+    if (isDraftParkingLotItem) return null
     if (!effectiveDraftDayId) return null
     const existingItems = dayMap[effectiveDraftDayId]?.items || []
     return getScheduleConflictMeta([
       ...existingItems,
       { ...draft, id: draftConflictId, dayId: effectiveDraftDayId },
     ])
-  }, [dayMap, draft, effectiveDraftDayId])
+  }, [dayMap, draft, effectiveDraftDayId, isDraftParkingLotItem])
 
   function getComposerDayId() {
     if (activeDayId !== DAY_VIEW_ALL && dayOptions.some((day) => day.id === activeDayId)) {
@@ -4717,7 +5387,9 @@ function PlannerPanel({
               <div>
                 <h3 className="headline text-[1.35rem] leading-none text-slate-950">Add stop</h3>
                 <p className="mt-1 text-[12px] leading-5 text-slate-500">
-                  {dayMap[effectiveDraftDayId]?.date
+                  {isDraftParkingLotItem
+                    ? 'Add a stop to The Parking Lot.'
+                    : dayMap[effectiveDraftDayId]?.date
                     ? `Add a stop to ${formatDayDate(dayMap[effectiveDraftDayId].date)}.`
                     : 'Add a stop to this trip.'}
                 </p>
@@ -4734,17 +5406,60 @@ function PlannerPanel({
 
             <div className={`mt-4 grid gap-3 ${isMobilePortrait ? '' : 'sm:grid-cols-2 sm:gap-3.5 sm:mt-5'}`}>
               <Field label="Day">
-                <select
-                  value={effectiveDraftDayId}
-                  onChange={(event) => setDraft((current) => ({ ...current, dayId: event.target.value }))}
-                  className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
-                >
-                  {dayOptions.map((day) => (
-                    <option key={day.id} value={day.id}>
-                      {formatDayDate(day.date)}
-                    </option>
-                  ))}
-                </select>
+                <div className="grid grid-cols-[minmax(0,1fr)_5.75rem] gap-2">
+                  <select
+                    value={isDraftParkingLotItem ? '' : effectiveDraftDayId}
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, dayId: event.target.value, date: '' }))
+                    }
+                    disabled={isDraftParkingLotItem}
+                    className={`w-full rounded-[1.15rem] border px-4 py-3 text-sm ${
+                      isDraftParkingLotItem
+                        ? 'cursor-not-allowed border-slate-200/80 bg-slate-100 text-slate-400'
+                        : 'border-slate-200/90 bg-white text-slate-900'
+                    }`}
+                  >
+                    <option value="" aria-label="No day" />
+                    {dayOptions.map((day) => (
+                      <option key={day.id} value={day.id}>
+                        {formatDayDate(day.date)}
+                      </option>
+                    ))}
+                  </select>
+                  <label
+                    className={`flex min-h-11 items-center justify-center gap-2 rounded-[1.15rem] border px-3 text-[12px] font-bold transition ${
+                      isDraftParkingLotItem
+                        ? 'border-slate-900 bg-slate-900 text-white shadow-[0_8px_18px_rgba(15,23,42,0.12)]'
+                        : 'border-slate-200/90 bg-white text-slate-700 hover:border-slate-300'
+                    } cursor-pointer`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isDraftParkingLotItem}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          date: event.target.checked ? PARKING_LOT_DATE : '',
+                        }))
+                      }
+                      className="sr-only"
+                    />
+                    <span
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[0.35rem] border transition ${
+                        isDraftParkingLotItem ? 'border-white bg-white text-slate-900' : 'border-slate-300 bg-slate-50'
+                      }`}
+                      aria-hidden="true"
+                    >
+                      {isDraftParkingLotItem ? <Check className="h-3 w-3 stroke-[3]" /> : null}
+                    </span>
+                    TBD
+                  </label>
+                </div>
+                {isDraftParkingLotItem ? (
+                  <p className="mt-2 text-[12px] leading-5 text-slate-500">
+                    item will be moved to The Parking Lot.
+                  </p>
+                ) : null}
               </Field>
               <CategoryControl
                 value={draft.category}
@@ -4798,25 +5513,15 @@ function PlannerPanel({
                 draft={draft}
                 onChange={(changes) => setDraft((current) => applyItemDraftPatch(current, changes))}
                 conflict={Boolean(draftScheduleConflict?.nextId === draftConflictId)}
-                showModeToggle={draft.category !== 'Flight'}
+                showModeToggle
               />
-              {draft.category === 'Flight' ? (
-                <TimeField
-                  label="End time"
-                  value={draft.endTime}
-                  onChange={() => {}}
-                  disabled
-                  conflict={Boolean(draftScheduleConflict?.currentId === draftConflictId)}
-                />
-              ) : (
-                <EndTimeModeField
-                  disabled={false}
-                  draft={draft}
-                  onChange={(changes) => setDraft((current) => applyItemDraftPatch(current, changes))}
-                  conflict={Boolean(draftScheduleConflict?.currentId === draftConflictId)}
-                  showModeToggle={false}
-                />
-              )}
+              <EndTimeModeField
+                disabled={draft.category === 'Flight'}
+                draft={draft}
+                onChange={(changes) => setDraft((current) => applyItemDraftPatch(current, changes))}
+                conflict={Boolean(draftScheduleConflict?.currentId === draftConflictId)}
+                showModeToggle={false}
+              />
             </div>
 
             {getEndTimeWarning(draft) ? (
@@ -4906,8 +5611,17 @@ function PlannerPanel({
   )
 }
 
-function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, mapsError, routeSegments }) {
+function MapPanel({
+  activeDayId,
+  fallbackLocationLabel,
+  filteredItems,
+  isMobilePortrait,
+  mapsReady,
+  mapsError,
+  routeSegments,
+}) {
   const mapItems = useMemo(() => buildMapItems(filteredItems), [filteredItems])
+  const hasMapItems = mapItems.some((item) => typeof item.lat === 'number' && typeof item.lng === 'number')
 
   return (
     <div className="browse-ui">
@@ -4916,7 +5630,11 @@ function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, map
           <div>
             <h2 className="headline text-[1.35rem] leading-none text-slate-950">Map</h2>
             <p className="mt-1 text-[13px] text-slate-500">
-              {activeDayId === DAY_VIEW_ALL ? 'Whole trip view' : 'Selected day route'}
+              {!hasMapItems && fallbackLocationLabel
+                ? `Starting map: ${fallbackLocationLabel}`
+                : activeDayId === DAY_VIEW_ALL
+                  ? 'Whole trip view'
+                  : 'Selected day route'}
             </p>
           </div>
         </div>
@@ -4934,7 +5652,11 @@ function MapPanel({ activeDayId, filteredItems, isMobilePortrait, mapsReady, map
                 </div>
               }
             >
-              <TripMap filteredItems={mapItems} routeSegments={routeSegments} />
+              <TripMap
+                fallbackLocationLabel={fallbackLocationLabel}
+                filteredItems={mapItems}
+                routeSegments={routeSegments}
+              />
             </Suspense>
           ) : (
             <div className="flex h-full items-center justify-center bg-slate-50 px-6 text-center text-sm font-medium text-slate-500">
@@ -4951,12 +5673,18 @@ const MemoMapPanel = memo(MapPanel)
 
 function AppDialog({ dialog, onCancel, onSubmit }) {
   const inputRef = useRef(null)
+  const tripNameRef = useRef(null)
+  const tripStartDateRef = useRef(null)
+  const tripEndDateRef = useRef(null)
+  const tripCityRef = useRef(null)
 
   if (!dialog) return null
 
   const isPrompt = dialog.type === 'prompt'
   const isChoice = dialog.type === 'choice'
+  const isTripSetup = dialog.type === 'tripSetup'
   const isDanger = dialog.tone === 'danger'
+  const defaultTripSetup = dialog.defaultValue || {}
 
   return (
     <div
@@ -4966,6 +5694,15 @@ function AppDialog({ dialog, onCancel, onSubmit }) {
       <form
         onSubmit={(event) => {
           event.preventDefault()
+          if (isTripSetup) {
+            onSubmit({
+              title: tripNameRef.current?.value.trim() || '',
+              startDate: tripStartDateRef.current?.value || '',
+              endDate: tripEndDateRef.current?.value || '',
+              city: normalizeTripCity(tripCityRef.current?.value || ''),
+            })
+            return
+          }
           onSubmit(isChoice ? null : isPrompt ? inputRef.current?.value.trim() || '' : true)
         }}
         onClick={(event) => event.stopPropagation()}
@@ -4977,7 +5714,13 @@ function AppDialog({ dialog, onCancel, onSubmit }) {
               isDanger ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-700'
             }`}
           >
-            {isDanger ? <Trash2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+            {isDanger ? (
+              <Trash2 className="h-4 w-4" />
+            ) : isTripSetup ? (
+              <CalendarDays className="h-4 w-4" />
+            ) : (
+              <AlertTriangle className="h-4 w-4" />
+            )}
           </div>
           <div className="min-w-0">
             <h2 className="text-[1.05rem] font-bold leading-6 tracking-[-0.02em] text-slate-950">
@@ -4997,6 +5740,49 @@ function AppDialog({ dialog, onCancel, onSubmit }) {
             defaultValue={dialog.defaultValue || ''}
             className="mt-4 w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm font-medium text-slate-900"
           />
+        ) : null}
+
+        {isTripSetup ? (
+          <div className="mt-4 space-y-3">
+            <Field label="Trip name">
+              <input
+                ref={tripNameRef}
+                autoFocus
+                required
+                defaultValue={defaultTripSetup.title || ''}
+                className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm font-medium text-slate-900"
+              />
+            </Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Start date">
+                <input
+                  ref={tripStartDateRef}
+                  type="date"
+                  required
+                  defaultValue={defaultTripSetup.startDate || localTodayIso()}
+                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm font-medium text-slate-900"
+                />
+              </Field>
+              <Field label="End date">
+                <input
+                  ref={tripEndDateRef}
+                  type="date"
+                  required
+                  defaultValue={defaultTripSetup.endDate || defaultTripSetup.startDate || localTodayIso()}
+                  className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm font-medium text-slate-900"
+                />
+              </Field>
+            </div>
+            <Field label="City">
+              <input
+                ref={tripCityRef}
+                required
+                defaultValue={defaultTripSetup.city || ''}
+                placeholder="Tokyo, Japan"
+                className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm font-medium text-slate-900"
+              />
+            </Field>
+          </div>
         ) : null}
 
         <div className="mt-5 flex items-center justify-end gap-2">
@@ -5074,6 +5860,7 @@ export default function App() {
   const [showDayManager, setShowDayManager] = useState(false)
   const [showCollaborators, setShowCollaborators] = useState(false)
   const [showDeadlines, setShowDeadlines] = useState(false)
+  const [showParkingLot, setShowParkingLot] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [showPdfExportOptions, setShowPdfExportOptions] = useState(false)
   const [pdfExporting, setPdfExporting] = useState(false)
@@ -5288,6 +6075,20 @@ export default function App() {
     [openAppDialog],
   )
 
+  const showTripSetup = useCallback(
+    (options = {}) =>
+      openAppDialog({
+        type: 'tripSetup',
+        title: options.title || 'Create trip',
+        message: options.message || 'Set the basic details for this itinerary.',
+        defaultValue: options.defaultValue || {},
+        confirmLabel: options.confirmLabel || 'Create trip',
+        cancelLabel: options.cancelLabel || 'Cancel',
+        tone: options.tone || 'default',
+      }),
+    [openAppDialog],
+  )
+
   const weatherTarget = useMemo(
     () => getWeatherTargetForDay(resolvedActiveDayId, tripState),
     [resolvedActiveDayId, tripState],
@@ -5322,6 +6123,7 @@ export default function App() {
   const detailFlightLookupKey = buildFlightLookupKey(detailFlightLookup?.flightNumber, detailFlightLookup?.date)
   const detailScheduleConflict = useMemo(() => {
     if (!detailItem?.dayId) return null
+    if (detailItem.date === PARKING_LOT_DATE) return null
     const existingItems = (tripState.dayMap[detailItem.dayId]?.items || []).filter(
       (item) => item.id !== detailItem.id,
     )
@@ -5612,6 +6414,7 @@ export default function App() {
                   title: invite.title || 'Shared trip',
                   startDate: invite.startDate || '',
                   endDate: invite.endDate || '',
+                  city: invite.city || '',
                   hidden: false,
                   isDemo: Boolean(invite.isDemo),
                   ownerId: invite.ownerId || '',
@@ -5713,6 +6516,7 @@ export default function App() {
           hidden: false,
           startDate: snapshot.startDate,
           endDate: snapshot.endDate,
+          city: buildDefaultTripSummary().city,
           ownerId: currentUser.uid,
           createdBy: currentUser.uid,
         }
@@ -5723,6 +6527,7 @@ export default function App() {
             title,
             startDate: snapshot.startDate,
             endDate: snapshot.endDate,
+            city: nextSummary.city,
             days: snapshot.days,
             items: snapshot.items,
             bookingOptions: snapshot.bookingOptions,
@@ -6246,10 +7051,24 @@ export default function App() {
   async function saveItem(item) {
     if (!canEditCurrentTrip) return
     const normalizedItem = normalizeItemForSave(stripFlightLocationFields(normalizeItemTimeFields(item)))
+    if (normalizedItem.date === PARKING_LOT_DATE) {
+      await saveTripPatch(resolvedTripId, {
+        items: {
+          [normalizedItem.id]: {
+            ...normalizedItem,
+            dayId: '',
+            date: PARKING_LOT_DATE,
+            travelModeToNext: '',
+          },
+        },
+      })
+      return
+    }
+
     const sameDayItems = (tripState.dayMap[item.dayId]?.items || []).filter((existing) => existing.id !== item.id)
     const manualItems = sameDayItems.filter((existing) => !existing.generated)
     const patchItems = Object.fromEntries(
-      mergeItemsForDay(manualItems, normalizedItem).map((entry) => [entry.id, entry]),
+      mergeItemsForDay(manualItems, { ...normalizedItem, date: '' }).map((entry) => [entry.id, entry]),
     )
     await saveTripPatch(resolvedTripId, { items: patchItems })
   }
@@ -6257,14 +7076,29 @@ export default function App() {
   async function createTrip() {
     const nextIndex = availableTrips.length + 1
     const suggestedTitle = `Trip ${nextIndex}`
-    const title = await showPrompt('Trip name', {
-      defaultValue: suggestedTitle,
-      confirmLabel: 'Create',
+    const today = localTodayIso()
+    const tripDraft = await showTripSetup({
+      defaultValue: {
+        title: suggestedTitle,
+        startDate: today,
+        endDate: today,
+        city: '',
+      },
     })
-    if (!title) return
+    if (!tripDraft) return
+
+    const title = tripDraft.title.trim()
+    const city = normalizeTripCity(tripDraft.city)
+    if (!title || !tripDraft.startDate || !tripDraft.endDate || !city) return
+    if (isoDateToUtcMs(tripDraft.endDate) < isoDateToUtcMs(tripDraft.startDate)) {
+      await showAlert('End date must be the same as or after the start date.', {
+        title: 'Check trip dates',
+      })
+      return
+    }
 
     const tripId = slugId('trip')
-    const snapshot = buildBlankTripSnapshot()
+    const snapshot = buildBlankTripSnapshot(tripDraft.startDate, tripDraft.endDate)
     const nextSummary = {
       id: tripId,
       title,
@@ -6272,6 +7106,7 @@ export default function App() {
       hidden: false,
       startDate: snapshot.startDate,
       endDate: snapshot.endDate,
+      city,
       ownerId: currentUser?.uid || '',
       createdBy: currentUser?.uid || '',
     }
@@ -6302,6 +7137,7 @@ export default function App() {
           title: nextSummary.title,
           startDate: nextSummary.startDate,
           endDate: nextSummary.endDate,
+          city: nextSummary.city,
           days: snapshot.days,
           items: snapshot.items,
           bookingOptions: snapshot.bookingOptions,
@@ -6345,6 +7181,7 @@ export default function App() {
           hidden: false,
           startDate: snapshot.startDate,
           endDate: snapshot.endDate,
+          city: activeTripSummary.city || '',
           ownerId: currentUser?.uid || '',
           createdBy: currentUser?.uid || '',
         },
@@ -6370,6 +7207,7 @@ export default function App() {
           title,
           startDate: snapshot.startDate,
           endDate: snapshot.endDate,
+          city: activeTripSummary.city || '',
           days: snapshot.days,
           items: snapshot.items,
           bookingOptions: snapshot.bookingOptions,
@@ -6389,6 +7227,7 @@ export default function App() {
                 hidden: false,
                 startDate: snapshot.startDate,
                 endDate: snapshot.endDate,
+                city: activeTripSummary.city || '',
                 ownerId: currentUser.uid,
                 createdBy: currentUser.uid,
               },
@@ -6425,6 +7264,7 @@ export default function App() {
       title: nextTitle,
       startDate: tripState.days[0]?.date || activeTripSummary.startDate || '',
       endDate: tripState.days[tripState.days.length - 1]?.date || activeTripSummary.endDate || '',
+      city: activeTripSummary.city || '',
     })
   }
 
@@ -6555,7 +7395,7 @@ export default function App() {
 
   async function deleteItem(itemId) {
     if (!canEditCurrentTrip) return false
-    const targetItem = tripState.items.find((item) => item.id === itemId)
+    const targetItem = [...tripState.items, ...(tripState.parkingLotItems || [])].find((item) => item.id === itemId)
     const confirmed = await showConfirm(
       `Delete ${targetItem?.title || 'this event'}? This stop will be removed from the itinerary.`,
       {
@@ -6749,6 +7589,7 @@ export default function App() {
         title: activeTripSummary.title,
         startDate: activeTripSummary.startDate,
         endDate: activeTripSummary.endDate,
+        city: activeTripSummary.city || '',
         hidden: false,
         ownerId: activeTripSummary.ownerId || currentUser.uid,
         createdBy: activeTripSummary.createdBy || currentUser.uid,
@@ -6773,6 +7614,7 @@ export default function App() {
         title: activeTripSummary.title,
         startDate: activeTripSummary.startDate,
         endDate: activeTripSummary.endDate,
+        city: activeTripSummary.city || '',
         hidden: false,
         isDemo: activeTripSummary.isDemo,
         ownerId: activeTripSummary.ownerId || currentUser.uid,
@@ -6811,6 +7653,7 @@ export default function App() {
         title: activeTripSummary.title,
         startDate: activeTripSummary.startDate,
         endDate: activeTripSummary.endDate,
+        city: activeTripSummary.city || '',
         hidden: false,
         ownerId: activeTripSummary.ownerId || currentUser?.uid || '',
         createdBy: activeTripSummary.createdBy || currentUser?.uid || '',
@@ -6980,13 +7823,26 @@ export default function App() {
         onExportOverview={handleOpenPdfExportOptions}
         onOpenDeadlines={() => {
           setShowMenu(false)
+          setShowParkingLot(false)
           setShowDeadlines(true)
+        }}
+        onOpenItinerary={() => {
+          setShowMenu(false)
+          setShowDeadlines(false)
+          setShowParkingLot(false)
+        }}
+        onOpenParkingLot={() => {
+          setShowMenu(false)
+          setShowDeadlines(false)
+          setShowParkingLot(true)
         }}
         onRenameTrip={() => void renameTrip()}
         onRestoreTrip={(tripId) => void restoreTrip(tripId)}
         onSelectTrip={(tripId) => {
           selectTrip(tripId)
           setShowMenu(false)
+          setShowDeadlines(false)
+          setShowParkingLot(false)
         }}
         onShare={() => {
           setShowMenu(false)
@@ -7002,6 +7858,7 @@ export default function App() {
         }}
         open={showMenu}
         pdfExporting={pdfExporting}
+        showingUtilityScreen={showDeadlines || showParkingLot}
         urgentDeadlineCount={urgentDeadlineCount}
       />
       <PdfExportSheet
@@ -7038,57 +7895,92 @@ export default function App() {
         </div>
       ) : null}
       {availableTrips.length ? (
-      <section
-        className={
-          isMobilePortrait
-            ? 'mx-auto max-w-[28rem] space-y-3'
-            : 'grid gap-7 lg:grid-cols-[minmax(0,1.06fr)_minmax(22rem,0.94fr)] xl:gap-8'
-        }
-      >
-        <div className={isMobilePortrait ? 'space-y-3' : 'space-y-4'}>
-          <PlannerPanel
-            activeDayId={resolvedActiveDayId}
-            bookingOptions={tripState.bookingOptions}
-            canEdit={canEditCurrentTrip}
-            dayOptions={dayOptions}
-            dayMap={tripState.dayMap}
-            dragState={dragState}
-            filteredItems={filteredItems}
-            focusedDayId={navFocusedDayId}
-            firestoreReady={firestoreReady}
-            getFlightRecord={getFlightRecord}
-            isMobilePortrait={isMobilePortrait}
-            mapsReady={googleMapsState.ready}
-            onDragStart={beginItemDrag}
-            onOpenDetails={{
-              startPress,
-              movePress,
-              endPress,
-              cancelPress: clearPressState,
-            }}
-            onPromoteSubstitute={(item) => promoteSubstituteItem(item)}
-            onSaveNewItem={saveItem}
-            onUpdateTravelMode={(itemId, mode) => void updateTravelMode(itemId, mode)}
-            routeSegmentMap={routeSegmentMap}
-            selectedWeather={selectedWeather}
-            weatherState={effectiveWeatherState}
-          />
-        </div>
+        showDeadlines ? (
+          <section className={isMobilePortrait ? 'mx-auto max-w-[28rem]' : ''}>
+            <CancellationDeadlinesScreen
+              bookingOptions={tripState.bookingOptions}
+              canEdit={canEditCurrentTrip}
+              isMobilePortrait={isMobilePortrait}
+              items={tripState.items}
+              onOpenDetails={openDetails}
+            />
+          </section>
+        ) : showParkingLot ? (
+          <section className={isMobilePortrait ? 'mx-auto max-w-[28rem]' : ''}>
+            <ParkingLotScreen
+              activeDayId={resolvedActiveDayId}
+              canEdit={canEditCurrentTrip}
+              dayMap={tripState.dayMap}
+              dayOptions={dayOptions}
+              firestoreReady={firestoreReady}
+              focusedDayId={navFocusedDayId}
+              getFlightRecord={getFlightRecord}
+              isMobilePortrait={isMobilePortrait}
+              items={tripState.parkingLotItems || []}
+              mapsReady={googleMapsState.ready}
+              onOpenDetails={{
+                startPress,
+                movePress,
+                endPress,
+                cancelPress: clearPressState,
+              }}
+              onSaveNewItem={saveItem}
+            />
+          </section>
+        ) : (
+          <section
+            className={
+              isMobilePortrait
+                ? 'mx-auto max-w-[28rem] space-y-3'
+                : 'grid gap-7 lg:grid-cols-[minmax(0,1.06fr)_minmax(22rem,0.94fr)] xl:gap-8'
+            }
+          >
+            <div className={isMobilePortrait ? 'space-y-3' : 'space-y-4'}>
+              <PlannerPanel
+                activeDayId={resolvedActiveDayId}
+                bookingOptions={tripState.bookingOptions}
+                canEdit={canEditCurrentTrip}
+                dayOptions={dayOptions}
+                dayMap={tripState.dayMap}
+                dragState={dragState}
+                filteredItems={filteredItems}
+                focusedDayId={navFocusedDayId}
+                firestoreReady={firestoreReady}
+                getFlightRecord={getFlightRecord}
+                isMobilePortrait={isMobilePortrait}
+                mapsReady={googleMapsState.ready}
+                onDragStart={beginItemDrag}
+                onOpenDetails={{
+                  startPress,
+                  movePress,
+                  endPress,
+                  cancelPress: clearPressState,
+                }}
+                onPromoteSubstitute={(item) => promoteSubstituteItem(item)}
+                onSaveNewItem={saveItem}
+                onUpdateTravelMode={(itemId, mode) => void updateTravelMode(itemId, mode)}
+                routeSegmentMap={routeSegmentMap}
+                selectedWeather={selectedWeather}
+                weatherState={effectiveWeatherState}
+              />
+            </div>
 
-        <div className="space-y-3 lg:sticky lg:top-6 lg:self-start">
-          <MemoMapPanel
-            activeDayId={resolvedActiveDayId}
-            filteredItems={deferredItems}
-            isMobilePortrait={isMobilePortrait}
-            mapsReady={googleMapsState.ready}
-            mapsError={googleMapsState.error}
-            routeSegments={routeSegments}
-          />
-        </div>
-      </section>
+            <div className="space-y-3 lg:sticky lg:top-6 lg:self-start">
+              <MemoMapPanel
+                activeDayId={resolvedActiveDayId}
+                fallbackLocationLabel={activeTripSummary?.city || ''}
+                filteredItems={deferredItems}
+                isMobilePortrait={isMobilePortrait}
+                mapsReady={googleMapsState.ready}
+                mapsError={googleMapsState.error}
+                routeSegments={routeSegments}
+              />
+            </div>
+          </section>
+        )
       ) : null}
 
-      {availableTrips.length ? (
+      {availableTrips.length && !showDeadlines && !showParkingLot ? (
         <BottomDayNav
           activeDayId={resolvedActiveDayId}
           canEdit={canEditCurrentTrip}
@@ -7098,6 +7990,8 @@ export default function App() {
           overbookingCountsByDay={overbookingCountsByDay}
           onDayChange={(dayId) => {
             startTransition(() => {
+              setShowDeadlines(false)
+              setShowParkingLot(false)
               setActiveDayId(dayId)
             })
           }}
@@ -7143,20 +8037,6 @@ export default function App() {
             const match = tripState.items.find((item) => item.id === noteItem.id) || noteItem
             setNoteItem(null)
             openDetails(match)
-          }}
-        />
-      ) : null}
-
-      {showDeadlines ? (
-        <CancellationDeadlinesModal
-          bookingOptions={tripState.bookingOptions}
-          canEdit={canEditCurrentTrip}
-          isMobilePortrait={isMobilePortrait}
-          items={tripState.items}
-          onClose={() => setShowDeadlines(false)}
-          onOpenDetails={(item) => {
-            setShowDeadlines(false)
-            openDetails(item)
           }}
         />
       ) : null}

@@ -1,5 +1,7 @@
 import React, { memo, useEffect, useRef, useState } from 'react'
 
+const DEFAULT_MAP_CENTER = { lat: 35.6074, lng: 140.1065 }
+
 function typeColor(category) {
   if (category === 'Flight') return '#38bdf8'
   if (category === 'Car') return '#64748b'
@@ -127,17 +129,22 @@ function routeColor(mode) {
   return '#334155'
 }
 
-function TripMap({ filteredItems, routeSegments }) {
+function TripMap({ fallbackLocationLabel = '', filteredItems, routeSegments }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const overlaysRef = useRef({ markers: [], polylines: [], infoWindow: null })
+  const fallbackRequestRef = useRef('')
   const [activeId, setActiveId] = useState('')
+  const [fallbackLocation, setFallbackLocation] = useState(null)
+  const fallbackLabel = fallbackLocationLabel.trim()
+  const fallbackCenter =
+    fallbackLocation?.label === fallbackLabel ? fallbackLocation.center : null
 
   useEffect(() => {
     if (!containerRef.current || !window.google?.maps || mapRef.current) return
 
     mapRef.current = new window.google.maps.Map(containerRef.current, {
-      center: { lat: 35.6074, lng: 140.1065 },
+      center: DEFAULT_MAP_CENTER,
       zoom: 9,
       disableDefaultUI: true,
       clickableIcons: false,
@@ -148,6 +155,32 @@ function TripMap({ filteredItems, routeSegments }) {
 
     overlaysRef.current.infoWindow = new window.google.maps.InfoWindow()
   }, [])
+
+  useEffect(() => {
+    if (!window.google?.maps || !fallbackLabel) {
+      fallbackRequestRef.current = ''
+      return undefined
+    }
+    if (fallbackRequestRef.current === fallbackLabel) return undefined
+
+    let active = true
+    fallbackRequestRef.current = fallbackLabel
+    const geocoder = new window.google.maps.Geocoder()
+
+    geocoder.geocode({ address: fallbackLabel }, (results, status) => {
+      if (!active || status !== 'OK') return
+      const location = results?.[0]?.geometry?.location
+      if (!location) return
+      setFallbackLocation({
+        label: fallbackLabel,
+        center: { lat: location.lat(), lng: location.lng() },
+      })
+    })
+
+    return () => {
+      active = false
+    }
+  }, [fallbackLabel])
 
   useEffect(() => {
     const map = mapRef.current
@@ -163,8 +196,8 @@ function TripMap({ filteredItems, routeSegments }) {
     )
 
     if (!points.length) {
-      map.setCenter({ lat: 35.6074, lng: 140.1065 })
-      map.setZoom(9)
+      map.setCenter(fallbackCenter || DEFAULT_MAP_CENTER)
+      map.setZoom(fallbackCenter ? 10 : 9)
       return
     }
 
@@ -213,7 +246,7 @@ function TripMap({ filteredItems, routeSegments }) {
     } else {
       map.fitBounds(bounds, 48)
     }
-  }, [filteredItems, routeSegments])
+  }, [fallbackCenter, filteredItems, routeSegments])
 
   useEffect(() => {
     const infoWindow = overlaysRef.current.infoWindow

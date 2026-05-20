@@ -1,6 +1,7 @@
 import { SEED_DAYS, SEED_ITEMS } from '../data/seedItinerary'
 
 export const DAY_VIEW_ALL = 'all'
+export const PARKING_LOT_DATE = 'TBD'
 
 export function slugId(prefix) {
   return `${prefix}-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`
@@ -272,9 +273,26 @@ export function deriveTripState(overrides) {
 
   const days = sortDays(Object.values(dayMap))
   const itemBuckets = Object.fromEntries(days.map((day) => [day.id, []]))
+  const parkingLotItems = sortItems(
+    Object.values(itemMap).filter(
+      (item) => !item.hidden && String(item.date || '').trim().toUpperCase() === PARKING_LOT_DATE,
+    ),
+  ).map((item) => ({
+    ...item,
+    dayId: '',
+    date: PARKING_LOT_DATE,
+    dayDate: PARKING_LOT_DATE,
+    dayLabel: PARKING_LOT_DATE,
+  }))
 
   Object.values(itemMap)
-    .filter((item) => !item.hidden && item.dayId && itemBuckets[item.dayId])
+    .filter(
+      (item) =>
+        !item.hidden &&
+        String(item.date || '').trim().toUpperCase() !== PARKING_LOT_DATE &&
+        item.dayId &&
+        itemBuckets[item.dayId],
+    )
     .forEach((item) => {
       itemBuckets[item.dayId].push(item)
     })
@@ -339,6 +357,7 @@ export function deriveTripState(overrides) {
   return {
     days: dayViews,
     items: allItems,
+    parkingLotItems,
     bookingOptions,
     dayMap: Object.fromEntries(dayViews.map((day) => [day.id, day])),
   }
