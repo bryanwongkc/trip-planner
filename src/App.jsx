@@ -36,6 +36,7 @@ import {
   Plus,
   Search,
   Share2,
+  Shuffle,
   Star,
   Sun,
   Trash2,
@@ -535,6 +536,10 @@ function buildTimelineEntries(items) {
     emittedStacks.add(stack.id)
     return [stack]
   })
+}
+
+function buildRouteTimelineItems(items) {
+  return buildTimelineEntries(items).map((entry) => entry.item)
 }
 
 function isMonitoredCancellationItem(item) {
@@ -3149,6 +3154,23 @@ function CollaboratorsModal({
     }
   }
 
+  async function handleShareInvite() {
+    if (!inviteLink) return
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: 'Trip invitation',
+          text: `Join this trip as ${roleLabel(inviteRole)}.`,
+          url: inviteLink,
+        })
+        return
+      }
+      await navigator.clipboard?.writeText(inviteLink)
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
@@ -3215,13 +3237,19 @@ function CollaboratorsModal({
                 <Field label="Link access">
                   <select
                     value={inviteRole}
-                    onChange={(event) => setInviteRole(event.target.value)}
+                    onChange={(event) => {
+                      setInviteRole(event.target.value)
+                      setInviteLink('')
+                    }}
                     className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
                   >
                     <option value="admin">Admin</option>
                     <option value="editor">Editor</option>
                     <option value="viewer">Read-only</option>
                   </select>
+                  <p className="mt-2 text-[12px] leading-5 text-slate-500">
+                    {roleAccessDescription(inviteRole)}
+                  </p>
                 </Field>
                 <button
                   type="button"
@@ -3241,6 +3269,13 @@ function CollaboratorsModal({
                     className="rounded-[0.8rem] bg-slate-100 px-3 py-2 text-[12px] font-semibold text-slate-700"
                   >
                     Copy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleShareInvite()}
+                    className="rounded-[0.8rem] bg-slate-900 px-3 py-2 text-[12px] font-semibold text-white"
+                  >
+                    Share
                   </button>
                 </div>
               ) : null}
@@ -3390,25 +3425,31 @@ function DayManagerModal({
                     type="button"
                     onClick={() => onMoveDay(day.id, -1)}
                     disabled={!firestoreReady || !canEdit || index === 0}
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 disabled:text-slate-300"
+                    aria-label={`Move ${buildDayLabel(day, index)} up`}
+                    className="flex h-11 w-11 shrink-0 flex-col items-center justify-center gap-0.5 rounded-2xl bg-slate-100 text-slate-700 disabled:text-slate-300"
                   >
                     <ArrowUp className="h-4 w-4" />
+                    <span className="text-[9px] font-bold leading-none">Up</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => onMoveDay(day.id, 1)}
                     disabled={!firestoreReady || !canEdit || index === days.length - 1}
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 disabled:text-slate-300"
+                    aria-label={`Move ${buildDayLabel(day, index)} down`}
+                    className="flex h-11 w-11 shrink-0 flex-col items-center justify-center gap-0.5 rounded-2xl bg-slate-100 text-slate-700 disabled:text-slate-300"
                   >
                     <ArrowDown className="h-4 w-4" />
+                    <span className="text-[9px] font-bold leading-none">Down</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => onDeleteDay(day.id)}
                     disabled={!firestoreReady || !canEdit}
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-50 text-rose-600 disabled:text-slate-300"
+                    aria-label={`Delete ${buildDayLabel(day, index)}`}
+                    className="flex h-11 w-11 shrink-0 flex-col items-center justify-center gap-0.5 rounded-2xl bg-rose-50 text-rose-600 disabled:text-slate-300"
                   >
                     <Trash2 className="h-4 w-4" />
+                    <span className="text-[9px] font-bold leading-none">Delete</span>
                   </button>
                 </div>
               </div>
@@ -3550,7 +3591,7 @@ function NoteModal({
               className="flex min-h-[4.25rem] flex-col items-center justify-center gap-1.5 rounded-[0.95rem] border border-slate-200/70 bg-white px-1.5 py-2 text-center text-[10px] font-semibold leading-3 tracking-[-0.01em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
               aria-label="Add substitute item"
             >
-              <Plus className="h-4 w-4" />
+              <Shuffle className="h-4 w-4" />
               <span>Substitute</span>
             </button>
             <button
@@ -3651,6 +3692,9 @@ function AddStopComposer({
     dayDate: draftDayDate,
   })
   const draftLookupKey = buildFlightLookupKey(draftFlightLookup?.flightNumber, draftFlightLookup?.date)
+  const canSaveDraft = draft.category === 'Flight'
+    ? Boolean(draftFlightCode.trim())
+    : Boolean((draft.title || '').trim())
   const draftScheduleConflict = useMemo(() => {
     if (isDraftParkingLotItem) return null
     if (!effectiveDraftDayId) return null
@@ -3757,7 +3801,7 @@ function AddStopComposer({
   ])
 
   async function saveNewItem() {
-    if (!firestoreReady || !effectiveDraftDayId || !canEdit) return
+    if (!firestoreReady || !effectiveDraftDayId || !canEdit || !canSaveDraft) return
 
     let nextDraft = normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields({
       ...draft,
@@ -4035,7 +4079,7 @@ function AddStopComposer({
             <button
               type="button"
               onClick={() => void saveNewItem()}
-              disabled={!firestoreReady || !effectiveDraftDayId}
+              disabled={!firestoreReady || !effectiveDraftDayId || !canSaveDraft}
               className="mt-5 w-full rounded-[1.1rem] bg-slate-900 px-4 py-4 text-sm font-bold text-white disabled:bg-slate-300"
             >
               Save new itinerary detail
@@ -4150,6 +4194,11 @@ function ParkingLotScreen({
             </article>
           )
         })}
+        {!items.length ? (
+          <div className="rounded-[1.2rem] bg-white/85 px-4 py-8 text-center shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+            <div className="text-[14px] font-bold text-slate-900">No items yet</div>
+          </div>
+        ) : null}
       </div>
       <AddStopComposer
         activeDayId={activeDayId}
@@ -4318,7 +4367,6 @@ function DetailModal({
       ? detailItem.dayId
       : dayOptions[0]?.id || ''
   const effectiveFlightCode = detailItem.flightCode || extractFlightNumber(detailItem.title || '')
-  const mapsUrl = detailItem.category === 'Flight' ? '' : getGoogleMapsUrl(detailItem)
   const travelModeMeta = useMemo(() => {
     if (detailItem.travelModeToNext === 'driving') {
       return { label: 'Car to next stop', icon: CarFront }
@@ -4340,7 +4388,7 @@ function DetailModal({
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        className={`glass-panel w-full max-w-[calc(100vw-1.5rem)] max-h-[78svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+        className={`glass-panel w-full max-w-[calc(100vw-1.5rem)] max-h-[78svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 pb-0 sm:max-h-[calc(100svh-4rem)] sm:p-5 sm:pb-0 ${
           isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-xl rounded-[1.7rem]'
         }`}
       >
@@ -4544,19 +4592,7 @@ function DetailModal({
           </Field>
         </div>
 
-        {mapsUrl ? (
-          <a
-            href={mapsUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-3.5 flex items-center justify-between rounded-[1rem] bg-slate-900 px-4 py-3.5 text-sm font-bold text-white"
-          >
-            Open in Google Maps
-            <ExternalLink className="h-4 w-4" />
-          </a>
-        ) : null}
-
-        <div className="mt-4 flex items-center justify-end gap-2">
+        <div className="sticky bottom-0 -mx-4 mt-4 flex items-center justify-end gap-2 border-t border-white/70 bg-white/90 p-4 backdrop-blur sm:-mx-5 sm:p-5">
           <button
             type="button"
             onClick={onClose}
@@ -4645,6 +4681,9 @@ function PlannerPanel({
     dayDate: draftDayDate,
   })
   const draftLookupKey = buildFlightLookupKey(draftFlightLookup?.flightNumber, draftFlightLookup?.date)
+  const canSaveDraft = draft.category === 'Flight'
+    ? Boolean(draftFlightCode.trim())
+    : Boolean((draft.title || '').trim())
   const manualOrderLookup = useMemo(() => {
     const lookup = {}
     const counts = {}
@@ -4768,7 +4807,7 @@ function PlannerPanel({
   ])
 
   async function saveNewItem() {
-    if (!firestoreReady || !effectiveDraftDayId || !canEdit) return
+    if (!firestoreReady || !effectiveDraftDayId || !canEdit || !canSaveDraft) return
 
     let nextDraft = normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields({
       ...draft,
@@ -5601,7 +5640,7 @@ function PlannerPanel({
             <button
               type="button"
               onClick={() => void saveNewItem()}
-              disabled={!firestoreReady || !effectiveDraftDayId}
+              disabled={!firestoreReady || !effectiveDraftDayId || !canSaveDraft}
               className="mt-5 w-full rounded-[1.1rem] bg-slate-900 px-4 py-4 text-sm font-bold text-white disabled:bg-slate-300"
             >
               Save new itinerary detail
@@ -6792,7 +6831,8 @@ export default function App() {
     }
   }, [activeRole, authReady, isGuestMode, resolvedTripId])
 
-  const routePairs = useMemo(() => makeMovementPairs(deferredItems), [deferredItems])
+  const routeItems = useMemo(() => buildRouteTimelineItems(deferredItems), [deferredItems])
+  const routePairs = useMemo(() => makeMovementPairs(routeItems), [routeItems])
 
   function selectTrip(tripId) {
     setOverrides({ days: {}, items: {}, bookingOptions: {} })
