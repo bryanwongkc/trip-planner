@@ -297,7 +297,7 @@ body::before {
 }
 
 .bottom-day-nav button[aria-label='Trip overview'].bg-slate-900 {
-  background: #4b5563 !important;
+  background: #697281 !important;
   color: #ffffff !important;
   box-shadow: none !important;
 }
@@ -328,10 +328,17 @@ body::before {
 }
 
 .app-main button:not(:disabled).bg-slate-900,
-.app-main button:not(:disabled).bg-slate-950,
-.bottom-day-nav button:not(:disabled).bg-slate-900,
-.bottom-day-nav button:not(:disabled).bg-slate-950 {
+.app-main button:not(:disabled).bg-slate-950 {
   background-color: var(--app-primary) !important;
+}
+
+.app-main button.floating-add-button.bg-slate-950:not(:disabled) {
+  background-color: #6f7682 !important;
+  color: #ffffff !important;
+}
+
+.app-main button.floating-add-button.bg-slate-950:not(:disabled):hover {
+  background-color: #626b78 !important;
 }
 
 .premium-backdrop {

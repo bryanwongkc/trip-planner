@@ -3883,7 +3883,7 @@ function AddStopComposer({
         <button
           type="button"
           onClick={openAddComposer}
-          className="fixed bottom-[6.2rem] right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full border border-white/70 bg-slate-950 text-white shadow-[0_18px_42px_rgba(15,23,42,0.22)] transition hover:bg-slate-800 active:scale-95 sm:bottom-8 sm:right-8"
+          className="floating-add-button fixed bottom-[6.2rem] right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full border border-white/70 bg-slate-950 text-white shadow-[0_18px_42px_rgba(15,23,42,0.22)] transition hover:bg-slate-800 active:scale-95 sm:bottom-8 sm:right-8"
           aria-label="Add stop"
         >
           <Plus className="h-6 w-6" />
@@ -5444,7 +5444,7 @@ function PlannerPanel({
         <button
           type="button"
           onClick={openAddComposer}
-          className="fixed bottom-[6.2rem] right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full border border-white/70 bg-slate-950 text-white shadow-[0_18px_42px_rgba(15,23,42,0.22)] transition hover:bg-slate-800 active:scale-95 sm:bottom-8 sm:right-8"
+          className="floating-add-button fixed bottom-[6.2rem] right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full border border-white/70 bg-slate-950 text-white shadow-[0_18px_42px_rgba(15,23,42,0.22)] transition hover:bg-slate-800 active:scale-95 sm:bottom-8 sm:right-8"
           aria-label="Add stop"
         >
           <Plus className="h-6 w-6" />
