@@ -460,6 +460,10 @@ body::before {
 input,
 select,
 textarea {
+  box-sizing: border-box;
+  display: block;
+  max-width: 100%;
+  min-width: 0;
   border-color: rgba(100, 116, 139, 0.18) !important;
   border-radius: 0.72rem !important;
   background-color: var(--app-surface-strong);
@@ -468,7 +472,20 @@ textarea {
   transition:
     border-color 140ms ease,
     box-shadow 140ms ease,
-    background-color 140ms ease;
+  background-color 140ms ease;
+}
+
+input[type='date'] {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+@supports (-webkit-touch-callout: none) {
+  input[type='date'] {
+    -webkit-appearance: none;
+    appearance: none;
+  }
 }
 
 input,
