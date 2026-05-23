@@ -2,8 +2,17 @@
 @import 'tailwindcss';
 
 :root {
-  color: #111111;
-  background: #f7f8fa;
+  --app-bg: #f3eee5;
+  --app-ink: #111827;
+  --app-muted: #647084;
+  --app-line: rgba(31, 41, 55, 0.12);
+  --app-line-warm: rgba(176, 138, 87, 0.22);
+  --app-surface: rgba(255, 252, 246, 0.96);
+  --app-surface-strong: #fffefa;
+  --app-accent: #c2a06b;
+  --app-primary: #111827;
+  color: var(--app-ink);
+  background: var(--app-bg);
   font-family: 'Manrope', 'Segoe UI Variable Text', sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -24,6 +33,7 @@ html {
 body {
   margin: 0;
   min-width: 320px;
+  background: var(--app-bg);
   overflow-x: clip;
   overscroll-behavior-x: none;
   touch-action: manipulation;
@@ -37,8 +47,10 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(247, 248, 250, 0));
-  opacity: 0.78;
+  background:
+    radial-gradient(circle at 16% 2%, rgba(176, 138, 87, 0.13), transparent 28rem),
+    linear-gradient(180deg, rgba(255, 252, 246, 0.88), rgba(243, 238, 229, 0));
+  opacity: 0.92;
 }
 
 #root {
@@ -50,17 +62,19 @@ body::before {
 }
 
 .glass-panel {
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid rgba(229, 231, 235, 0.78);
+  background: var(--app-surface);
+  border: 1px solid var(--app-line-warm);
+  border-radius: 0.95rem;
   box-shadow:
-    0 18px 42px rgba(17, 24, 39, 0.06),
+    0 1px 0 rgba(15, 23, 42, 0.035),
+    0 14px 32px rgba(15, 23, 42, 0.055),
     inset 0 1px 0 rgba(255, 255, 255, 0.78);
 }
 
 @supports (backdrop-filter: blur(12px)) {
   .glass-panel {
-    background: rgba(255, 255, 255, 0.94);
-    backdrop-filter: blur(6px);
+    background: rgba(255, 252, 246, 0.88);
+    backdrop-filter: blur(16px) saturate(1.08);
   }
 }
 
@@ -81,48 +95,66 @@ body::before {
 }
 
 .timeline-card {
-  background: #ffffff;
-  border: 1px solid rgba(229, 231, 235, 0.84);
-  border-radius: 1.6rem;
+  background: var(--app-surface);
+  border: 1px solid var(--app-line-warm);
+  border-left: 3px solid rgba(100, 116, 139, 0.18);
+  border-radius: 1rem;
   box-shadow:
-    0 18px 40px rgba(17, 24, 39, 0.075),
-    0 4px 12px rgba(17, 24, 39, 0.035),
+    0 1px 0 rgba(15, 23, 42, 0.04),
+    0 14px 32px rgba(15, 23, 42, 0.055),
     inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms ease,
+    border-color 220ms ease,
+    background-color 220ms ease;
 }
 
 .timeline-card--hotel {
-  background: #ffffff;
-  border-color: rgba(229, 231, 235, 0.9);
+  background: var(--app-surface);
+  border-color: var(--app-line-warm);
 }
 
 .timeline-card--restaurant {
-  background: #ffffff;
-  border-color: rgba(229, 231, 235, 0.9);
+  background: var(--app-surface);
+  border-color: var(--app-line-warm);
 }
 
 .timeline-card--activity {
-  background: #ffffff;
-  border-color: rgba(229, 231, 235, 0.9);
+  background: var(--app-surface);
+  border-color: var(--app-line-warm);
 }
 
 .timeline-card--flight {
-  background: #ffffff;
-  border-color: rgba(229, 231, 235, 0.9);
+  background: var(--app-surface);
+  border-color: var(--app-line-warm);
 }
 
 .timeline-card--transport {
-  background: #ffffff;
-  border-color: rgba(229, 231, 235, 0.9);
+  background: var(--app-surface);
+  border-color: var(--app-line-warm);
 }
 
 .timeline-card--event {
-  background: #ffffff;
-  border-color: rgba(229, 231, 235, 0.9);
+  background: var(--app-surface);
+  border-color: var(--app-line-warm);
 }
 
 .timeline-card--other {
-  background: #ffffff;
-  border-color: rgba(229, 231, 235, 0.9);
+  background: var(--app-surface);
+  border-color: var(--app-line-warm);
+}
+
+.timeline-card h3,
+.timeline-card h4 {
+  letter-spacing: -0.012em;
+}
+
+.timeline-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 18px 36px rgba(15, 23, 42, 0.075),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
 }
 
 .timeline-rail {
@@ -137,9 +169,16 @@ body::before {
   left: 50%;
   top: -0.5rem;
   bottom: -0.5rem;
-  width: 1px;
+  width: 5px;
+  border-radius: 999px;
   transform: translateX(-50%);
-  background: rgba(100, 116, 139, 0.36);
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(100, 116, 139, 0.13) 0,
+    rgba(100, 116, 139, 0.13) 1px,
+    transparent 1px,
+    transparent 3px
+  );
 }
 
 .timeline-rail--stop::before {
@@ -163,7 +202,8 @@ body::before {
   justify-content: center;
   border-radius: 9999px;
   border: 2px solid rgba(255, 255, 255, 0.92);
-  box-shadow: 0 0 0 3px #f7f8fa;
+  box-shadow: 0 0 0 3px var(--app-bg);
+  filter: saturate(0.7);
   transform: translateX(-50%);
   font-size: 0.62rem;
   font-weight: 800;
@@ -180,7 +220,7 @@ body::before {
   height: 0.58rem;
   border-radius: 9999px;
   background: rgba(100, 116, 139, 0.58);
-  box-shadow: 0 0 0 3px #f7f8fa;
+  box-shadow: 0 0 0 3px var(--app-bg);
   transform: translate(-50%, -50%);
 }
 
@@ -223,6 +263,142 @@ body::before {
 
 .app-main {
   padding-top: max(3.5rem, calc(env(safe-area-inset-top) + 3.25rem));
+}
+
+.bottom-day-nav {
+  border-color: rgba(255, 255, 255, 0.78) !important;
+  background: rgba(255, 252, 246, 0.74) !important;
+  box-shadow:
+    0 -18px 42px rgba(15, 23, 42, 0.11),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78) !important;
+  backdrop-filter: blur(22px) saturate(1.15);
+}
+
+.bottom-day-nav button {
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms ease,
+    border-color 220ms ease,
+    background-color 220ms ease;
+}
+
+.bottom-day-nav button[aria-current='true'] {
+  background: #e7d8bd !important;
+  color: var(--app-primary) !important;
+  box-shadow: none !important;
+}
+
+.bottom-day-nav button[aria-current='true'] span {
+  color: var(--app-primary) !important;
+}
+
+.bottom-day-nav button[aria-current='true'] span + span {
+  color: #647084 !important;
+}
+
+.bottom-day-nav button[aria-label='Trip overview'].bg-slate-900 {
+  background: #4b5563 !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.bottom-day-nav button[aria-label='Trip overview'].bg-slate-900 span {
+  color: #ffffff !important;
+}
+
+.bottom-day-nav button[aria-label='Trip overview'].bg-slate-900 span + span {
+  color: rgba(255, 255, 255, 0.82) !important;
+}
+
+.note-action-menu > * {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  background: var(--app-surface-strong) !important;
+  color: var(--app-ink) !important;
+  box-shadow: none !important;
+}
+
+.note-action-menu > *:hover {
+  background: #f8fafc !important;
+}
+
+.note-action-menu [aria-label='Edit details'] {
+  border-color: var(--app-primary) !important;
+  background: var(--app-primary) !important;
+  color: #ffffff !important;
+}
+
+.app-main button:not(:disabled).bg-slate-900,
+.app-main button:not(:disabled).bg-slate-950,
+.bottom-day-nav button:not(:disabled).bg-slate-900,
+.bottom-day-nav button:not(:disabled).bg-slate-950 {
+  background-color: var(--app-primary) !important;
+}
+
+.premium-backdrop {
+  background: rgba(17, 24, 39, 0.34) !important;
+  backdrop-filter: blur(4px) saturate(0.95);
+}
+
+.premium-modal,
+.app-drawer {
+  background: rgba(255, 252, 246, 0.94) !important;
+  border-color: rgba(255, 255, 255, 0.78) !important;
+  box-shadow:
+    0 24px 70px rgba(15, 23, 42, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82) !important;
+  backdrop-filter: blur(18px) saturate(1.08);
+}
+
+.app-drawer {
+  border-right-color: var(--app-line-warm) !important;
+}
+
+.premium-modal .bg-white,
+.premium-modal .bg-white\/90,
+.premium-modal .bg-slate-50,
+.premium-modal .bg-slate-50\/85,
+.premium-modal .bg-slate-50\/90,
+.premium-modal .bg-slate-100,
+.premium-modal .bg-slate-100\/90,
+.app-drawer .bg-white,
+.app-drawer .bg-white\/90,
+.app-drawer .bg-slate-50,
+.app-drawer .bg-slate-100 {
+  background-color: rgba(255, 254, 250, 0.82) !important;
+}
+
+.premium-modal .border-slate-200,
+.premium-modal .border-slate-200\/70,
+.premium-modal .border-slate-200\/80,
+.premium-modal .border-slate-200\/90,
+.app-drawer .border-slate-200\/70,
+.app-drawer .border-slate-200\/80,
+.app-drawer .border-slate-200\/90 {
+  border-color: var(--app-line) !important;
+}
+
+.premium-modal button,
+.app-drawer button,
+.floating-menu-button {
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.premium-modal button:not(:disabled):active,
+.app-drawer button:not(:disabled):active,
+.floating-menu-button:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+.premium-modal h2,
+.premium-modal h3,
+.app-drawer .font-semibold,
+.app-drawer .font-bold {
+  letter-spacing: -0.012em;
 }
 
 .floating-menu-button {
@@ -284,8 +460,10 @@ body::before {
 input,
 select,
 textarea {
-  background-color: rgba(255, 255, 255, 0.96);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  border-color: rgba(100, 116, 139, 0.18) !important;
+  border-radius: 0.72rem !important;
+  background-color: var(--app-surface-strong);
+  box-shadow: none;
   letter-spacing: -0.01em;
   transition:
     border-color 140ms ease,
@@ -329,8 +507,14 @@ input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: rgba(15, 23, 42, 0.42) !important;
-  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.075);
+  border-color: rgba(194, 160, 107, 0.68) !important;
+  box-shadow: 0 0 0 3px rgba(194, 160, 107, 0.16);
+}
+
+label > span,
+.text-\[10px\].uppercase {
+  letter-spacing: 0.16em;
+  color: rgba(71, 85, 105, 0.82);
 }
 
 @media (max-width: 640px) {
@@ -340,13 +524,15 @@ textarea:focus {
 
   .glass-panel {
     box-shadow:
-      0 10px 24px rgba(31, 41, 55, 0.042),
+      0 1px 0 rgba(15, 23, 42, 0.035),
+      0 12px 28px rgba(31, 41, 55, 0.052),
       inset 0 1px 0 rgba(255, 255, 255, 0.78);
   }
 
   .timeline-card {
     box-shadow:
-      0 6px 16px rgba(27, 39, 48, 0.024),
+      0 1px 0 rgba(15, 23, 42, 0.04),
+      0 12px 28px rgba(27, 39, 48, 0.048),
       inset 0 1px 0 rgba(255, 255, 255, 0.78);
   }
 }
@@ -374,12 +560,12 @@ textarea:focus {
     width: 1.25rem;
     height: 1.25rem;
     font-size: 0.58rem;
-    box-shadow: 0 0 0 2px #f7f8fa;
+    box-shadow: 0 0 0 2px var(--app-bg);
   }
 
   .timeline-route-dot {
     width: 0.5rem;
     height: 0.5rem;
-    box-shadow: 0 0 0 2px #f7f8fa;
+    box-shadow: 0 0 0 2px var(--app-bg);
   }
 }

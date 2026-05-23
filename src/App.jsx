@@ -2717,13 +2717,13 @@ function AppDrawer({
     <>
       <div
         onClick={open ? onClose : undefined}
-        className={`fixed inset-0 z-40 bg-slate-950/30 backdrop-blur-[2px] transition-opacity ${
+        className={`premium-backdrop fixed inset-0 z-40 bg-slate-950/30 backdrop-blur-[2px] transition-opacity ${
           open ? 'opacity-100' : 'pointer-events-none opacity-0'
         }`}
         aria-hidden="true"
       />
       <aside
-        className={`fixed bottom-0 left-0 top-0 z-50 flex w-[min(22rem,calc(100vw-1.4rem))] flex-col border-r border-white/70 bg-white/96 px-3.5 py-4 shadow-[18px_0_42px_rgba(15,23,42,0.11)] transition-transform duration-200 ${
+        className={`app-drawer fixed bottom-0 left-0 top-0 z-50 flex w-[min(22rem,calc(100vw-1.4rem))] flex-col border-r border-white/70 bg-white/96 px-3.5 py-4 shadow-[18px_0_42px_rgba(15,23,42,0.11)] transition-transform duration-200 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -2859,11 +2859,11 @@ function PdfExportSheet({ loading, onClose, onDownload, onShare, open }) {
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
+      className="premium-backdrop fixed inset-0 z-[70] flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[min(24rem,calc(100vw-1.5rem))] overflow-x-hidden rounded-[1.45rem] border border-white/70 bg-white/96 p-4 shadow-[0_24px_70px_rgba(15,23,42,0.18)]"
+        className="premium-modal w-full max-w-[min(24rem,calc(100vw-1.5rem))] overflow-x-hidden rounded-[1.45rem] border border-white/70 bg-white/96 p-4 shadow-[0_24px_70px_rgba(15,23,42,0.18)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
@@ -3055,10 +3055,10 @@ function BottomDayNav({
 
   const nav = (
     <div
-      className="fixed inset-x-0 z-30 px-2.5 pb-[max(0.65rem,env(safe-area-inset-bottom))] sm:px-4"
+      className="bottom-day-nav-shell fixed inset-x-0 z-30 px-2.5 pb-[max(0.65rem,env(safe-area-inset-bottom))] sm:px-4"
       style={{ bottom: bottomOffset }}
     >
-      <div className="mx-auto flex max-w-5xl items-center gap-1 rounded-[1.05rem] border border-white/80 bg-white/95 p-1.5 shadow-[0_-10px_24px_rgba(15,23,42,0.075)]">
+      <div className="bottom-day-nav mx-auto flex max-w-5xl items-center gap-1 rounded-[1.05rem] border border-white/80 bg-white/95 p-1.5 shadow-[0_-10px_24px_rgba(15,23,42,0.075)]">
         <button
           type="button"
           onClick={() => onDayChange(DAY_VIEW_ALL)}
@@ -3214,12 +3214,12 @@ function CollaboratorsModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
+      className="premium-backdrop fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        className={`glass-panel w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+        className={`premium-modal glass-panel w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
           isMobilePortrait ? 'rounded-[1.5rem] sm:max-w-md' : 'max-w-2xl rounded-[1.8rem]'
         }`}
       >
@@ -3410,12 +3410,12 @@ function DayManagerModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
+      className="premium-backdrop fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        className={`glass-panel w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+        className={`premium-modal glass-panel w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
           isMobilePortrait ? 'rounded-[1.55rem] sm:max-w-md' : 'max-w-3xl rounded-[1.8rem]'
         }`}
       >
@@ -3546,12 +3546,12 @@ function NoteModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
+      className="premium-backdrop fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        className={`glass-panel browse-ui w-full max-w-[calc(100vw-1.5rem)] max-h-[78svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+        className={`premium-modal glass-panel browse-ui w-full max-w-[calc(100vw-1.5rem)] max-h-[78svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
           isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-lg rounded-[1.65rem]'
         }`}
       >
@@ -3621,7 +3621,7 @@ function NoteModal({
         </div>
 
         <div className="mt-4">
-          <div className="grid grid-cols-4 gap-2">
+          <div className="note-action-menu grid grid-cols-4 gap-2">
             <button
               type="button"
               onClick={() => void onAddSubstitute()}
@@ -3892,12 +3892,12 @@ function AddStopComposer({
 
       {isComposerOpen && canEdit ? (
         <div
-          className="fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
+          className="premium-backdrop fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
           onClick={closeAddComposer}
         >
           <div
             onClick={(event) => event.stopPropagation()}
-            className={`glass-panel browse-ui w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 shadow-[0_24px_70px_rgba(15,23,42,0.18)] sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+            className={`premium-modal glass-panel browse-ui w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 shadow-[0_24px_70px_rgba(15,23,42,0.18)] sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
               isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-xl rounded-[1.7rem]'
             }`}
           >
@@ -4421,12 +4421,12 @@ function DetailModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
+      className="premium-backdrop fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        className={`glass-panel w-full max-w-[calc(100vw-1.5rem)] max-h-[78svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 pb-0 sm:max-h-[calc(100svh-4rem)] sm:p-5 sm:pb-0 ${
+        className={`premium-modal glass-panel w-full max-w-[calc(100vw-1.5rem)] max-h-[78svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 pb-0 sm:max-h-[calc(100svh-4rem)] sm:p-5 sm:pb-0 ${
           isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-xl rounded-[1.7rem]'
         }`}
       >
@@ -5453,12 +5453,12 @@ function PlannerPanel({
 
       {isComposerOpen && canEdit ? (
         <div
-          className="fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
+          className="premium-backdrop fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
           onClick={closeAddComposer}
         >
           <div
             onClick={(event) => event.stopPropagation()}
-            className={`glass-panel browse-ui w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 shadow-[0_24px_70px_rgba(15,23,42,0.18)] sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
+            className={`premium-modal glass-panel browse-ui w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 shadow-[0_24px_70px_rgba(15,23,42,0.18)] sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
               isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-xl rounded-[1.7rem]'
             }`}
           >
@@ -5767,7 +5767,7 @@ function AppDialog({ dialog, onCancel, onSubmit }) {
 
   return (
     <div
-      className="fixed inset-0 z-[90] flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 backdrop-blur-[2px] sm:items-center sm:justify-center sm:p-4"
+      className="premium-backdrop fixed inset-0 z-[90] flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 backdrop-blur-[2px] sm:items-center sm:justify-center sm:p-4"
       onClick={onCancel}
     >
       <form
@@ -5785,7 +5785,7 @@ function AppDialog({ dialog, onCancel, onSubmit }) {
           onSubmit(isChoice ? null : isPrompt ? inputRef.current?.value.trim() || '' : true)
         }}
         onClick={(event) => event.stopPropagation()}
-        className="glass-panel w-full max-w-[min(28rem,calc(100vw-1.5rem))] overflow-x-hidden rounded-[1.35rem] border border-white/70 p-4 shadow-[0_22px_60px_rgba(15,23,42,0.18)] sm:rounded-[1.55rem] sm:p-5"
+        className="premium-modal glass-panel w-full max-w-[min(28rem,calc(100vw-1.5rem))] overflow-x-hidden rounded-[1.35rem] border border-white/70 p-4 shadow-[0_22px_60px_rgba(15,23,42,0.18)] sm:rounded-[1.55rem] sm:p-5"
       >
         <div className="flex items-start gap-3">
           <div
