@@ -10,6 +10,7 @@ import React, {
   useRef,
   useState,
 } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ArrowDown,
   ArrowLeft,
@@ -2929,6 +2930,39 @@ function MenuButton({ onClick }) {
   )
 }
 
+function useVisualViewportBottomOffset() {
+  const [bottomOffset, setBottomOffset] = useState(0)
+
+  useEffect(() => {
+    const viewport = window.visualViewport
+    if (!viewport) return undefined
+
+    let frame = 0
+    const update = () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(() => {
+        frame = 0
+        const offset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+        setBottomOffset(Math.round(offset))
+      })
+    }
+
+    update()
+    viewport.addEventListener('resize', update)
+    viewport.addEventListener('scroll', update)
+    window.addEventListener('orientationchange', update)
+
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      viewport.removeEventListener('resize', update)
+      viewport.removeEventListener('scroll', update)
+      window.removeEventListener('orientationchange', update)
+    }
+  }, [])
+
+  return bottomOffset
+}
+
 function BottomDayNav({
   activeDayId,
   dayOptions,
@@ -2940,6 +2974,7 @@ function BottomDayNav({
   overbookingCountsByDay = {},
 }) {
   const dayNavRef = useRef(null)
+  const bottomOffset = useVisualViewportBottomOffset()
   const dayPressRef = useRef({
     timer: null,
     dayId: '',
@@ -3018,8 +3053,11 @@ function BottomDayNav({
     target?.scrollIntoView?.({ block: 'nearest', inline: 'center' })
   }, [focusedDayId])
 
-  return (
-    <div className="fixed inset-x-0 bottom-0 z-30 px-2.5 pb-[max(0.65rem,env(safe-area-inset-bottom))] sm:px-4">
+  const nav = (
+    <div
+      className="fixed inset-x-0 z-30 px-2.5 pb-[max(0.65rem,env(safe-area-inset-bottom))] sm:px-4"
+      style={{ bottom: bottomOffset }}
+    >
       <div className="mx-auto flex max-w-5xl items-center gap-1 rounded-[1.05rem] border border-white/80 bg-white/95 p-1.5 shadow-[0_-10px_24px_rgba(15,23,42,0.075)]">
         <button
           type="button"
@@ -3094,14 +3132,17 @@ function BottomDayNav({
           type="button"
           onClick={onManageDays}
           disabled={!canEdit}
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[0.8rem] bg-white/90 text-slate-600 transition hover:bg-white disabled:text-slate-300"
+          className="flex h-12 min-w-[4.2rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-[0.8rem] bg-white/90 px-2 text-slate-600 transition hover:bg-white disabled:text-slate-300"
           aria-label="Manage days"
         >
           <CalendarDays className="h-4 w-4" />
+          <span className="text-[10px] font-bold leading-3">Manage</span>
         </button>
       </div>
     </div>
   )
+
+  return createPortal(nav, document.body)
 }
 
 function CollaboratorsModal({
@@ -3426,30 +3467,27 @@ function DayManagerModal({
                     onClick={() => onMoveDay(day.id, -1)}
                     disabled={!firestoreReady || !canEdit || index === 0}
                     aria-label={`Move ${buildDayLabel(day, index)} up`}
-                    className="flex h-11 w-11 shrink-0 flex-col items-center justify-center gap-0.5 rounded-2xl bg-slate-100 text-slate-700 disabled:text-slate-300"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 disabled:text-slate-300"
                   >
                     <ArrowUp className="h-4 w-4" />
-                    <span className="text-[9px] font-bold leading-none">Up</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => onMoveDay(day.id, 1)}
                     disabled={!firestoreReady || !canEdit || index === days.length - 1}
                     aria-label={`Move ${buildDayLabel(day, index)} down`}
-                    className="flex h-11 w-11 shrink-0 flex-col items-center justify-center gap-0.5 rounded-2xl bg-slate-100 text-slate-700 disabled:text-slate-300"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 disabled:text-slate-300"
                   >
                     <ArrowDown className="h-4 w-4" />
-                    <span className="text-[9px] font-bold leading-none">Down</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => onDeleteDay(day.id)}
                     disabled={!firestoreReady || !canEdit}
                     aria-label={`Delete ${buildDayLabel(day, index)}`}
-                    className="flex h-11 w-11 shrink-0 flex-col items-center justify-center gap-0.5 rounded-2xl bg-rose-50 text-rose-600 disabled:text-slate-300"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-50 text-rose-600 disabled:text-slate-300"
                   >
                     <Trash2 className="h-4 w-4" />
-                    <span className="text-[9px] font-bold leading-none">Delete</span>
                   </button>
                 </div>
               </div>
