@@ -415,7 +415,7 @@ body::before {
 
 .time-mode-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(7.25rem, 9rem);
+  grid-template-columns: minmax(0, 1fr) minmax(11rem, 12.5rem);
   align-items: end;
   gap: 0.75rem;
 }
@@ -429,6 +429,15 @@ body::before {
   display: block;
   max-width: 100%;
   min-width: 0 !important;
+}
+
+.end-time-mode-toggle {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.end-time-mode-toggle > * {
+  min-width: 0;
 }
 
 @supports (-webkit-touch-callout: none) {
@@ -574,7 +583,7 @@ label > span,
 
 @media (max-width: 380px) {
   .time-mode-row {
-    grid-template-columns: minmax(0, 1fr) minmax(7rem, 7.8rem);
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.5rem;
   }
 }

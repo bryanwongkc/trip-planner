@@ -2287,7 +2287,7 @@ function EndTimeModeToggle({ disabled, draft, onChange }) {
   const derivedEndTime = deriveEndTimeFromDuration(draft.startTime, draft.durationMinutes)
 
   return (
-    <div className="inline-flex min-h-11 w-full min-w-0 items-center rounded-full border border-slate-200/90 bg-slate-100 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+    <div className="end-time-mode-toggle min-h-11 w-full min-w-0 items-center rounded-full border border-slate-200/90 bg-slate-100 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
       <button
         type="button"
         disabled={disabled}
@@ -2338,7 +2338,7 @@ function EndTimeModeToggle({ disabled, draft, onChange }) {
 function EndTimeModeSpacer() {
   return (
     <div
-      className="invisible inline-flex min-h-11 w-full min-w-0 items-center rounded-full border border-slate-200/90 bg-slate-100 p-1"
+      className="end-time-mode-toggle invisible min-h-11 w-full min-w-0 items-center rounded-full border border-slate-200/90 bg-slate-100 p-1"
       aria-hidden="true"
     >
       <span className="min-h-9 flex-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold">End time</span>
