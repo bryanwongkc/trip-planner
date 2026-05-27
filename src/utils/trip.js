@@ -36,9 +36,23 @@ export function getDurationMinutes(startTime, endTime) {
 }
 
 export function normalizeItemTimeFields(item) {
-  const endTimeMode = item.endTimeMode === 'duration' ? 'duration' : 'time'
+  const endTimeMode =
+    item.endTimeMode === 'duration'
+      ? 'duration'
+      : item.endTimeMode === 'none'
+        ? 'none'
+        : 'time'
   const parsedDuration = Number(item.durationMinutes)
   const durationMinutes = Number.isFinite(parsedDuration) ? parsedDuration : null
+
+  if (endTimeMode === 'none') {
+    return {
+      ...item,
+      endTime: '',
+      endTimeMode,
+      durationMinutes: null,
+    }
+  }
 
   if (endTimeMode === 'duration' && durationMinutes) {
     return {

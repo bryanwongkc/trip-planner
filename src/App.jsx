@@ -2278,6 +2278,14 @@ function TransitFields({ disabled, isMobilePortrait, transit, onChange }) {
 }
 
 function EndTimeModeToggle({ disabled, draft, onChange }) {
+  const activeMode =
+    draft.endTimeMode === 'duration'
+      ? 'duration'
+      : draft.endTimeMode === 'none'
+        ? 'none'
+        : 'time'
+  const derivedEndTime = deriveEndTimeFromDuration(draft.startTime, draft.durationMinutes)
+
   return (
     <div className="inline-flex min-h-11 w-full min-w-0 items-center rounded-full border border-slate-200/90 bg-slate-100 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
       <button
@@ -2285,7 +2293,7 @@ function EndTimeModeToggle({ disabled, draft, onChange }) {
         disabled={disabled}
         onClick={() => onChange({ endTimeMode: 'time' })}
         className={`min-h-9 flex-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold transition ${
-          draft.endTimeMode === 'time'
+          activeMode === 'time'
             ? 'bg-slate-900 text-white shadow-[0_6px_14px_rgba(15,23,42,0.12)]'
             : 'text-slate-600'
         } disabled:text-slate-400`}
@@ -2303,12 +2311,25 @@ function EndTimeModeToggle({ disabled, draft, onChange }) {
           })
         }
         className={`min-h-9 flex-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold transition ${
-          draft.endTimeMode === 'duration'
+          activeMode === 'duration'
             ? 'bg-slate-900 text-white shadow-[0_6px_14px_rgba(15,23,42,0.12)]'
             : 'text-slate-600'
         } disabled:text-slate-400`}
       >
         Duration
+      </button>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onChange({ endTime: '', endTimeMode: 'none', durationMinutes: null })}
+        className={`min-h-9 flex-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold transition ${
+          activeMode === 'none'
+            ? 'bg-slate-900 text-white shadow-[0_6px_14px_rgba(15,23,42,0.12)]'
+            : 'text-slate-600'
+        } disabled:text-slate-400`}
+        title={derivedEndTime ? `Leave blank instead of ending at ${derivedEndTime}` : 'Leave end time blank'}
+      >
+        No end
       </button>
     </div>
   )
@@ -2322,6 +2343,7 @@ function EndTimeModeSpacer() {
     >
       <span className="min-h-9 flex-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold">End time</span>
       <span className="min-h-9 flex-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold">Duration</span>
+      <span className="min-h-9 flex-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold">No end</span>
     </div>
   )
 }
@@ -2359,7 +2381,16 @@ function EndTimeModeField({ conflict = false, disabled, draft, onChange, showMod
     <div className="space-y-3 sm:col-span-2">
       {showModeToggle ? <EndTimeModeToggle disabled={disabled} draft={draft} onChange={onChange} /> : null}
 
-      {draft.endTimeMode === 'time' ? (
+      {draft.endTimeMode === 'none' ? (
+        <div className={TIME_MODE_ROW_CLASS}>
+          <Field label="End time" className="min-w-0">
+            <div className="time-field-input w-full min-w-0 rounded-[1.15rem] border border-slate-200/90 bg-slate-50 px-3.5 py-3 text-[14px] font-semibold tracking-[-0.01em] text-slate-500">
+              No end time
+            </div>
+          </Field>
+          {!showModeToggle ? <EndTimeModeSpacer /> : null}
+        </div>
+      ) : draft.endTimeMode === 'time' ? (
         <div className={TIME_MODE_ROW_CLASS}>
           <TimeField
             label="End time"
@@ -4003,7 +4034,7 @@ function AddStopComposer({
                       category: nextCategory,
                       transit: nextCategory === 'Transport' ? normalizeTransitDetails(current.transit) : null,
                       startTime: current.startTime || '10:00',
-                      endTime: current.endTime || '11:00',
+                      endTime: current.endTimeMode === 'none' ? '' : current.endTime || '11:00',
                       endTimeMode: current.endTimeMode || 'time',
                       status: isMonitoredCancellationItem({ category: nextCategory })
                         ? current.status || 'considering'
@@ -5564,7 +5595,7 @@ function PlannerPanel({
                       category: nextCategory,
                       transit: nextCategory === 'Transport' ? normalizeTransitDetails(current.transit) : null,
                       startTime: current.startTime || '10:00',
-                      endTime: current.endTime || '11:00',
+                      endTime: current.endTimeMode === 'none' ? '' : current.endTime || '11:00',
                       endTimeMode: current.endTimeMode || 'time',
                       status: isMonitoredCancellationItem({ category: nextCategory })
                         ? current.status || 'considering'
