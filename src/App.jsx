@@ -2155,8 +2155,6 @@ function Field({ label, children, className = '' }) {
   )
 }
 
-const TIME_MODE_ROW_CLASS = 'time-mode-row'
-
 function TimeField({ conflict, disabled, label, onChange, value }) {
   return (
     <label className="block min-w-0">
@@ -2335,120 +2333,96 @@ function EndTimeModeToggle({ disabled, draft, onChange }) {
   )
 }
 
-function EndTimeModeSpacer() {
-  return (
-    <div
-      className="end-time-mode-toggle invisible min-h-11 w-full min-w-0 items-center rounded-full border border-slate-200/90 bg-slate-100 p-1"
-      aria-hidden="true"
-    >
-      <span className="min-h-9 flex-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold">End time</span>
-      <span className="min-h-9 flex-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold">Duration</span>
-      <span className="min-h-9 flex-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold">No end</span>
-    </div>
-  )
-}
-
-function StartTimeModeRow({
-  conflict = false,
+function ScheduleTimeFields({
   disabled = false,
   draft,
+  endConflict = false,
   onChange,
-  showModeToggle = true,
+  startConflict = false,
 }) {
-  return (
-    <div className={`${TIME_MODE_ROW_CLASS} sm:col-span-2`}>
-      <TimeField
-        label="Start time"
-        value={draft.startTime}
-        onChange={(event) => onChange({ startTime: event.target.value })}
-        disabled={disabled}
-        conflict={conflict}
-      />
-      {showModeToggle ? (
-        <EndTimeModeToggle disabled={disabled} draft={draft} onChange={onChange} />
-      ) : null}
-    </div>
-  )
-}
-
-function EndTimeModeField({ conflict = false, disabled, draft, onChange, showModeToggle = true }) {
-  const derivedEndTime =
+  const activeMode =
     draft.endTimeMode === 'duration'
+      ? 'duration'
+      : draft.endTimeMode === 'none'
+        ? 'none'
+        : 'time'
+  const derivedEndTime =
+    activeMode === 'duration'
       ? deriveEndTimeFromDuration(draft.startTime, draft.durationMinutes)
       : draft.endTime
 
   return (
-    <div className="space-y-3 sm:col-span-2">
-      {showModeToggle ? <EndTimeModeToggle disabled={disabled} draft={draft} onChange={onChange} /> : null}
+    <div className="schedule-time-fields sm:col-span-2">
+      <Field label="End setting">
+        <EndTimeModeToggle disabled={disabled} draft={draft} onChange={onChange} />
+      </Field>
 
-      {draft.endTimeMode === 'none' ? (
-        <div className={TIME_MODE_ROW_CLASS}>
+      <div className="schedule-time-grid">
+        <TimeField
+          label="Start time"
+          value={draft.startTime}
+          onChange={(event) => onChange({ startTime: event.target.value })}
+          disabled={disabled}
+          conflict={startConflict}
+        />
+
+        {activeMode === 'none' ? (
           <Field label="End time" className="min-w-0">
             <div className="time-field-input w-full min-w-0 rounded-[1.15rem] border border-slate-200/90 bg-slate-50 px-3.5 py-3 text-[14px] font-semibold tracking-[-0.01em] text-slate-500">
               No end time
             </div>
           </Field>
-          {!showModeToggle ? <EndTimeModeSpacer /> : null}
-        </div>
-      ) : draft.endTimeMode === 'time' ? (
-        <div className={TIME_MODE_ROW_CLASS}>
+        ) : activeMode === 'time' ? (
           <TimeField
             label="End time"
             value={draft.endTime}
             onChange={(event) => onChange({ endTime: event.target.value })}
             disabled={disabled}
-            conflict={conflict}
+            conflict={endConflict}
           />
-          {!showModeToggle ? <EndTimeModeSpacer /> : null}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <div className={TIME_MODE_ROW_CLASS}>
-            <Field label="End time" className="min-w-0">
-              <div className="time-field-input w-full min-w-0 rounded-[1.15rem] border border-slate-200/90 bg-slate-50 px-3.5 py-3 text-[14px] font-semibold tracking-[-0.01em] text-slate-700">
-                {derivedEndTime || '--:--'}
-              </div>
-            </Field>
-            <Field label="Duration (minutes)" className="min-w-0">
-              <input
-                type="number"
-                min="0"
-                step="5"
-                value={draft.durationMinutes ?? ''}
-                onChange={(event) =>
-                  onChange({
-                    durationMinutes: event.target.value === '' ? null : Number(event.target.value),
-                  })
-                }
+        ) : (
+          <Field label="Duration (minutes)" className="min-w-0">
+            <input
+              type="number"
+              min="0"
+              step="5"
+              value={draft.durationMinutes ?? ''}
+              onChange={(event) =>
+                onChange({
+                  durationMinutes: event.target.value === '' ? null : Number(event.target.value),
+                })
+              }
+              disabled={disabled}
+              className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-[14px] tracking-[-0.01em] disabled:bg-slate-100"
+            />
+          </Field>
+        )}
+      </div>
+
+      {activeMode === 'duration' ? (
+        <div className="schedule-duration-tools">
+          <div className="rounded-[1rem] bg-slate-50 px-3.5 py-2.5 text-[12px] font-semibold text-slate-600">
+            Ends at <span className="text-slate-900">{derivedEndTime || '--:--'}</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {DURATION_PRESETS.map((preset) => (
+              <button
+                key={preset.value}
+                type="button"
                 disabled={disabled}
-                className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-[14px] tracking-[-0.01em] disabled:bg-slate-100"
-              />
-            </Field>
-          </div>
-          <div>
-            <div className="text-[11px] leading-5 text-slate-500">
-              Enter a duration and the itinerary will calculate the end time.
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {DURATION_PRESETS.map((preset) => (
-                <button
-                  key={preset.value}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => onChange({ durationMinutes: preset.value })}
-                  className={`min-h-11 rounded-full px-3 text-[11px] font-semibold transition ${
-                    Number(draft.durationMinutes) === preset.value
-                      ? 'bg-slate-900 text-white'
-                      : 'bg-slate-100 text-slate-600'
-                  } disabled:bg-slate-100 disabled:text-slate-400`}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
+                onClick={() => onChange({ durationMinutes: preset.value })}
+                className={`min-h-10 rounded-full px-3 text-[11px] font-semibold transition ${
+                  Number(draft.durationMinutes) === preset.value
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-slate-100 text-slate-600'
+                } disabled:bg-slate-100 disabled:text-slate-400`}
+              >
+                {preset.label}
+              </button>
+            ))}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
@@ -4060,19 +4034,12 @@ function AddStopComposer({
                   className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
                 />
               </Field>
-              <StartTimeModeRow
+              <ScheduleTimeFields
                 disabled={draft.category === 'Flight'}
                 draft={draft}
                 onChange={(changes) => setDraft((current) => applyItemDraftPatch(current, changes))}
-                conflict={Boolean(draftScheduleConflict?.nextId === draftConflictId)}
-                showModeToggle
-              />
-              <EndTimeModeField
-                disabled={draft.category === 'Flight'}
-                draft={draft}
-                onChange={(changes) => setDraft((current) => applyItemDraftPatch(current, changes))}
-                conflict={Boolean(draftScheduleConflict?.currentId === draftConflictId)}
-                showModeToggle={false}
+                startConflict={Boolean(draftScheduleConflict?.nextId === draftConflictId)}
+                endConflict={Boolean(draftScheduleConflict?.currentId === draftConflictId)}
               />
             </div>
 
@@ -4580,19 +4547,12 @@ function DetailModal({
               className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             />
           </Field>
-          <StartTimeModeRow
+          <ScheduleTimeFields
             disabled={fieldReadOnly}
             draft={detailItem}
             onChange={onChange}
-            conflict={Boolean(scheduleConflict?.nextId === detailItem.id)}
-            showModeToggle
-          />
-          <EndTimeModeField
-            disabled={fieldReadOnly}
-            draft={detailItem}
-            onChange={onChange}
-            conflict={Boolean(scheduleConflict?.currentId === detailItem.id)}
-            showModeToggle={false}
+            startConflict={Boolean(scheduleConflict?.nextId === detailItem.id)}
+            endConflict={Boolean(scheduleConflict?.currentId === detailItem.id)}
           />
         </div>
 
@@ -5621,19 +5581,12 @@ function PlannerPanel({
                   className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
                 />
               </Field>
-              <StartTimeModeRow
+              <ScheduleTimeFields
                 disabled={draft.category === 'Flight'}
                 draft={draft}
                 onChange={(changes) => setDraft((current) => applyItemDraftPatch(current, changes))}
-                conflict={Boolean(draftScheduleConflict?.nextId === draftConflictId)}
-                showModeToggle
-              />
-              <EndTimeModeField
-                disabled={draft.category === 'Flight'}
-                draft={draft}
-                onChange={(changes) => setDraft((current) => applyItemDraftPatch(current, changes))}
-                conflict={Boolean(draftScheduleConflict?.currentId === draftConflictId)}
-                showModeToggle={false}
+                startConflict={Boolean(draftScheduleConflict?.nextId === draftConflictId)}
+                endConflict={Boolean(draftScheduleConflict?.currentId === draftConflictId)}
               />
             </div>
 
