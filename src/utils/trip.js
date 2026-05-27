@@ -254,8 +254,10 @@ function buildGeneratedHotelItem(sourceItem, dayId, nextStartTime) {
   }
 }
 
-export function deriveTripState(overrides) {
-  const dayMap = Object.fromEntries(mergeEntityMap(SEED_DAYS, overrides.days).map((day) => [day.id, day]))
+export function deriveTripState(overrides, options = {}) {
+  const seedDays = options.includeSeed === false ? [] : SEED_DAYS
+  const seedItems = options.includeSeed === false ? [] : SEED_ITEMS
+  const dayMap = Object.fromEntries(mergeEntityMap(seedDays, overrides.days).map((day) => [day.id, day]))
   const bookingOptions = Object.values(overrides.bookingOptions || {})
     .map(normalizeBookingOption)
     .filter((booking) => !booking.hidden)
@@ -264,7 +266,7 @@ export function deriveTripState(overrides) {
   )
   const itemMap = Object.fromEntries(
     mergeEntityMap(
-      SEED_ITEMS,
+      seedItems,
       Object.fromEntries(
         Object.entries(overrides.items || {}).filter(([id]) => !id.startsWith('generated-hotel:')),
       ),
@@ -369,7 +371,7 @@ export function movementItemsForDay(activeDayId, tripState) {
 }
 
 export function nextDayDate(days) {
-  if (!days.length) return '2026-05-09'
+  if (!days.length) return new Date().toISOString().slice(0, 10)
   const maxDate = [...days].sort((a, b) => a.date.localeCompare(b.date))[days.length - 1]?.date
   const next = new Date(`${maxDate}T00:00:00Z`)
   next.setUTCDate(next.getUTCDate() + 1)

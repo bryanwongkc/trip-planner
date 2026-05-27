@@ -1,48 +1,12 @@
 const SEARCH_LIMIT = 5
-
-const QUERY_ALIASES = new Map([
-  [
-    '龍宮城スパ・ホテル三日月 龍宮亭',
-    [
-      '龍宮城スパ・ホテル三日月 龍宮亭',
-      '龍宮城スパホテル三日月 龍宮亭',
-      '龍宮城スパ・ホテル三日月',
-      '龍宮城SPA酒店三日月 龍宮亭',
-      '龍宮城溫泉酒店三日月 龍宮亭',
-      '龍宮城三日月酒店',
-      'Ryugujo Spa Hotel Mikazuki Ryugutei',
-      'Ryugujo Spa Hotel Mikazuki',
-      'Hotel Mikazuki Ryugutei Kisarazu',
-    ],
-  ],
-  [
-    '龍宮城SPA酒店三日月 龍宮亭',
-    [
-      '龍宮城SPA酒店三日月 龍宮亭',
-      '龍宮城溫泉酒店三日月 龍宮亭',
-      '龍宮城三日月酒店',
-      '龍宮城スパ・ホテル三日月 龍宮亭',
-      'Ryugujo Spa Hotel Mikazuki Ryugutei',
-    ],
-  ],
-  [
-    '龍宮城溫泉酒店三日月 龍宮亭',
-    [
-      '龍宮城溫泉酒店三日月 龍宮亭',
-      '龍宮城SPA酒店三日月 龍宮亭',
-      '龍宮城三日月酒店',
-      '龍宮城スパ・ホテル三日月 龍宮亭',
-      'Ryugujo Spa Hotel Mikazuki Ryugutei',
-    ],
-  ],
-])
+const QUERY_ALIASES = new Map()
 
 function normalizeQuery(query) {
   return query
     .trim()
     .replace(/\s+/g, ' ')
-    .replace(/[・･]/g, ' ')
-    .replace(/[－–—]/g, '-')
+    .replace(/[\u30fb\uff65]/g, ' ')
+    .replace(/[\uff0d\u2013\u2014]/g, '-')
 }
 
 function parseCoordinateText(value) {
@@ -163,10 +127,6 @@ function buildVariants(query) {
 
   variants.add(normalized)
   knownAliases.forEach((alias) => variants.add(alias))
-
-  if (normalized.includes('ホテル')) {
-    variants.add(normalized.replace(/\s*ホテル\s*/g, ' '))
-  }
 
   return [...variants]
 }

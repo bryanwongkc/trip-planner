@@ -62,7 +62,6 @@ import {
   createTripRecordWithOwner,
   createTripInvite,
   deleteTripRecord,
-  ensureDemoTripForNewUser,
   ensureUserProfile,
   firebaseEnabled,
   lookupUserByEmail,
@@ -72,7 +71,6 @@ import {
   signOutUser,
   subscribeToAuthState,
   subscribeToTripMembers,
-  subscribeToUserProfile,
   subscribeToTripState,
   subscribeToUserTripDirectory,
   updateTripMemberRole,
@@ -161,7 +159,8 @@ function canEditTrip(role) {
 function canDeleteTrip(role, tripSummary = null, user = null) {
   return (
     role === 'owner' &&
-    Boolean(user?.uid && [tripSummary?.ownerId, tripSummary?.createdBy].includes(user.uid))
+    (Boolean(user?.uid && [tripSummary?.ownerId, tripSummary?.createdBy].includes(user.uid)) ||
+      Boolean(tripSummary?.isDemo))
   )
 }
 
@@ -934,7 +933,7 @@ function buildDefaultTripSummary() {
     hidden: false,
     startDate: SEED_DAYS[0]?.date || '',
     endDate: SEED_DAYS[SEED_DAYS.length - 1]?.date || '',
-    city: 'Chiba, Japan',
+    city: '',
   }
 }
 
@@ -964,6 +963,10 @@ function hasTripOverrides(overrides) {
   return ['days', 'items', 'bookingOptions'].some(
     (key) => Object.keys(overrides?.[key] || {}).length > 0,
   )
+}
+
+function buildLocalTripSummaries(overrides) {
+  return hasTripOverrides(overrides) ? [buildDefaultTripSummary()] : []
 }
 
 function mergeTripOverrides(current, patch) {
@@ -2741,7 +2744,7 @@ function AppDrawer({
 
         <div className="space-y-2.5">
           <TripSwitcher
-            activeTripId={activeTripSummary.id}
+            activeTripId={activeTripSummary?.id || ''}
             canDeleteTrip={canDeleteCurrentTrip}
             canEditTrip={canEditCurrentTrip}
             deletedTrips={deletedTrips}
@@ -4022,7 +4025,7 @@ function AddStopComposer({
                         : { ...current, title: event.target.value },
                     )
                   }
-                  placeholder={draft.category === 'Flight' ? 'CX549' : ''}
+                  placeholder={draft.category === 'Flight' ? 'AB123' : ''}
                   className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
                 />
               </Field>
@@ -4541,7 +4544,7 @@ function DetailModal({
                     : { title: event.target.value },
                 )
               }
-              placeholder={detailItem.category === 'Flight' ? 'CX549' : ''}
+              placeholder={detailItem.category === 'Flight' ? 'AB123' : ''}
               disabled={fieldReadOnly || linkedLocked}
               className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
             />
@@ -5583,7 +5586,7 @@ function PlannerPanel({
                         : { ...current, title: event.target.value },
                     )
                   }
-                  placeholder={draft.category === 'Flight' ? 'CX549' : ''}
+                  placeholder={draft.category === 'Flight' ? 'AB123' : ''}
                   className="w-full rounded-[1.15rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
                 />
               </Field>
@@ -5915,13 +5918,15 @@ export default function App() {
     if (typeof window === 'undefined') return TRIP_ID
     return window.localStorage.getItem(ACTIVE_TRIP_STORAGE_KEY) || TRIP_ID
   })
-  const [overrides, setOverrides] = useState(readLocalTripOverrides)
-  const [tripSummaries, setTripSummaries] = useState(() => [buildDefaultTripSummary()])
-  const [tripDirectoryLoaded, setTripDirectoryLoaded] = useState(true)
+  const [overrides, setOverrides] = useState(() =>
+    firebaseEnabled ? { days: {}, items: {}, bookingOptions: {} } : readLocalTripOverrides(),
+  )
+  const [tripSummaries, setTripSummaries] = useState(() =>
+    firebaseEnabled ? [] : buildLocalTripSummaries(readLocalTripOverrides()),
+  )
+  const [tripDirectoryLoaded, setTripDirectoryLoaded] = useState(!firebaseEnabled)
   const [currentUser, setCurrentUser] = useState(null)
-  const [userProfile, setUserProfile] = useState(null)
-  const [userProfileLoaded, setUserProfileLoaded] = useState(true)
-  const [authReady, setAuthReady] = useState(true)
+  const [authReady, setAuthReady] = useState(!firebaseEnabled)
   const [authError, setAuthError] = useState('')
   const [firestoreState, setFirestoreState] = useState({
     status: firebaseEnabled ? 'ready' : 'disabled',
@@ -5955,7 +5960,6 @@ export default function App() {
   const dragAutoScrollFrameRef = useRef(null)
   const dragPointerRef = useRef({ x: 0, y: 0 })
   const dragStateRef = useRef(null)
-  const demoCreationGuardRef = useRef(new Set())
   const guestMigrationRef = useRef({
     declinedForUid: '',
     inProgress: false,
@@ -5999,9 +6003,11 @@ export default function App() {
     ? activeTripId
     : availableTrips[0]?.id || ''
 
-  const tripState = useMemo(() => deriveTripState(overrides), [overrides])
-  const activeTripSummary =
-    availableTrips.find((trip) => trip.id === resolvedTripId) || defaultTripSummary
+  const tripState = useMemo(
+    () => deriveTripState(overrides, { includeSeed: false }),
+    [overrides],
+  )
+  const activeTripSummary = availableTrips.find((trip) => trip.id === resolvedTripId) || null
   const activeRole = activeTripSummary?.role || ''
   const canEditCurrentTrip = canEditTrip(activeRole)
   const canManageCurrentTrip = canManageMembers(activeRole, activeTripSummary, currentUser)
@@ -6271,9 +6277,10 @@ export default function App() {
   }, [resolvedTripId])
 
   useEffect(() => {
-    if (!isGuestMode || typeof window === 'undefined') return
+    if (!isGuestMode || !authReady || typeof window === 'undefined') return
+    if (firebaseEnabled && !hasTripOverrides(overrides)) return
     window.localStorage.setItem(LOCAL_TRIP_OVERRIDES_KEY, JSON.stringify(overrides))
-  }, [isGuestMode, overrides])
+  }, [authReady, isGuestMode, overrides])
 
   useEffect(() => {
     dragStateRef.current = dragState
@@ -6293,13 +6300,12 @@ export default function App() {
     if (!firebaseEnabled) {
       queueMicrotask(() => {
         if (!active) return
+        const localOverrides = readLocalTripOverrides()
         setCurrentUser(null)
         setAuthReady(true)
-        setTripSummaries([buildDefaultTripSummary()])
+        setTripSummaries(buildLocalTripSummaries(localOverrides))
         setTripDirectoryLoaded(true)
-        setUserProfile(null)
-        setUserProfileLoaded(true)
-        setOverrides(readLocalTripOverrides())
+        setOverrides(localOverrides)
         setFirestoreState({ status: 'disabled', error: 'Saved on this device' })
       })
       return () => {
@@ -6320,8 +6326,6 @@ export default function App() {
           if (user) {
             setTripSummaries([])
             setTripDirectoryLoaded(false)
-            setUserProfile(null)
-            setUserProfileLoaded(false)
             setOverrides({ days: {}, items: {}, bookingOptions: {} })
             setFirestoreState({ status: 'connecting', error: '' })
             try {
@@ -6330,11 +6334,9 @@ export default function App() {
               console.error(error)
             }
           } else {
-            setTripSummaries([buildDefaultTripSummary()])
+            setTripSummaries([])
             setTripDirectoryLoaded(true)
-            setUserProfile(null)
-            setUserProfileLoaded(true)
-            setOverrides(readLocalTripOverrides())
+            setOverrides({ days: {}, items: {}, bookingOptions: {} })
             setFirestoreState({ status: 'ready', error: '' })
           }
         },
@@ -6344,11 +6346,9 @@ export default function App() {
             setAuthReady(true)
             setAuthError('Sign-in could not be completed. Please try again.')
             setCurrentUser(null)
-            setTripSummaries([buildDefaultTripSummary()])
+            setTripSummaries([])
             setTripDirectoryLoaded(true)
-            setUserProfile(null)
-            setUserProfileLoaded(true)
-            setOverrides(readLocalTripOverrides())
+            setOverrides({ days: {}, items: {}, bookingOptions: {} })
             setFirestoreState({ status: 'ready', error: '' })
           }
         },
@@ -6391,42 +6391,6 @@ export default function App() {
     }
 
     void connectDirectory()
-    return () => {
-      active = false
-      unsubscribe()
-    }
-  }, [authReady, currentUser?.uid, isGuestMode])
-
-  useEffect(() => {
-    if (isGuestMode) return undefined
-    if (!authReady || !firebaseEnabled || !currentUser?.uid) return undefined
-
-    let active = true
-    let unsubscribe = () => {}
-    queueMicrotask(() => {
-      if (!active) return
-      setUserProfile(null)
-      setUserProfileLoaded(false)
-    })
-
-    async function connectUserProfile() {
-      unsubscribe = await subscribeToUserProfile(
-        currentUser.uid,
-        (payload) => {
-          if (!active) return
-          setUserProfile(payload)
-          setUserProfileLoaded(true)
-        },
-        (error) => {
-          console.error(error)
-          if (!active) return
-          setUserProfile(null)
-          setUserProfileLoaded(true)
-        },
-      )
-    }
-
-    void connectUserProfile()
     return () => {
       active = false
       unsubscribe()
@@ -6538,7 +6502,7 @@ export default function App() {
   useEffect(() => {
     if (isGuestMode) return undefined
     if (!authReady || !firebaseEnabled || !currentUser?.uid) return undefined
-    if (!tripDirectoryLoaded || !userProfileLoaded) return undefined
+    if (!tripDirectoryLoaded) return undefined
 
     const uid = currentUser.uid
     const migration = guestMigrationRef.current
@@ -6658,56 +6622,6 @@ export default function App() {
     showAlert,
     showChoice,
     tripDirectoryLoaded,
-    userProfileLoaded,
-  ])
-
-  useEffect(() => {
-    if (isGuestMode) return undefined
-    if (!authReady || !firebaseEnabled || !currentUser?.uid) return undefined
-    if (!tripDirectoryLoaded || !userProfileLoaded) return undefined
-    const migration = guestMigrationRef.current
-    const localMigrationPending =
-      migration.inProgress ||
-      (migration.declinedForUid !== currentUser.uid && hasTripOverrides(migration.localOverrides || readLocalTripOverrides()))
-    if (localMigrationPending) return undefined
-    if (tripSummaries.length > 0 || userProfile?.onboardingDemoCreated === true) return undefined
-
-    const uid = currentUser.uid
-    if (demoCreationGuardRef.current.has(uid)) return undefined
-    demoCreationGuardRef.current.add(uid)
-
-    let active = true
-
-    async function createInitialDemoTrip() {
-      try {
-        const result = await ensureDemoTripForNewUser(currentUser)
-        if (!active || !result?.tripId) return
-        selectTrip(result.tripId)
-        setFirestoreState((current) => ({ ...current, error: '' }))
-      } catch (error) {
-        console.error(error)
-        if (active) {
-          setFirestoreState((current) => ({
-            ...current,
-            status: 'error',
-            error: 'We could not save that change. Please try again.',
-          }))
-        }
-      }
-    }
-
-    void createInitialDemoTrip()
-    return () => {
-      active = false
-    }
-  }, [
-    authReady,
-    currentUser,
-    isGuestMode,
-    tripDirectoryLoaded,
-    tripSummaries.length,
-    userProfile?.onboardingDemoCreated,
-    userProfileLoaded,
   ])
 
   useEffect(() => {
@@ -7962,7 +7876,7 @@ export default function App() {
           <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Trips</div>
           <h2 className="mt-2 text-[1.35rem] font-extrabold tracking-[-0.03em] text-slate-950">Start a trip</h2>
           <p className="mt-2 text-[13px] leading-6 text-slate-600">
-            Create a new itinerary or open an invitation from a trip owner.
+            You do not have an itinerary yet. Create a new trip to start planning, or open an invitation from a trip owner.
           </p>
           <button
             type="button"
