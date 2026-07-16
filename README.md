@@ -17,7 +17,7 @@ Mobile-first trip planner for multi-stop travel itineraries with shared trip wor
 1. Install dependencies:
    `npm install`
 2. Copy `.env.example` to `.env.local`.
-3. Fill in the Firebase, Google Maps, and AeroDataBox values.
+3. Fill in the Firebase, Google Maps, AeroDataBox, and GitHub feedback values.
 4. Start the app:
    `npm run dev`
 
@@ -37,6 +37,8 @@ AERODATABOX_RAPIDAPI_HOST=aerodatabox.p.rapidapi.com
 FIREBASE_PROJECT_ID=your_project_id
 FIREBASE_CLIENT_EMAIL=firebase-adminsdk@example.iam.gserviceaccount.com
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+GITHUB_FEEDBACK_TOKEN=github_pat_your_fine_grained_token
+GITHUB_FEEDBACK_REPOSITORY=bryanwongkc/trip-planner
 ```
 
 ## Firebase Setup
@@ -48,7 +50,7 @@ Use this Firebase shape:
 - Firestore:
   Create a Firestore database in production mode.
 - Admin service account:
-  Add the three server-only `FIREBASE_*` values above to the deployment environment. They power the authenticated collaborator lookup API and must never use a `VITE_` prefix.
+  Add the three server-only `FIREBASE_*` values above to the deployment environment. They power authenticated server APIs and must never use a `VITE_` prefix.
 - Rules:
   Deploy [firestore.rules](./firestore.rules).
 - Project alias:
@@ -89,6 +91,26 @@ Signed-in trips use Firestore's persistent browser cache so pending changes surv
    `firebase deploy --only firestore:rules`
 3. Verify Google sign-in works in the deployed domain.
 4. Verify Google Maps and Places load with the deployed API key restrictions.
+5. Verify the GitHub feedback token can create issues and labels.
+
+## Daily Feedback Review
+
+Signed-in users can send product feedback from **Trip menu -> Give feedback**. The Vercel API verifies the Firebase identity and creates an issue in the public `bryanwongkc/trip-planner` repository. Feedback issues contain only the note, category, optional rating, and current screen. They do not contain the user's name, email, Firebase UID, trip name, trip ID, day ID, itinerary stops, or booking details.
+
+Add this server-only variable to Vercel:
+
+- `GITHUB_FEEDBACK_TOKEN`: a fine-grained GitHub personal access token scoped to `bryanwongkc/trip-planner`, with **Metadata: read** and **Issues: read and write** permissions.
+
+`GITHUB_FEEDBACK_REPOSITORY` is optional and defaults to `bryanwongkc/trip-planner`. Neither variable may use a `VITE_` prefix. No OpenAI API key, GitHub Actions secret, or Firestore rule change is needed.
+
+To review feedback daily in ChatGPT:
+
+1. Connect the GitHub plugin to `bryanwongkc/trip-planner`.
+2. Create a ChatGPT Scheduled task for 09:00 Asia/Hong_Kong.
+3. Paste the contents of [the daily review prompt](./.github/chatgpt/daily-feedback-review.md).
+4. Run the prompt once manually before enabling the daily schedule. It creates a consolidated proposal issue, then labels the source issues `feedback-reviewed`; it never modifies product code.
+
+The in-function submission throttle is best-effort because Vercel Functions can run on multiple instances. Firebase sign-in remains the primary inbox protection.
 
 ## Notes
 

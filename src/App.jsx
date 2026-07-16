@@ -17,9 +17,11 @@ import {
   ArrowUp,
   AlertTriangle,
   BedDouble,
+  Bug,
   CalendarDays,
   Check,
   ChevronDown,
+  CircleHelp,
   CircleEllipsis,
   Cloud,
   CloudRain,
@@ -29,13 +31,17 @@ import {
   LogOut,
   Pencil,
   Footprints,
+  Heart,
   ExternalLink,
+  Lightbulb,
   Loader2,
   Menu,
+  MessageSquareText,
   PackageOpen,
   Plane,
   Plus,
   Search,
+  Send,
   Share2,
   Shuffle,
   Star,
@@ -84,6 +90,7 @@ import {
   inferFlightLookupFromItem,
 } from './services/aerodatabox'
 import { fetchWeatherSnapshot } from './services/weather'
+import { submitAppFeedback } from './services/feedback'
 import { formatDateTimeForLocalInput, normalizeDateTimeForStorage } from './utils/dateTime'
 import {
   deleteGuestTrip as deleteStoredGuestTrip,
@@ -138,6 +145,12 @@ const FLIGHT_STATUS_LIVE_TTL_MS = 60_000
 const FLIGHT_STATUS_STATIC_TTL_MS = 6 * 60 * 60 * 1000
 const ACTIVE_TRIP_STORAGE_KEY = 'trip-planner-active-trip'
 const TripMap = lazy(() => import('./components/TripMap'))
+const FEEDBACK_CATEGORY_OPTIONS = [
+  { value: 'idea', label: 'Idea', description: 'A better way to plan', icon: Lightbulb },
+  { value: 'problem', label: 'Problem', description: 'Something did not work', icon: Bug },
+  { value: 'confusing', label: 'Confusing', description: 'Something felt unclear', icon: CircleHelp },
+  { value: 'praise', label: 'Praise', description: 'Something worked well', icon: Heart },
+]
 const TRAVEL_MODE_OPTIONS = [
   { value: 'driving', label: 'Car' },
   { value: 'transit', label: 'Public transport' },
@@ -2905,6 +2918,7 @@ function AppDrawer({
   onCreateTrip,
   onDeleteTrip,
   onExportOverview,
+  onOpenFeedback,
   onOpenDeadlines,
   onOpenItinerary,
   onOpenParkingLot,
@@ -3052,7 +3066,22 @@ function AppDrawer({
           ) : null}
         </div>
 
-        <div className="mt-auto pt-4">
+        <div className="mt-auto border-t border-slate-200/70 pt-3">
+          <button
+            type="button"
+            onClick={onOpenFeedback}
+            className="mb-3 flex w-full items-center justify-between rounded-[0.95rem] px-3.5 py-3 text-left text-slate-800 transition hover:bg-white"
+          >
+            <span>
+              <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                Give feedback
+              </span>
+              <span className="mt-1 block text-[13px] font-semibold">
+                Tell us what would make planning easier
+              </span>
+            </span>
+            <MessageSquareText className="h-4 w-4 text-slate-500" />
+          </button>
           <AccountPanel
             authError={authError}
             isGuestMode={isGuestMode}
@@ -3063,6 +3092,238 @@ function AppDrawer({
         </div>
       </aside>
     </>
+  )
+}
+
+function FeedbackModal({
+  currentUser,
+  onClose,
+  onRequestSignIn,
+  onSubmit,
+  screen,
+}) {
+  const [category, setCategory] = useState('idea')
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [rating, setRating] = useState(0)
+  const [status, setStatus] = useState('editing')
+  const dialogRef = useModalDialog(onClose)
+  const signedIn = Boolean(currentUser?.uid)
+
+  async function handleSignIn() {
+    setError('')
+    await onRequestSignIn()
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    const trimmedMessage = message.trim()
+    if (trimmedMessage.length < 10) {
+      setError('Share at least 10 characters so we have enough detail to act on.')
+      return
+    }
+    if (!signedIn) {
+      setError('Sign in first so we can protect the feedback inbox from spam.')
+      return
+    }
+
+    setError('')
+    setStatus('submitting')
+    try {
+      await onSubmit({
+        category,
+        context: { screen },
+        message: trimmedMessage,
+        rating: rating || null,
+      })
+      setStatus('sent')
+    } catch (submissionError) {
+      setError(submissionError?.message || 'Feedback could not be sent right now.')
+      setStatus('editing')
+    }
+  }
+
+  return (
+    <div
+      className="premium-backdrop fixed inset-0 z-[80] flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
+      onClick={status === 'submitting' ? undefined : onClose}
+    >
+      <div
+        ref={dialogRef}
+        aria-label="Give feedback"
+        aria-modal="true"
+        role="dialog"
+        tabIndex={-1}
+        className="premium-modal animate-float-in max-h-[min(48rem,calc(100svh-1.5rem))] w-full max-w-[34rem] overflow-y-auto rounded-[1.45rem] border border-white/70 bg-white/96 p-4 shadow-[0_24px_70px_rgba(15,23,42,0.18)] sm:p-5"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {status === 'sent' ? (
+          <div className="flex min-h-[24rem] flex-col items-center justify-center px-4 py-8 text-center" role="status">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+              <Check className="h-6 w-6" />
+            </div>
+            <div className="mt-5 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">
+              Feedback received
+            </div>
+            <h2 className="mt-2 text-2xl font-extrabold tracking-[-0.04em] text-slate-950">
+              Thanks for helping us improve.
+            </h2>
+            <p className="mt-2 max-w-sm text-[13px] leading-6 text-slate-500">
+              Your note is now a public GitHub issue for the next daily product review. A person reviews every proposed change before it moves forward.
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-6 min-h-11 rounded-[0.9rem] bg-slate-950 px-6 py-3 text-sm font-bold text-white"
+            >
+              Done
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">
+                  Give feedback
+                </div>
+                <h2 className="mt-1 text-2xl font-extrabold tracking-[-0.04em] text-slate-950">
+                  What should work better?
+                </h2>
+                <p className="mt-1 text-[13px] leading-5 text-slate-500">
+                  Be specific. Short, honest notes are the most useful.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={status === 'submitting'}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
+                aria-label="Close feedback"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <fieldset className="mt-5">
+              <legend className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                Type of feedback
+              </legend>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {FEEDBACK_CATEGORY_OPTIONS.map((option) => {
+                  const Icon = option.icon
+                  const selected = category === option.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => setCategory(option.value)}
+                      className={`flex min-h-[4.2rem] items-center gap-3 rounded-[1rem] border px-3 py-2.5 text-left transition ${
+                        selected
+                          ? 'border-slate-900 bg-slate-950 text-white shadow-[0_10px_24px_rgba(15,23,42,0.13)]'
+                          : 'border-slate-200/80 bg-white/75 text-slate-700 hover:bg-white'
+                      }`}
+                    >
+                      <Icon className={`h-4 w-4 shrink-0 ${selected ? 'text-white' : 'text-slate-500'}`} />
+                      <span className="min-w-0">
+                        <span className="block text-[12px] font-bold">{option.label}</span>
+                        <span className={`mt-0.5 block text-[10px] leading-4 ${selected ? 'text-white/70' : 'text-slate-500'}`}>
+                          {option.description}
+                        </span>
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </fieldset>
+
+            <label className="mt-5 block">
+              <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                Your note
+              </span>
+              <textarea
+                value={message}
+                onChange={(event) => {
+                  setMessage(event.target.value.slice(0, 2000))
+                  if (error) setError('')
+                }}
+                rows={5}
+                placeholder="What happened, what did you expect, or what would save you time?"
+                className="mt-2 w-full resize-none border border-slate-200/90 bg-white px-3.5 py-3 text-sm leading-6 text-slate-900"
+              />
+              <span className="mt-1.5 block text-right text-[10px] font-semibold text-slate-400">
+                {message.length}/2000
+              </span>
+            </label>
+
+            <fieldset className="mt-1">
+              <legend className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                Overall experience <span className="normal-case tracking-normal">(optional)</span>
+              </legend>
+              <div className="mt-2 flex items-center gap-1.5" aria-label="Overall experience rating">
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setRating((current) => (current === value ? 0 : value))}
+                    className={`flex h-11 flex-1 items-center justify-center rounded-[0.85rem] border transition ${
+                      value <= rating
+                        ? 'border-amber-300 bg-amber-50 text-amber-600'
+                        : 'border-slate-200/80 bg-white/70 text-slate-300 hover:text-slate-500'
+                    }`}
+                    aria-label={`${value} out of 5`}
+                    aria-pressed={value <= rating}
+                  >
+                    <Star className={`h-4 w-4 ${value <= rating ? 'fill-current' : ''}`} />
+                  </button>
+                ))}
+              </div>
+              <div className="mt-1.5 flex justify-between text-[10px] font-semibold text-slate-400">
+                <span>Needs work</span>
+                <span>Works beautifully</span>
+              </div>
+            </fieldset>
+
+            {error ? (
+              <div className="mt-3 rounded-[0.85rem] bg-rose-50 px-3 py-2.5 text-[11px] font-semibold leading-5 text-rose-700" role="alert">
+                {error}
+              </div>
+            ) : null}
+
+            {!signedIn ? (
+              <div className="mt-4 flex items-center justify-between gap-3 rounded-[1rem] bg-slate-100/80 px-3.5 py-3">
+                <p className="text-[11px] leading-5 text-slate-600">Sign in to keep the feedback inbox protected from spam.</p>
+                <button
+                  type="button"
+                  onClick={() => void handleSignIn()}
+                  className="min-h-10 shrink-0 rounded-[0.8rem] bg-white px-3 text-[11px] font-bold text-slate-800 shadow-[0_6px_16px_rgba(15,23,42,0.06)]"
+                >
+                  Sign in
+                </button>
+              </div>
+            ) : null}
+
+            <button
+              type="submit"
+              disabled={status === 'submitting' || message.trim().length < 10 || !signedIn}
+              className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-[0.95rem] bg-slate-950 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {status === 'submitting' ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Sending feedback
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4" />
+                  Send feedback
+                </>
+              )}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -6530,6 +6791,7 @@ export default function App() {
   const [showDeadlines, setShowDeadlines] = useState(false)
   const [showParkingLot, setShowParkingLot] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
+  const [showFeedback, setShowFeedback] = useState(false)
   const [showPdfExportOptions, setShowPdfExportOptions] = useState(false)
   const [pdfExporting, setPdfExporting] = useState(false)
   const [dragState, setDragState] = useState(null)
@@ -7960,10 +8222,11 @@ export default function App() {
 
     try {
       setAuthError('')
-      await signInWithGoogle()
+      return await signInWithGoogle()
     } catch (error) {
       console.error(error)
       setAuthError('Sign-in could not be completed. Please try again.')
+      return null
     }
   }
 
@@ -8945,6 +9208,10 @@ export default function App() {
         onCreateTrip={() => void createTrip()}
         onDeleteTrip={() => void deleteTrip()}
         onExportOverview={handleOpenPdfExportOptions}
+        onOpenFeedback={() => {
+          setShowMenu(false)
+          setShowFeedback(true)
+        }}
         onOpenDeadlines={() => {
           setShowMenu(false)
           setShowParkingLot(false)
@@ -9002,6 +9269,23 @@ export default function App() {
         onShare={() => void handleShareOverviewPdf()}
         open={showPdfExportOptions}
       />
+      {showFeedback ? (
+        <FeedbackModal
+          currentUser={currentUser}
+          onClose={() => setShowFeedback(false)}
+          onRequestSignIn={handleSignIn}
+          onSubmit={submitAppFeedback}
+          screen={
+            showDeadlines
+              ? 'cancellation-tracker'
+              : showParkingLot
+                ? 'parking-lot'
+                : resolvedActiveDayId === DAY_VIEW_ALL
+                  ? 'itinerary-overview'
+                  : 'itinerary-day'
+          }
+        />
+      ) : null}
       <AppDialog
         dialog={appDialog}
         onCancel={() =>
