@@ -6558,7 +6558,7 @@ export default function App() {
 
   useEffect(() => {
     if (!reorderNotice) return undefined
-    const timeout = window.setTimeout(() => setReorderNotice(null), 10000)
+    const timeout = window.setTimeout(() => setReorderNotice(null), 5000)
     return () => window.clearTimeout(timeout)
   }, [reorderNotice])
 
@@ -8538,13 +8538,23 @@ export default function App() {
           aria-live="polite"
         >
           <div className="min-w-0 flex-1 text-[12px] font-semibold leading-5">{reorderNotice.message}</div>
-          <button
-            type="button"
-            onClick={() => void undoLastReorder()}
-            className="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-white/20"
-          >
-            Undo
-          </button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => void undoLastReorder()}
+              className="inline-flex h-9 items-center rounded-full bg-white/10 px-3 text-[11px] font-bold text-white transition hover:bg-white/20"
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              onClick={() => setReorderNotice(null)}
+              className="inline-flex h-9 items-center rounded-full px-2.5 text-[11px] font-bold text-white/75 transition hover:bg-white/10 hover:text-white"
+              aria-label="Dismiss notification"
+            >
+              OK
+            </button>
+          </div>
         </div>
       ) : null}
 
