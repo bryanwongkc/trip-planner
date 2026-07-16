@@ -67,9 +67,11 @@ import {
   lookupUserByEmail,
   mergeTripPatch,
   removeTripMember,
+  revokeTripInvite,
   signInWithGoogle,
   signOutUser,
   subscribeToAuthState,
+  subscribeToTripInvites,
   subscribeToTripMembers,
   subscribeToTripState,
   subscribeToUserTripDirectory,
@@ -116,6 +118,14 @@ import {
   timeToMinutes,
 } from './utils/trip'
 import { validateTripPatch } from './utils/tripValidation'
+import { createAsyncTtlCache } from './utils/asyncTtlCache'
+import { createKeyedTaskQueue } from './utils/keyedTaskQueue'
+import {
+  DEFAULT_INVITE_EXPIRY_DAYS,
+  DEFAULT_INVITE_MAX_USES,
+  inviteTimestampToMillis,
+  tripInviteStatus,
+} from './utils/tripInvites'
 import {
   pendingReorderGestureAction,
   REORDER_TOUCH_HOLD_MS,
@@ -124,6 +134,8 @@ import {
 const LONG_PRESS_MS = 600
 const MOVE_THRESHOLD = 10
 const DROP_DAY_SWITCH_MS = 240
+const FLIGHT_STATUS_LIVE_TTL_MS = 60_000
+const FLIGHT_STATUS_STATIC_TTL_MS = 6 * 60 * 60 * 1000
 const ACTIVE_TRIP_STORAGE_KEY = 'trip-planner-active-trip'
 const TripMap = lazy(() => import('./components/TripMap'))
 const TRAVEL_MODE_OPTIONS = [
@@ -3355,21 +3367,48 @@ function CollaboratorsModal({
   canManageTrip,
   currentRole,
   currentUser,
+  invites,
   isMobilePortrait,
   members,
   onAddMember,
   onClose,
   onCreateInvite,
   onRemoveMember,
+  onRevokeInvite,
   onUpdateRole,
 }) {
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('editor')
   const [inviteRole, setInviteRole] = useState('viewer')
   const [inviteLink, setInviteLink] = useState('')
+  const [inviteId, setInviteId] = useState('')
+  const [inviteExpiryDays, setInviteExpiryDays] = useState(DEFAULT_INVITE_EXPIRY_DAYS)
+  const [inviteMaxUses, setInviteMaxUses] = useState(DEFAULT_INVITE_MAX_USES)
   const [busy, setBusy] = useState(false)
   const canManage = canManageTrip ?? canManageMembers(currentRole)
   const dialogRef = useModalDialog(onClose)
+  const activeInvites = (invites || [])
+    .filter((invite) => tripInviteStatus(invite) === 'active')
+    .sort(
+      (left, right) =>
+        (inviteTimestampToMillis(left.expiresAt) || Infinity) -
+        (inviteTimestampToMillis(right.expiresAt) || Infinity),
+    )
+
+  function buildInviteLink(value) {
+    return `${window.location.origin}${window.location.pathname}?invite=${encodeURIComponent(value)}`
+  }
+
+  function formatInviteExpiry(value) {
+    const millis = inviteTimestampToMillis(value)
+    if (millis === null) return 'Expiry unavailable'
+    return new Intl.DateTimeFormat('en-HK', {
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      month: 'short',
+    }).format(new Date(millis))
+  }
 
   async function handleAddMember() {
     if (!email.trim()) return
@@ -3386,10 +3425,37 @@ function CollaboratorsModal({
   async function handleCreateInvite() {
     setBusy(true)
     try {
-      const link = await onCreateInvite(inviteRole)
-      if (link) setInviteLink(link)
+      const result = await onCreateInvite(inviteRole, {
+        expiresInDays: inviteExpiryDays,
+        maxUses: inviteMaxUses,
+      })
+      if (result?.link) {
+        setInviteId(result.inviteId)
+        setInviteLink(result.link)
+      }
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function handleRevokeInvite(invite) {
+    setBusy(true)
+    try {
+      const revoked = await onRevokeInvite(invite.id)
+      if (revoked && invite.id === inviteId) {
+        setInviteId('')
+        setInviteLink('')
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleCopyExistingInvite(invite) {
+    try {
+      await navigator.clipboard?.writeText(buildInviteLink(invite.id))
+    } catch (error) {
+      console.error(error)
     }
   }
 
@@ -3486,7 +3552,7 @@ function CollaboratorsModal({
             </div>
 
             <div className="rounded-[1.2rem] bg-slate-50/90 p-4">
-              <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+              <div className="grid gap-3 sm:grid-cols-3 sm:items-end">
                 <Field label="Link access">
                   <select
                     value={inviteRole}
@@ -3504,18 +3570,51 @@ function CollaboratorsModal({
                     {roleAccessDescription(inviteRole)}
                   </p>
                 </Field>
-                <button
-                  type="button"
-                  onClick={() => void handleCreateInvite()}
-                  disabled={busy}
-                  className="rounded-[1rem] bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-300"
-                >
-                  Create link
-                </button>
+                <Field label="Expires">
+                  <select
+                    value={inviteExpiryDays}
+                    onChange={(event) => {
+                      setInviteExpiryDays(Number(event.target.value))
+                      setInviteLink('')
+                    }}
+                    className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                  >
+                    <option value={1}>1 day</option>
+                    <option value={7}>7 days</option>
+                    <option value={30}>30 days</option>
+                  </select>
+                </Field>
+                <Field label="Maximum joins">
+                  <select
+                    value={inviteMaxUses}
+                    onChange={(event) => {
+                      setInviteMaxUses(Number(event.target.value))
+                      setInviteLink('')
+                    }}
+                    className="w-full rounded-[1rem] border border-slate-200/90 bg-white px-4 py-3 text-sm"
+                  >
+                    {[1, 5, 10, 25, 50].map((value) => (
+                      <option key={value} value={value}>{value}</option>
+                    ))}
+                  </select>
+                </Field>
               </div>
+              <button
+                type="button"
+                onClick={() => void handleCreateInvite()}
+                disabled={busy}
+                className="mt-3 w-full rounded-[1rem] bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-300"
+              >
+                Create link
+              </button>
               {inviteLink ? (
                 <div className="mt-3 flex flex-col gap-2 rounded-[1rem] bg-white p-3 sm:flex-row sm:items-center">
-                  <div className="min-w-0 flex-1 truncate text-[12px] text-slate-600">{inviteLink}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[12px] text-slate-600">{inviteLink}</div>
+                    <div className="mt-1 text-[10px] font-semibold text-slate-400">
+                      Expires in {inviteExpiryDays} {inviteExpiryDays === 1 ? 'day' : 'days'} · {inviteMaxUses} maximum joins
+                    </div>
+                  </div>
                   <button
                     type="button"
                     onClick={() => void handleCopyInvite()}
@@ -3533,6 +3632,45 @@ function CollaboratorsModal({
                 </div>
               ) : null}
             </div>
+
+            {activeInvites.length ? (
+              <div className="rounded-[1.2rem] bg-slate-50/90 p-4">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  Active invitation links
+                </div>
+                <div className="mt-3 space-y-2">
+                  {activeInvites.map((invite) => (
+                    <div key={invite.id} className="flex items-center gap-2 rounded-[1rem] bg-white p-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[12px] font-bold text-slate-800">
+                          {roleLabel(invite.role)} link
+                        </div>
+                        <div className="mt-1 text-[10px] leading-4 text-slate-500">
+                          {Number(invite.useCount || 0)} of {Number(invite.maxUses || 0)} joins · Expires {formatInviteExpiry(invite.expiresAt)}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleCopyExistingInvite(invite)}
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600"
+                        aria-label={`Copy ${roleLabel(invite.role)} invitation link`}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleRevokeInvite(invite)}
+                        disabled={busy}
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600 disabled:text-slate-300"
+                        aria-label={`Revoke ${roleLabel(invite.role)} invitation link`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -4057,7 +4195,9 @@ function AddStopComposer({
     flightCode: draftFlightCode,
     dayDate: draftDayDate,
   })
-  const draftLookupKey = buildFlightLookupKey(draftFlightLookup?.flightNumber, draftFlightLookup?.date)
+  const draftFlightNumber = draftFlightLookup?.flightNumber || ''
+  const draftFlightDate = draftFlightLookup?.date || ''
+  const draftLookupKey = buildFlightLookupKey(draftFlightNumber, draftFlightDate)
   const canSaveDraft = draft.category === 'Flight'
     ? Boolean(draftFlightCode.trim())
     : Boolean((draft.title || '').trim())
@@ -4101,20 +4241,18 @@ function AddStopComposer({
   }
 
   useEffect(() => {
-    if (!canEdit) return undefined
-    if (draft.category !== 'Flight' || !draftFlightLookup?.flightNumber || !draftFlightLookup.date) return undefined
-    if (!isCurrentDate(draftDayDate) && draftAppliedLookupKey === draftLookupKey) {
-      return undefined
-    }
+    if (!canEdit || !isComposerOpen) return undefined
+    if (draft.category !== 'Flight' || !draftFlightNumber || !draftFlightDate) return undefined
+    if (draftAppliedLookupKey === draftLookupKey) return undefined
 
     let active = true
 
     async function syncDraftFlight() {
       try {
         const record = await getFlightRecord({
-          date: draftFlightLookup.date,
-          flightCode: draftFlightLookup.flightNumber,
-          forceRefresh: isCurrentDate(draftFlightLookup.date),
+          date: draftFlightDate,
+          flightCode: draftFlightNumber,
+          forceRefresh: isCurrentDate(draftFlightDate),
         })
 
         if (!active || !record) return
@@ -4130,17 +4268,13 @@ function AddStopComposer({
 
           if (
             current.category !== 'Flight' ||
-            currentFlightCode !== draftFlightLookup.flightNumber ||
+            currentFlightCode !== draftFlightNumber ||
             currentLookupKey !== draftLookupKey
           ) {
             return current
           }
 
-          if (!isCurrentDate(draftFlightLookup.date) && hasAppliedFlightLookup(current, draftLookupKey)) {
-            return current
-          }
-
-          return applyFlightRecordToDraft(current, record, draftFlightLookup.flightNumber, draftLookupKey)
+          return applyFlightRecordToDraft(current, record, draftFlightNumber, draftLookupKey)
         })
       } catch (error) {
         console.error(error)
@@ -4158,12 +4292,12 @@ function AddStopComposer({
     draft.category,
     draftAppliedLookupKey,
     draft.dayId,
-    draft.title,
-    draftDayDate,
-    draftFlightLookup,
+    draftFlightDate,
+    draftFlightNumber,
     draftLookupKey,
     effectiveDraftDayId,
     getFlightRecord,
+    isComposerOpen,
   ])
 
   async function saveNewItem() {
@@ -4177,19 +4311,19 @@ function AddStopComposer({
         dayId: effectiveDraftDayId,
       })))
 
-      if (nextDraft.category === 'Flight' && draftFlightLookup?.flightNumber && draftFlightLookup.date) {
+      if (nextDraft.category === 'Flight' && draftFlightNumber && draftFlightDate) {
         try {
         const record = await getFlightRecord({
-          date: draftFlightLookup.date,
-          flightCode: draftFlightLookup.flightNumber,
-          forceRefresh: isCurrentDate(draftFlightLookup.date),
+          date: draftFlightDate,
+          flightCode: draftFlightNumber,
+          forceRefresh: isCurrentDate(draftFlightDate),
         })
 
         if (record) {
           nextDraft = applyFlightRecordToDraft(
             nextDraft,
             record,
-            draftFlightLookup.flightNumber,
+            draftFlightNumber,
             draftLookupKey,
           )
         }
@@ -5058,7 +5192,9 @@ function PlannerPanel({
     flightCode: draftFlightCode,
     dayDate: draftDayDate,
   })
-  const draftLookupKey = buildFlightLookupKey(draftFlightLookup?.flightNumber, draftFlightLookup?.date)
+  const draftFlightNumber = draftFlightLookup?.flightNumber || ''
+  const draftFlightDate = draftFlightLookup?.date || ''
+  const draftLookupKey = buildFlightLookupKey(draftFlightNumber, draftFlightDate)
   const canSaveDraft = draft.category === 'Flight'
     ? Boolean(draftFlightCode.trim())
     : Boolean((draft.title || '').trim())
@@ -5146,20 +5282,18 @@ function PlannerPanel({
   }
 
   useEffect(() => {
-    if (!canEdit) return undefined
-    if (draft.category !== 'Flight' || !draftFlightLookup?.flightNumber || !draftFlightLookup.date) return undefined
-    if (!isCurrentDate(draftDayDate) && draftAppliedLookupKey === draftLookupKey) {
-      return undefined
-    }
+    if (!canEdit || !isComposerOpen) return undefined
+    if (draft.category !== 'Flight' || !draftFlightNumber || !draftFlightDate) return undefined
+    if (draftAppliedLookupKey === draftLookupKey) return undefined
 
     let active = true
 
     async function syncDraftFlight() {
       try {
         const record = await getFlightRecord({
-          date: draftFlightLookup.date,
-          flightCode: draftFlightLookup.flightNumber,
-          forceRefresh: isCurrentDate(draftFlightLookup.date),
+          date: draftFlightDate,
+          flightCode: draftFlightNumber,
+          forceRefresh: isCurrentDate(draftFlightDate),
         })
 
         if (!active || !record) return
@@ -5175,17 +5309,13 @@ function PlannerPanel({
 
           if (
             current.category !== 'Flight' ||
-            currentFlightCode !== draftFlightLookup.flightNumber ||
+            currentFlightCode !== draftFlightNumber ||
             currentLookupKey !== draftLookupKey
           ) {
             return current
           }
 
-          if (!isCurrentDate(draftFlightLookup.date) && hasAppliedFlightLookup(current, draftLookupKey)) {
-            return current
-          }
-
-          return applyFlightRecordToDraft(current, record, draftFlightLookup.flightNumber, draftLookupKey)
+          return applyFlightRecordToDraft(current, record, draftFlightNumber, draftLookupKey)
         })
       } catch (error) {
         console.error(error)
@@ -5203,12 +5333,12 @@ function PlannerPanel({
     draft.category,
     draftAppliedLookupKey,
     draft.dayId,
-    draft.title,
-    draftDayDate,
-    draftFlightLookup,
+    draftFlightDate,
+    draftFlightNumber,
     draftLookupKey,
     effectiveDraftDayId,
     getFlightRecord,
+    isComposerOpen,
   ])
 
   async function saveNewItem() {
@@ -5222,19 +5352,19 @@ function PlannerPanel({
         dayId: effectiveDraftDayId,
       })))
 
-      if (nextDraft.category === 'Flight' && draftFlightLookup?.flightNumber && draftFlightLookup.date) {
+      if (nextDraft.category === 'Flight' && draftFlightNumber && draftFlightDate) {
         try {
         const record = await getFlightRecord({
-          date: draftFlightLookup.date,
-          flightCode: draftFlightLookup.flightNumber,
-          forceRefresh: isCurrentDate(draftFlightLookup.date),
+          date: draftFlightDate,
+          flightCode: draftFlightNumber,
+          forceRefresh: isCurrentDate(draftFlightDate),
         })
 
         if (record) {
           nextDraft = applyFlightRecordToDraft(
             nextDraft,
             record,
-            draftFlightLookup.flightNumber,
+            draftFlightNumber,
             draftLookupKey,
           )
         }
@@ -6406,14 +6536,18 @@ export default function App() {
   const [moveItem, setMoveItem] = useState(null)
   const [reorderNotice, setReorderNotice] = useState(null)
   const [tripMembers, setTripMembers] = useState([])
+  const [tripInvites, setTripInvites] = useState([])
   const [appDialog, setAppDialog] = useState(null)
   const [pendingInviteId, setPendingInviteId] = useState(readInviteIdFromUrl)
   const overridesRef = useRef(overrides)
-  const saveQueueRef = useRef(Promise.resolve())
+  const activeTripRef = useRef(activeTripId)
+  const saveQueueRef = useRef(null)
+  if (saveQueueRef.current === null) saveQueueRef.current = createKeyedTaskQueue()
 
   const isMobilePortrait = useResponsiveMode()
   const routeCacheRef = useRef(new Map())
-  const flightLookupCacheRef = useRef(new Map())
+  const flightLookupCacheRef = useRef(null)
+  if (flightLookupCacheRef.current === null) flightLookupCacheRef.current = createAsyncTtlCache()
   const dragDaySwitchRef = useRef(null)
   const dragAutoScrollFrameRef = useRef(null)
   const dragActivationTimerRef = useRef(null)
@@ -6699,37 +6833,26 @@ export default function App() {
     [tripState.bookingOptions, tripState.items],
   )
 
-  const getFlightRecord = useMemo(
-    () =>
-      async ({ date, flightCode, forceRefresh = false }) => {
-        const normalizedCode = extractFlightNumber(flightCode)
-        const lookupKey = buildFlightLookupKey(normalizedCode, date)
+  const getFlightRecord = useCallback(async ({ date, flightCode, forceRefresh = false }) => {
+    const normalizedCode = extractFlightNumber(flightCode)
+    const lookupKey = buildFlightLookupKey(normalizedCode, date)
 
-        if (!normalizedCode || !date || !lookupKey) return null
+    if (!normalizedCode || !date || !lookupKey) return null
 
-        if (!forceRefresh) {
-          const cached = flightLookupCacheRef.current.get(lookupKey)
-          if (cached) return cached
-        }
-
+    return flightLookupCacheRef.current.get(lookupKey, {
+      ttlMs: forceRefresh ? FLIGHT_STATUS_LIVE_TTL_MS : FLIGHT_STATUS_STATIC_TTL_MS,
+      load: async () => {
         const payload = await fetchFlightStatusByNumber({
           date,
           flightNumber: normalizedCode,
           withLocation: true,
         })
-        const record = selectFlightRecord(payload.records || [], normalizedCode)
+        return selectFlightRecord(payload.records || [], normalizedCode)
+      },
+    })
+  }, [])
 
-        if (record) {
-          flightLookupCacheRef.current.set(lookupKey, record)
-        }
-
-        return record
-    },
-    [],
-  )
-
-  const performTripPatch = useCallback(async (tripId, patch, options) => {
-    const currentOverrides = overridesRef.current
+  const performTripPatch = useCallback(async (tripId, currentOverrides, patch, options, tripSummary) => {
     const nextOverrides = mergeTripOverrides(currentOverrides, patch)
     try {
       validateTripPatch(currentOverrides, patch)
@@ -6744,54 +6867,78 @@ export default function App() {
         : null
 
       if (isGuestMode) {
-        const nextSummary = datePatch ? { ...activeTripSummary, ...datePatch } : activeTripSummary
+        const nextSummary = datePatch ? { ...tripSummary, ...datePatch } : tripSummary
         if (!saveGuestTrip(window.localStorage, tripId, nextSummary, nextOverrides)) {
           throw new Error('This device could not save the trip.')
         }
-        overridesRef.current = nextOverrides
-        setOverrides(nextOverrides)
         if (datePatch) {
           setTripSummaries((current) =>
             current.map((trip) => (trip.id === tripId ? { ...trip, ...datePatch } : trip)),
           )
         }
-        setFirestoreState({ status: 'ready', error: '' })
-        return
+        if (activeTripRef.current === tripId) setFirestoreState({ status: 'ready', error: '' })
+        return nextOverrides
       }
 
-      overridesRef.current = nextOverrides
       await mergeTripPatch(tripId, patch, options)
       if (datePatch && globalThis.navigator?.onLine !== false) {
         try {
           await upsertTripMeta(tripId, {
             ...datePatch,
-            title: activeTripSummary?.title || '',
-            city: activeTripSummary?.city || '',
+            title: tripSummary?.title || '',
+            city: tripSummary?.city || '',
           })
         } catch (error) {
           console.error(error)
-          setFirestoreState({ status: 'warning', error: 'The itinerary saved, but trip dates are still synchronizing.' })
-          return
+          if (activeTripRef.current === tripId) {
+            setFirestoreState({ status: 'warning', error: 'The itinerary saved, but trip dates are still synchronizing.' })
+          }
+          return nextOverrides
         }
       }
-      setFirestoreState({ status: 'ready', error: '' })
+      if (activeTripRef.current === tripId) setFirestoreState({ status: 'ready', error: '' })
+      return nextOverrides
     } catch (error) {
-      if (overridesRef.current === nextOverrides) overridesRef.current = currentOverrides
       console.error(error)
       const message = error instanceof Error ? error.message : 'We could not save that change. Please try again.'
-      setFirestoreState({ status: 'error', error: message })
+      if (activeTripRef.current === tripId) setFirestoreState({ status: 'error', error: message })
       throw error
     }
-  }, [activeTripSummary, isGuestMode])
+  }, [isGuestMode])
 
   const saveTripPatch = useCallback((tripId, patch, options) => {
-    const pending = saveQueueRef.current.then(() => performTripPatch(tripId, patch, options))
-    saveQueueRef.current = pending.catch(() => undefined)
-    return pending
-  }, [performTripPatch])
+    const tripSummary = tripSummaries.find((trip) => trip.id === tripId) || null
+    const fallbackOverrides =
+      activeTripRef.current === tripId
+        ? overridesRef.current
+        : isGuestMode
+          ? readLocalTripOverrides(tripId)
+          : emptyTripOverrides()
+
+    return saveQueueRef.current.enqueue(
+      tripId,
+      async (currentOverrides = fallbackOverrides) => {
+        const nextOverrides = await performTripPatch(
+          tripId,
+          currentOverrides,
+          patch,
+          options,
+          tripSummary,
+        )
+        if (activeTripRef.current === tripId) {
+          overridesRef.current = nextOverrides
+          setOverrides(nextOverrides)
+        }
+        return nextOverrides
+      },
+      fallbackOverrides,
+    )
+  }, [isGuestMode, performTripPatch, tripSummaries])
 
   const selectTrip = useCallback((tripId) => {
     const nextOverrides = isGuestMode ? readLocalTripOverrides(tripId) : emptyTripOverrides()
+    activeTripRef.current = tripId
+    saveQueueRef.current.setState(tripId, nextOverrides)
     overridesRef.current = nextOverrides
     setOverrides(nextOverrides)
     if (!isGuestMode) setFirestoreState({ status: 'connecting', error: '' })
@@ -6801,6 +6948,7 @@ export default function App() {
     setMoveItem(null)
     setReorderNotice(null)
     setRouteMap({})
+    setTripInvites([])
     setActiveDayId(DAY_VIEW_ALL)
     setActiveTripId(tripId)
   }, [isGuestMode])
@@ -6814,7 +6962,12 @@ export default function App() {
 
   useEffect(() => {
     overridesRef.current = overrides
-  }, [overrides])
+    if (resolvedTripId) saveQueueRef.current.setState(resolvedTripId, overrides)
+  }, [overrides, resolvedTripId])
+
+  useEffect(() => {
+    activeTripRef.current = resolvedTripId
+  }, [resolvedTripId])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -7215,11 +7368,14 @@ export default function App() {
         resolvedTripId,
         (payload) => {
           if (!active) return
-          setOverrides({
+          const nextOverrides = {
             days: payload?.days || {},
             items: payload?.items || {},
             bookingOptions: payload?.bookingOptions || {},
-          })
+          }
+          saveQueueRef.current.setState(resolvedTripId, nextOverrides)
+          overridesRef.current = nextOverrides
+          setOverrides(nextOverrides)
           setFirestoreState({ status: 'ready', error: '' })
         },
         (error) => {
@@ -7394,6 +7550,35 @@ export default function App() {
       unsubscribe()
     }
   }, [activeRole, authReady, isGuestMode, resolvedTripId])
+
+  useEffect(() => {
+    if (isGuestMode || !firebaseEnabled || !authReady || !resolvedTripId || !canManageCurrentTrip) {
+      queueMicrotask(() => setTripInvites([]))
+      return undefined
+    }
+
+    let active = true
+    let unsubscribe = () => {}
+
+    async function connectInvites() {
+      unsubscribe = await subscribeToTripInvites(
+        resolvedTripId,
+        (payload) => {
+          if (!active) return
+          setTripInvites(payload || [])
+        },
+        (error) => {
+          console.error(error)
+        },
+      )
+    }
+
+    void connectInvites()
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [authReady, canManageCurrentTrip, isGuestMode, resolvedTripId])
 
   const routeItems = useMemo(() => buildRouteTimelineItems(deferredItems), [deferredItems])
   const routePairs = useMemo(() => makeMovementPairs(routeItems), [routeItems])
@@ -7789,6 +7974,7 @@ export default function App() {
       setNoteItem(null)
       setDetailItem(null)
       setTripMembers([])
+      setTripInvites([])
     } catch (error) {
       console.error(error)
       setAuthError('Sign-out could not be completed. Please try again.')
@@ -8500,31 +8686,39 @@ export default function App() {
     )
   }
 
-  async function createInvitationLink(role) {
-    if (!canManageCurrentTrip) return ''
-    if (!['admin', 'editor', 'viewer'].includes(role)) return ''
+  async function createInvitationLink(role, options) {
+    if (!canManageCurrentTrip) return null
+    if (!['admin', 'editor', 'viewer'].includes(role)) return null
     if (isGuestMode) {
       await showAlert('Sign in with Google to create invitation links.')
-      return ''
+      return null
     }
-    if (!currentUser?.uid) return ''
+    if (!currentUser?.uid) return null
 
-    const invite = await createTripInvite(
-      resolvedTripId,
-      currentUser,
-      role,
-      {
-        title: activeTripSummary.title,
-        startDate: activeTripSummary.startDate,
-        endDate: activeTripSummary.endDate,
-        city: activeTripSummary.city || '',
-        hidden: false,
-        isDemo: activeTripSummary.isDemo,
-        ownerId: activeTripSummary.ownerId || currentUser.uid,
-        createdBy: activeTripSummary.createdBy || currentUser.uid,
-      },
-    )
-    if (!invite?.inviteId) return ''
+    let invite
+    try {
+      invite = await createTripInvite(
+        resolvedTripId,
+        currentUser,
+        role,
+        {
+          title: activeTripSummary.title,
+          startDate: activeTripSummary.startDate,
+          endDate: activeTripSummary.endDate,
+          city: activeTripSummary.city || '',
+          hidden: false,
+          isDemo: activeTripSummary.isDemo,
+          ownerId: activeTripSummary.ownerId || currentUser.uid,
+          createdBy: activeTripSummary.createdBy || currentUser.uid,
+        },
+        options,
+      )
+    } catch (error) {
+      console.error(error)
+      await showAlert('This invitation link could not be created. Please try again.')
+      return null
+    }
+    if (!invite?.inviteId) return null
 
     const link = `${window.location.origin}${window.location.pathname}?invite=${encodeURIComponent(invite.inviteId)}`
     try {
@@ -8532,7 +8726,27 @@ export default function App() {
     } catch (error) {
       console.error(error)
     }
-    return link
+    return { inviteId: invite.inviteId, link }
+  }
+
+  async function revokeInvitationLink(inviteId) {
+    if (!canManageCurrentTrip || !currentUser?.uid || !inviteId) return
+
+    try {
+      await revokeTripInvite(inviteId, currentUser.uid)
+      setTripInvites((current) =>
+        current.map((invite) =>
+          invite.id === inviteId
+            ? { ...invite, active: false, revokedAt: new Date(), revokedBy: currentUser.uid }
+            : invite,
+        ),
+      )
+      return true
+    } catch (error) {
+      console.error(error)
+      await showAlert('This invitation link could not be revoked. Please try again.')
+      return false
+    }
   }
 
   async function changeCollaboratorRole(member, role) {
@@ -9050,12 +9264,14 @@ export default function App() {
           canManageTrip={canManageCurrentTrip}
           currentRole={activeRole}
           currentUser={currentUser}
+          invites={tripInvites}
           isMobilePortrait={isMobilePortrait}
           members={tripMembers}
           onAddMember={(email, role) => addCollaborator(email, role)}
           onClose={() => setShowCollaborators(false)}
-          onCreateInvite={(role) => createInvitationLink(role)}
+          onCreateInvite={(role, options) => createInvitationLink(role, options)}
           onRemoveMember={(member) => removeCollaborator(member)}
+          onRevokeInvite={(inviteId) => revokeInvitationLink(inviteId)}
           onUpdateRole={(member, role) => changeCollaboratorRole(member, role)}
         />
       ) : null}

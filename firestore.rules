@@ -144,25 +144,148 @@ service cloud.firestore {
         'ownerId',
         'createdBy',
         'createdAt',
-        'updatedAt'
+        'updatedAt',
+        'expiresAt',
+        'maxUses',
+        'useCount',
+        'lastUsedAt',
+        'lastUsedBy',
+        'revokedAt',
+        'revokedBy'
+      ]) &&
+      request.resource.data.keys().hasAll([
+        'inviteId',
+        'tripId',
+        'role',
+        'active',
+        'createdBy',
+        'createdAt',
+        'updatedAt',
+        'expiresAt',
+        'maxUses',
+        'useCount'
       ]) &&
       request.resource.data.inviteId == inviteId &&
+      request.resource.data.tripId is string &&
       request.resource.data.role in ['admin', 'editor', 'viewer'] &&
       request.resource.data.active is bool &&
-      request.resource.data.createdBy == request.auth.uid &&
-      (!('isDemo' in request.resource.data) || request.resource.data.isDemo is bool);
+      request.resource.data.createdBy is string &&
+      request.resource.data.createdAt is timestamp &&
+      request.resource.data.updatedAt is timestamp &&
+      request.resource.data.expiresAt is timestamp &&
+      request.resource.data.maxUses is int &&
+      request.resource.data.maxUses >= 1 &&
+      request.resource.data.maxUses <= 50 &&
+      request.resource.data.useCount is int &&
+      request.resource.data.useCount >= 0 &&
+      request.resource.data.useCount <= request.resource.data.maxUses &&
+      (!('isDemo' in request.resource.data) || request.resource.data.isDemo is bool) &&
+      (!('lastUsedAt' in request.resource.data) || request.resource.data.lastUsedAt is timestamp) &&
+      (!('lastUsedBy' in request.resource.data) || request.resource.data.lastUsedBy is string) &&
+      (!('revokedAt' in request.resource.data) || request.resource.data.revokedAt is timestamp) &&
+      (!('revokedBy' in request.resource.data) || request.resource.data.revokedBy is string);
+    }
+
+    function inviteCreatorCanManage(invite) {
+      return exists(/databases/$(database)/documents/trips/$(invite.tripId)/members/$(invite.createdBy)) &&
+        get(/databases/$(database)/documents/trips/$(invite.tripId)/members/$(invite.createdBy)).data.role in ['owner', 'admin'];
+    }
+
+    function validTripInviteCreate(inviteId) {
+      return validTripInvite(inviteId) &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.active == true &&
+        request.resource.data.useCount == 0 &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.expiresAt > request.time &&
+        request.resource.data.expiresAt <= request.time + duration.value(30, 'd') &&
+        !('lastUsedAt' in request.resource.data) &&
+        !('lastUsedBy' in request.resource.data) &&
+        !('revokedAt' in request.resource.data) &&
+        !('revokedBy' in request.resource.data);
     }
 
     function canAcceptInvite(tripId, uid) {
       return isSignedIn() &&
         ('inviteId' in request.resource.data) &&
-        exists(/databases/$(database)/documents/trips/$(tripId)) &&
-        exists(/databases/$(database)/documents/tripInvites/$(request.resource.data.inviteId)) &&
-        get(/databases/$(database)/documents/tripInvites/$(request.resource.data.inviteId)).data.tripId == tripId &&
-        get(/databases/$(database)/documents/tripInvites/$(request.resource.data.inviteId)).data.role == request.resource.data.role &&
-        get(/databases/$(database)/documents/tripInvites/$(request.resource.data.inviteId)).data.active == true &&
+        canConsumeInviteForMember(tripId, uid, request.resource.data.inviteId);
+    }
+
+    function canConsumeInviteForMember(tripId, uid, inviteId) {
+      let invitePath = /databases/$(database)/documents/tripInvites/$(inviteId);
+      return exists(/databases/$(database)/documents/trips/$(tripId)) &&
+        exists(invitePath) &&
+        canConsumeExistingInviteForMember(tripId, uid, inviteId);
+    }
+
+    function canConsumeExistingInviteForMember(tripId, uid, inviteId) {
+      let invitePath = /databases/$(database)/documents/tripInvites/$(inviteId);
+      let invite = get(invitePath).data;
+      let nextInvite = getAfter(invitePath).data;
+      let membershipPath = /databases/$(database)/documents/users/$(uid)/tripMemberships/$(tripId);
+      return invite.tripId == tripId &&
+        invite.role == request.resource.data.role &&
+        invite.active == true &&
+        invite.expiresAt > request.time &&
+        invite.useCount < invite.maxUses &&
+        inviteCreatorCanManage(invite) &&
+        nextInvite.useCount == invite.useCount + 1 &&
+        nextInvite.lastUsedBy == request.auth.uid &&
+        existsAfter(membershipPath) &&
+        getAfter(membershipPath).data.tripId == tripId &&
+        getAfter(membershipPath).data.role == invite.role &&
         request.auth.uid == uid &&
         isManagedCollaboratorRole(request.resource.data.role);
+    }
+
+    function isInviteConsumption(inviteId) {
+      let invite = resource.data;
+      let memberPath = /databases/$(database)/documents/trips/$(invite.tripId)/members/$(request.auth.uid);
+      let membershipPath = /databases/$(database)/documents/users/$(request.auth.uid)/tripMemberships/$(invite.tripId);
+      return isSignedIn() &&
+        validTripInvite(inviteId) &&
+        inviteCreatorCanManage(invite) &&
+        invite.active == true &&
+        invite.expiresAt > request.time &&
+        invite.useCount < invite.maxUses &&
+        !exists(memberPath) &&
+        request.resource.data.diff(invite).affectedKeys().hasOnly([
+          'active',
+          'useCount',
+          'lastUsedAt',
+          'lastUsedBy',
+          'updatedAt'
+        ]) &&
+        request.resource.data.useCount == invite.useCount + 1 &&
+        request.resource.data.active == (request.resource.data.useCount < invite.maxUses) &&
+        request.resource.data.lastUsedAt == request.time &&
+        request.resource.data.lastUsedBy == request.auth.uid &&
+        request.resource.data.updatedAt == request.time &&
+        existsAfter(memberPath) &&
+        getAfter(memberPath).data.uid == request.auth.uid &&
+        getAfter(memberPath).data.inviteId == inviteId &&
+        getAfter(memberPath).data.role == invite.role &&
+        existsAfter(membershipPath) &&
+        getAfter(membershipPath).data.tripId == invite.tripId &&
+        getAfter(membershipPath).data.role == invite.role;
+    }
+
+    function isManagerInviteRevocation(inviteId) {
+      return isSignedIn() &&
+        validTripInvite(inviteId) &&
+        canManageTripMembers(resource.data.tripId) &&
+        resource.data.active == true &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'active',
+          'revokedAt',
+          'revokedBy',
+          'updatedAt'
+        ]) &&
+        request.resource.data.active == false &&
+        request.resource.data.revokedAt == request.time &&
+        request.resource.data.revokedBy == request.auth.uid &&
+        request.resource.data.updatedAt == request.time;
     }
 
     function validTripMembershipIndex(tripId) {
@@ -247,21 +370,22 @@ service cloud.firestore {
       allow update: if canManageTripMembers(tripId) &&
         validTripMember(uid) &&
         resource.data.role != 'owner' &&
-        isManagedCollaboratorRole(request.resource.data.role);
+        isManagedCollaboratorRole(request.resource.data.role) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'updatedAt']) &&
+        getAfter(/databases/$(database)/documents/users/$(uid)/tripMemberships/$(tripId)).data.role == request.resource.data.role;
       allow delete: if canDeleteTrip(tripId) ||
         (canManageTripMembers(tripId) && resource.data.role != 'owner');
     }
 
     match /tripInvites/{inviteId} {
       allow get: if isSignedIn();
-      allow list: if false;
+      allow list: if isSignedIn() && canManageTripMembers(resource.data.tripId);
       allow create: if isSignedIn() &&
-        validTripInvite(inviteId) &&
+        validTripInviteCreate(inviteId) &&
         canManageTripMembers(request.resource.data.tripId);
-      allow update: if isSignedIn() &&
-        validTripInvite(inviteId) &&
-        resource.data.tripId == request.resource.data.tripId &&
-        canManageTripMembers(resource.data.tripId);
+      allow update: if resource.data.tripId == request.resource.data.tripId &&
+        resource.data.inviteId == request.resource.data.inviteId &&
+        (isManagerInviteRevocation(inviteId) || isInviteConsumption(inviteId));
       allow delete: if isSignedIn() && canManageTripMembers(resource.data.tripId);
     }
 

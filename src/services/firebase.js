@@ -1,4 +1,8 @@
 import { assertTripPatchIsCurrent, validateTripPatch } from '../utils/tripValidation'
+import {
+  normalizeTripInviteOptions,
+  tripInviteStatus,
+} from '../utils/tripInvites'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -270,10 +274,29 @@ export async function lookupUserByEmail(email, tripId) {
   return payload ? { id: payload.uid, ...payload } : null
 }
 
-export async function createTripInvite(tripId, actorUser, role, tripMeta = {}) {
+export async function subscribeToTripInvites(tripId, onValue, onError) {
+  const { collection, db, onSnapshot, query, where } = await loadFirebaseServices()
+  if (!db || !tripId) return () => {}
+
+  const inviteQuery = query(collection(db, 'tripInvites'), where('tripId', '==', tripId))
+  return onSnapshot(
+    inviteQuery,
+    (snapshot) =>
+      onValue(
+        snapshot.docs.map((entry) => ({
+          id: entry.id,
+          ...entry.data(),
+        })),
+      ),
+    onError,
+  )
+}
+
+export async function createTripInvite(tripId, actorUser, role, tripMeta = {}, options = {}) {
   const { db, doc, serverTimestamp, setDoc } = await loadFirebaseServices()
   if (!db || !tripId || !actorUser?.uid || !['admin', 'editor', 'viewer'].includes(role)) return null
 
+  const { expiresInDays, maxUses } = normalizeTripInviteOptions(options)
   const inviteId = `invite-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`}`
   const inviteDoc = doc(db, 'tripInvites', inviteId)
   const payload = stripUndefined({
@@ -288,6 +311,9 @@ export async function createTripInvite(tripId, actorUser, role, tripMeta = {}) {
     isDemo: Boolean(tripMeta.isDemo),
     ownerId: tripMeta.ownerId || '',
     active: true,
+    expiresAt: new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000),
+    maxUses,
+    useCount: 0,
     createdBy: actorUser.uid,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -298,44 +324,81 @@ export async function createTripInvite(tripId, actorUser, role, tripMeta = {}) {
 }
 
 export async function acceptTripInvite(inviteId, user) {
-  const { db, doc, getDoc, serverTimestamp, writeBatch } = await loadFirebaseServices()
+  const { db, doc, runTransaction, serverTimestamp } = await loadFirebaseServices()
   if (!db || !inviteId || !user?.uid) return null
 
   const inviteDoc = doc(db, 'tripInvites', inviteId)
-  const inviteSnapshot = await getDoc(inviteDoc)
-  if (!inviteSnapshot.exists()) {
-    throw new Error('Invitation link was not found.')
-  }
+  return runTransaction(db, async (transaction) => {
+    const inviteSnapshot = await transaction.get(inviteDoc)
+    if (!inviteSnapshot.exists()) throw new Error('Invitation link was not found.')
 
-  const invite = inviteSnapshot.data()
-  if (!invite?.active || !invite.tripId || !['admin', 'editor', 'viewer'].includes(invite.role)) {
-    throw new Error('Invitation link is no longer active.')
-  }
+    const invite = inviteSnapshot.data()
+    if (
+      tripInviteStatus(invite) !== 'active' ||
+      !invite.tripId ||
+      !['admin', 'editor', 'viewer'].includes(invite.role)
+    ) {
+      throw new Error('Invitation link is no longer active.')
+    }
 
-  const batch = writeBatch(db)
-  const memberDoc = doc(db, 'trips', invite.tripId, 'members', user.uid)
-  const membershipIndexDoc = doc(db, 'users', user.uid, 'tripMemberships', invite.tripId)
+    const memberDoc = doc(db, 'trips', invite.tripId, 'members', user.uid)
+    const memberSnapshot = await transaction.get(memberDoc)
+    if (memberSnapshot.exists()) return { ...invite, id: inviteId, alreadyMember: true }
 
-  batch.set(
-    memberDoc,
-    stripUndefined({
-      ...serializeUserProfile(user),
-      role: invite.role,
-      invitedBy: invite.createdBy || '',
-      inviteId,
-      joinedAt: serverTimestamp(),
+    const membershipIndexDoc = doc(db, 'users', user.uid, 'tripMemberships', invite.tripId)
+    const nextUseCount = Number(invite.useCount || 0) + 1
+
+    transaction.set(
+      inviteDoc,
+      {
+        active: nextUseCount < Number(invite.maxUses),
+        lastUsedAt: serverTimestamp(),
+        lastUsedBy: user.uid,
+        updatedAt: serverTimestamp(),
+        useCount: nextUseCount,
+      },
+      { merge: true },
+    )
+    transaction.set(
+      memberDoc,
+      stripUndefined({
+        ...serializeUserProfile(user),
+        role: invite.role,
+        invitedBy: invite.createdBy || '',
+        inviteId,
+        joinedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }),
+    )
+    transaction.set(
+      membershipIndexDoc,
+      buildTripIndexPayload(invite.tripId, invite.role, invite, serverTimestamp),
+      { merge: true },
+    )
+
+    return {
+      ...invite,
+      active: nextUseCount < Number(invite.maxUses),
+      id: inviteId,
+      useCount: nextUseCount,
+    }
+  })
+}
+
+export async function revokeTripInvite(inviteId, actorUid) {
+  const { db, doc, serverTimestamp, setDoc } = await loadFirebaseServices()
+  if (!db || !inviteId || !actorUid) return
+
+  await setDoc(
+    doc(db, 'tripInvites', inviteId),
+    {
+      active: false,
+      revokedAt: serverTimestamp(),
+      revokedBy: actorUid,
       updatedAt: serverTimestamp(),
-    }),
+    },
     { merge: true },
   )
-  batch.set(
-    membershipIndexDoc,
-    buildTripIndexPayload(invite.tripId, invite.role, invite, serverTimestamp),
-    { merge: true },
-  )
-
-  await batch.commit()
-  return { ...invite, id: inviteId }
 }
 
 function buildStampedPatch(patch, serverTimestamp) {

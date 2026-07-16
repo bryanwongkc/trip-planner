@@ -64,16 +64,21 @@ Use this Firebase shape:
   `trips/{tripId}`
 - Trip members:
   `trips/{tripId}/members/{uid}`
+- Trip invitation links:
+  `tripInvites/{inviteId}`
 - Trip overrides:
   `trips/{tripId}/overrides/shared`
 
 ## Permissions
 
 - `owner`: read, edit, manage collaborators
+- `admin`: read, edit, manage collaborators
 - `editor`: read, edit itinerary
 - `viewer`: read only
 
 Firestore rules are expected to enforce the same model as the UI.
+
+Invitation links expire after 1, 7, or 30 days, allow a configured number of joins, and can be revoked from the Share panel. Acceptance consumes one use and creates the member and membership index in one transaction. A link stops working if its creator is no longer an owner or admin.
 
 Signed-in trips use Firestore's persistent browser cache so pending changes survive reloads and network loss. Use account-backed editing only on a device you trust because the browser retains that cache between sessions.
 
