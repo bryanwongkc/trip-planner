@@ -92,12 +92,15 @@ import {
   formatDayDate,
   formatFullDayDate,
   getDurationMinutes,
+  getScheduleConflicts,
   movementItemsForDay,
   nextDayDate,
   normalizeDayTimelineOrder,
   normalizeItemTimeFields,
+  renumberDaySequence,
   reorderTripItems,
   renumberDays,
+  sortItemsBySequence,
   sortItemsByTimeline,
   slugId,
   stripFlightLocationFields,
@@ -540,6 +543,44 @@ function buildTimelineEntries(items) {
 
 function buildRouteTimelineItems(items) {
   return buildTimelineEntries(items).map((entry) => entry.item)
+}
+
+function scheduleConflictsForItems(items) {
+  return getScheduleConflicts(
+    buildTimelineEntries(items.filter((item) => !item.generated)).map((entry) => entry.item),
+  )
+}
+
+function buildReorderPreview(tripState, itemId, targetDayId, targetIndex) {
+  const patchItems = reorderTripItems(tripState, itemId, targetDayId, targetIndex)
+  if (!patchItems.length) return null
+
+  const patchMap = Object.fromEntries(patchItems.map((item) => [item.id, item]))
+  const targetItems = sortItemsBySequence(
+    tripState.items
+      .filter((item) => !item.generated)
+      .map((item) => patchMap[item.id] || item)
+      .filter((item) => item.dayId === targetDayId),
+  )
+  const conflicts = scheduleConflictsForItems(targetItems)
+
+  return {
+    patchItems,
+    conflicts,
+    movedItemConflicts: conflicts.byItemId[itemId] || [],
+  }
+}
+
+function dragPreviewTransform(x = 0, y = 0) {
+  const previewWidth = 272
+  const previewHeight = 72
+  const margin = 12
+  const viewportWidth = typeof window === 'undefined' ? previewWidth + margin * 2 : window.innerWidth
+  const viewportHeight = typeof window === 'undefined' ? previewHeight + margin * 2 : window.innerHeight
+  const left = Math.max(margin, Math.min(x + 14, viewportWidth - previewWidth - margin))
+  const top = Math.max(margin, Math.min(y + 14, viewportHeight - previewHeight - margin))
+
+  return `translate3d(${left}px, ${top}px, 0)`
 }
 
 function isMonitoredCancellationItem(item) {
@@ -1049,9 +1090,7 @@ function buildTripOverviewFilename(tripTitle) {
 }
 
 function exportItemsForDay(items, dayId) {
-  const dayItems = items
-    .filter((item) => item.dayId === dayId)
-    .sort((a, b) => compareTime(a.startTime || '23:59', b.startTime || '23:59'))
+  const dayItems = sortItemsBySequence(items.filter((item) => item.dayId === dayId))
 
   return buildTimelineEntries(dayItems).map((entry) => entry.item)
 }
@@ -1740,8 +1779,29 @@ function assignItemOrder(items) {
 }
 
 function mergeItemsForDay(currentItems, nextItem) {
-  const mergedItems = [...currentItems.filter((item) => item.id !== nextItem.id), normalizeItemTimeFields(nextItem)]
-  return normalizeDayTimelineOrder(mergedItems, nextItem.dayId)
+  const sequence = sortItemsBySequence(currentItems.filter((item) => item.id !== nextItem.id))
+  const normalizedItem = normalizeItemTimeFields(nextItem)
+  const existingIndex = currentItems.findIndex((item) => item.id === nextItem.id)
+
+  if (existingIndex >= 0) {
+    const previousItem = currentItems[existingIndex]
+    const insertAt = sequence.findIndex((item) => (item.order ?? 0) > (previousItem.order ?? 0))
+    sequence.splice(insertAt < 0 ? sequence.length : insertAt, 0, {
+      ...normalizedItem,
+      order: previousItem.order,
+    })
+    return renumberDaySequence(sequence, nextItem.dayId)
+  }
+
+  const requestedOrder = Number(normalizedItem.order)
+  const insertAt = Number.isFinite(requestedOrder)
+    ? sequence.findIndex((item) => Number(item.order ?? Number.POSITIVE_INFINITY) >= requestedOrder)
+    : sequence.findIndex(
+        (item) => compareTime(item.startTime || '23:59', normalizedItem.startTime || '23:59') > 0,
+      )
+
+  sequence.splice(insertAt < 0 ? sequence.length : insertAt, 0, normalizedItem)
+  return renumberDaySequence(sequence, nextItem.dayId)
 }
 
 function createItemDraft(item) {
@@ -3105,7 +3165,7 @@ function BottomDayNav({
                 onPointerLeave={clearDayPress}
                 onClick={(event) => handleDayClick(event, day.id)}
                 className={`relative flex h-12 min-w-[4.55rem] shrink-0 snap-start flex-col items-center justify-center rounded-[0.8rem] px-2 text-center transition ${
-                  dragState?.overDayId === day.id
+                  dragState?.active && dragState?.overDayId === day.id
                     ? 'bg-slate-200 text-slate-800 ring-1 ring-slate-300'
                     : isActiveDay
                       ? 'bg-slate-900 text-white'
@@ -3692,6 +3752,105 @@ function NoteModal({
             Cancel
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function MoveItemModal({
+  dayOptions,
+  item,
+  itemCount,
+  itemIndex,
+  onClose,
+  onMoveEarlier,
+  onMoveLater,
+  onMoveToDay,
+}) {
+  const otherDays = dayOptions.filter((day) => day.id !== item.dayId)
+  const [targetDayId, setTargetDayId] = useState(otherDays[0]?.id || '')
+
+  return (
+    <div
+      className="premium-backdrop fixed inset-0 z-[85] flex items-end bg-slate-950/35 p-3 backdrop-blur-[2px] sm:items-center sm:justify-center sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        className="premium-modal glass-panel w-full max-w-md rounded-[1.45rem] border border-white/60 p-4 sm:p-5"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="move-stop-title"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Move stop</div>
+            <h3 id="move-stop-title" className="mt-1 truncate text-xl font-bold tracking-[-0.025em] text-slate-950">
+              {item.title}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600"
+            aria-label="Close move options"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onMoveEarlier}
+            disabled={itemIndex <= 0}
+            className="flex min-h-14 items-center justify-center gap-2 rounded-[1rem] bg-white px-3 text-sm font-bold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
+          >
+            <ArrowUp className="h-4 w-4" />
+            Earlier
+          </button>
+          <button
+            type="button"
+            onClick={onMoveLater}
+            disabled={itemIndex < 0 || itemIndex >= itemCount - 1}
+            className="flex min-h-14 items-center justify-center gap-2 rounded-[1rem] bg-white px-3 text-sm font-bold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
+          >
+            <ArrowDown className="h-4 w-4" />
+            Later
+          </button>
+        </div>
+
+        {otherDays.length ? (
+          <div className="mt-3 rounded-[1rem] bg-white p-3.5">
+            <label htmlFor="move-stop-day" className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Move to another day
+            </label>
+            <div className="mt-2 flex gap-2">
+              <select
+                id="move-stop-day"
+                value={targetDayId}
+                onChange={(event) => setTargetDayId(event.target.value)}
+                className="min-w-0 flex-1 rounded-[0.9rem] border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"
+              >
+                {otherDays.map((day) => (
+                  <option key={day.id} value={day.id}>{day.label}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => onMoveToDay(targetDayId)}
+                disabled={!targetDayId}
+                className="rounded-[0.9rem] bg-slate-950 px-4 py-2.5 text-sm font-bold text-white disabled:bg-slate-300"
+              >
+                Move
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <p className="mt-3 text-[11px] leading-5 text-slate-500">
+          The stop keeps its current time. Any scheduling issue will be highlighted after it moves.
+        </p>
       </div>
     </div>
   )
@@ -4652,6 +4811,7 @@ function PlannerPanel({
   canEdit,
   dayOptions,
   dayMap,
+  dragPreview,
   dragState,
   filteredItems,
   focusedDayId,
@@ -4660,9 +4820,12 @@ function PlannerPanel({
   isMobilePortrait,
   mapsReady,
   onDragStart,
+  onMoveRequest,
   onOpenDetails,
   onPromoteSubstitute,
+  onReviewConflict,
   onSaveNewItem,
+  onSortDayByTime,
   onUpdateTravelMode,
   routeSegmentMap,
   selectedWeather,
@@ -4679,6 +4842,7 @@ function PlannerPanel({
   const [expandedStacks, setExpandedStacks] = useState({})
   const [stackLayoutRefreshKey, setStackLayoutRefreshKey] = useState(0)
   const promotingSubstituteIdRef = useRef('')
+  const isDragging = Boolean(dragState?.active)
   const cardPressProps = (cardItem) => ({
     role: 'button',
     tabIndex: 0,
@@ -4738,6 +4902,33 @@ function PlannerPanel({
     () => buildTimelineEntries(filteredItems),
     [filteredItems],
   )
+  const dropOrderLookup = useMemo(() => {
+    const positions = {}
+    const counts = {}
+
+    filteredItems.forEach((item) => {
+      if (item.generated || (isDragging && item.id === dragState?.itemId)) return
+      if (!counts[item.dayId]) counts[item.dayId] = 0
+      positions[item.id] = counts[item.dayId]
+      counts[item.dayId] += 1
+    })
+
+    return { positions, counts }
+  }, [dragState?.itemId, filteredItems, isDragging])
+  const scheduleConflicts = useMemo(
+    () => getScheduleConflicts(timelineEntries.map((entry) => entry.item).filter((item) => !item.generated)),
+    [timelineEntries],
+  )
+  const visibleConflicts =
+    activeDayId === DAY_VIEW_ALL
+      ? scheduleConflicts.conflicts
+      : scheduleConflicts.conflicts.filter((conflict) => conflict.dayId === activeDayId)
+  const conflictDayIds = [...new Set(visibleConflicts.map((conflict) => conflict.dayId))]
+  const sortableConflictDayId =
+    activeDayId === DAY_VIEW_ALL
+      ? conflictDayIds.length === 1 ? conflictDayIds[0] : ''
+      : activeDayId
+  const dragPreviewHasConflict = Boolean(dragPreview?.movedItemConflicts?.length)
   const WeatherIcon = weatherDisplay?.icon
   const draftScheduleConflict = useMemo(() => {
     if (isDraftParkingLotItem) return null
@@ -4895,7 +5086,28 @@ function PlannerPanel({
         </div>
       ) : null}
 
-      <div className={`${isMobilePortrait ? 'space-y-1.5' : 'space-y-2.5'} browse-ui`}>
+      {visibleConflicts.length ? (
+        <div className="mb-2.5 flex items-center gap-3 rounded-[1rem] border border-rose-200/80 bg-rose-50/90 px-3.5 py-3 text-rose-800">
+          <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <div className="min-w-0 flex-1 text-[12px] font-semibold">
+            {visibleConflicts.length} schedule {visibleConflicts.length === 1 ? 'issue' : 'issues'}
+          </div>
+          {canEdit && sortableConflictDayId ? (
+            <button
+              type="button"
+              onClick={() => onSortDayByTime(sortableConflictDayId)}
+              className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[11px] font-bold text-rose-700 shadow-sm transition hover:bg-rose-100"
+            >
+              Sort by time
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div
+        className={`${isMobilePortrait ? 'space-y-1.5' : 'space-y-2.5'} browse-ui`}
+        data-itinerary-list-day-id={activeDayId === DAY_VIEW_ALL ? '' : activeDayId}
+      >
         {timelineEntries.map((entry, index) => {
           const item = entry.item
           const meta = typeMeta(item.category)
@@ -4903,11 +5115,18 @@ function PlannerPanel({
           const nextSegment = routeSegmentMap[item.id]
           const isOverview = activeDayId === DAY_VIEW_ALL
           const previousItem = timelineEntries[index - 1]?.item
-          const nextItem = timelineEntries[index + 1]?.item
           const showDayDivider = isOverview && (!previousItem || previousItem.dayId !== item.dayId)
           const dayContext = dayOptions.find((day) => day.id === item.dayId)
-          const manualIndex = manualOrderLookup.positions[item.id]
+          const entryDropIndices = entry.items
+            .map((entryItem) => dropOrderLookup.positions[entryItem.id])
+            .filter((position) => Number.isFinite(position))
+          const dropIndex = entryDropIndices.length ? Math.min(...entryDropIndices) : undefined
+          const dropIndexEnd = entryDropIndices.length ? Math.max(...entryDropIndices) : undefined
           const isManual = !item.generated
+          const itemConflicts = scheduleConflicts.byItemId[item.id] || []
+          const primaryConflict = itemConflicts[0] || null
+          const isConflicted = Boolean(primaryConflict)
+          const showConflictMessage = primaryConflict?.itemIds[0] === item.id
           const locationSummary = itemLocationSummary(item)
           const transitSummary = buildTransitSummary(item)
           const isStack = entry.type === 'stack'
@@ -5000,16 +5219,29 @@ function PlannerPanel({
                 promotingSubstituteIdRef.current = ''
               })
           }
-          const showBeforeSlot = Boolean(dragState && isManual)
-          const showAfterSlot =
-            Boolean(dragState && isManual) &&
-            (!nextItem || nextItem.dayId !== item.dayId || nextItem.generated)
-          const isDraggingItem = dragState?.itemId === item.id
+          const showBeforeIndicator =
+            isDragging &&
+            isManual &&
+            dragState?.itemId !== item.id &&
+            dragState?.slot?.dayId === item.dayId &&
+            dragState?.slot?.index === dropIndex
+          const showAfterIndicator =
+            isDragging &&
+            isManual &&
+            dragState?.itemId !== item.id &&
+            dragState?.slot?.dayId === item.dayId &&
+            dragState?.slot?.index === (dropOrderLookup.counts[item.dayId] || 0) &&
+            dropIndexEnd === (dropOrderLookup.counts[item.dayId] || 0) - 1
+          const isDraggingItem = isDragging && dragState?.itemId === item.id
           const RouteIcon = nextSegment ? routeIconForMode(nextSegment.mode) : null
           return (
             <div
               key={`${entry.id}-${isExpandedStack ? 'expanded' : 'collapsed'}-${stackLayoutRefreshKey}`}
-              className={`itinerary-step grid ${
+              data-itinerary-item-day-id={item.dayId}
+              data-itinerary-item-id={item.id}
+              data-itinerary-manual-index={isManual ? dropIndex : undefined}
+              data-itinerary-day-manual-count={isManual ? (dropOrderLookup.counts[item.dayId] || 0) : undefined}
+              className={`itinerary-step relative grid ${
                 isMobilePortrait
                   ? 'grid-cols-[2.7rem_1.25rem_minmax(0,1fr)] gap-x-1.5 gap-y-1.5'
                   : 'grid-cols-[3.25rem_1.55rem_minmax(0,1fr)] gap-x-2 gap-y-2 sm:grid-cols-[3.75rem_1.65rem_minmax(0,1fr)] sm:gap-x-3'
@@ -5031,35 +5263,40 @@ function PlannerPanel({
                   <div className="quiet-divider h-px flex-1" />
                 </div>
               ) : null}
-              {showBeforeSlot ? (
-                <button
-                  type="button"
-                  data-drop-slot-day-id={item.dayId}
-                  data-drop-slot-index={manualIndex}
-                  className={`col-span-full block h-4 w-full rounded-full border border-dashed transition ${
-                    dragState?.slot?.dayId === item.dayId && dragState?.slot?.index === manualIndex
-                      ? 'border-slate-500 bg-slate-200/80'
-                      : 'border-slate-300/80 bg-transparent'
-                  }`}
-                  aria-label={`Move before ${item.title}`}
-                />
-              ) : null}
               <div className="timeline-time pt-3 text-right">
-                <div className="text-[13px] font-bold tracking-[-0.01em] text-slate-900">{item.startTime}</div>
-                {item.endTime ? <div className="mt-0.5 text-[10px] font-medium tracking-[-0.01em] text-slate-400 sm:mt-1">{item.endTime}</div> : null}
+                <div className={`text-[13px] font-bold tracking-[-0.01em] ${isConflicted ? 'text-rose-700' : 'text-slate-900'}`}>
+                  {item.startTime}
+                </div>
+                {item.endTime ? <div className={`mt-0.5 text-[10px] font-medium tracking-[-0.01em] sm:mt-1 ${isConflicted ? 'text-rose-500' : 'text-slate-400'}`}>{item.endTime}</div> : null}
               </div>
               <div className="timeline-rail timeline-rail--stop">
                 <span className={`timeline-dot ${meta.tone}`}>{index + 1}</span>
               </div>
                 <div
+                  data-itinerary-drop-anchor
                   className="relative min-h-0 min-w-0 overflow-visible"
                 >
+              {showBeforeIndicator ? (
+                <div
+                  className={`pointer-events-none absolute -top-2 left-0 right-0 z-30 h-0.5 rounded-full shadow-sm ${
+                    dragPreviewHasConflict ? 'bg-rose-500' : 'bg-slate-500'
+                  }`}
+                  aria-hidden="true"
+                >
+                  <span className={`absolute -left-1 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full ${dragPreviewHasConflict ? 'bg-rose-500' : 'bg-slate-500'}`} />
+                  {dragPreviewHasConflict ? (
+                    <span className="absolute right-0 top-1/2 -translate-y-1/2 rounded-full bg-rose-600 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-white">
+                      Time conflict
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
               <article
                 className={`timeline-card ${meta.card} relative z-10 rounded-[1.55rem] transition hover:bg-white active:bg-white ${
                   isMobilePortrait ? 'px-3.5 py-3' : 'px-3.5 py-3.5 sm:px-5 sm:py-4'
                 } ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
-                } ${showCollapsedSubstituteStack ? 'shadow-[0_26px_56px_rgba(17,24,39,0.11)]' : ''}`}
+                } ${isConflicted ? 'ring-2 ring-rose-300/90 shadow-[0_16px_34px_rgba(225,29,72,0.10)]' : ''} ${showCollapsedSubstituteStack ? 'shadow-[0_26px_56px_rgba(17,24,39,0.11)]' : ''}`}
                 {...cardPressProps(item)}
               >
                   <span
@@ -5077,6 +5314,30 @@ function PlannerPanel({
                         ) : null}
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
+                        {isConflicted && canEdit ? (
+                          <button
+                            type="button"
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onReviewConflict(item)
+                            }}
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-700 transition hover:bg-rose-200"
+                            title={primaryConflict.message}
+                            aria-label={`Schedule conflict: ${primaryConflict.message}`}
+                          >
+                            <AlertTriangle className="h-4 w-4" />
+                          </button>
+                        ) : isConflicted ? (
+                          <span
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-700"
+                            title={primaryConflict.message}
+                            role="img"
+                            aria-label={`Schedule conflict: ${primaryConflict.message}`}
+                          >
+                            <AlertTriangle className="h-4 w-4" />
+                          </span>
+                        ) : null}
                         {item.generated ? (
                           <div className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-600">
                             Linked
@@ -5085,9 +5346,12 @@ function PlannerPanel({
                           <button
                             type="button"
                             onPointerDown={(event) => onDragStart(event, item)}
-                            onClick={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onMoveRequest(item)
+                            }}
                             data-drag-handle="true"
-                            title="Drag to reorder"
+                            title="Drag to reorder or tap for move options"
                             className="inline-flex h-11 w-11 touch-none shrink-0 items-center justify-center text-slate-500 transition hover:text-slate-800 active:scale-95"
                             aria-label={`Reorder ${item.title}`}
                           >
@@ -5096,6 +5360,11 @@ function PlannerPanel({
                         ) : null}
                       </div>
                     </div>
+                    {showConflictMessage ? (
+                      <p className="mt-1.5 line-clamp-2 text-[11px] font-semibold leading-4 text-rose-700">
+                        {primaryConflict.message}
+                      </p>
+                    ) : null}
                     {item.address && item.address !== item.locationName ? (
                       <p className="mt-0.5 truncate text-[11px] text-slate-400 sm:mt-1">{item.address}</p>
                     ) : null}
@@ -5401,24 +5670,25 @@ function PlannerPanel({
                   </div>
                 </>
               ) : null}
-              {showAfterSlot ? (
-                <button
-                  type="button"
-                  data-drop-slot-day-id={item.dayId}
-                  data-drop-slot-index={(manualOrderLookup.counts[item.dayId] || 0)}
-                  className={`col-span-full block h-4 w-full rounded-full border border-dashed transition ${
-                    dragState?.slot?.dayId === item.dayId &&
-                    dragState?.slot?.index === (manualOrderLookup.counts[item.dayId] || 0)
-                      ? 'border-slate-500 bg-slate-200/80'
-                      : 'border-slate-300/80 bg-transparent'
+              {showAfterIndicator ? (
+                <div
+                  className={`pointer-events-none absolute -bottom-2 left-[4.4rem] right-0 z-30 h-0.5 rounded-full shadow-sm sm:left-[5.6rem] ${
+                    dragPreviewHasConflict ? 'bg-rose-500' : 'bg-slate-500'
                   }`}
-                  aria-label={`Move after ${item.title}`}
-                />
+                  aria-hidden="true"
+                >
+                  <span className={`absolute -left-1 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full ${dragPreviewHasConflict ? 'bg-rose-500' : 'bg-slate-500'}`} />
+                  {dragPreviewHasConflict ? (
+                    <span className="absolute right-0 top-1/2 -translate-y-1/2 rounded-full bg-rose-600 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-white">
+                      Time conflict
+                    </span>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           )
         })}
-        {dragState && activeDayId !== DAY_VIEW_ALL && visibleManualCount === 0 ? (
+        {isDragging && activeDayId !== DAY_VIEW_ALL && visibleManualCount === 0 ? (
           <button
             type="button"
             data-drop-slot-day-id={activeDayId}
@@ -5933,6 +6203,8 @@ export default function App() {
   const [showPdfExportOptions, setShowPdfExportOptions] = useState(false)
   const [pdfExporting, setPdfExporting] = useState(false)
   const [dragState, setDragState] = useState(null)
+  const [moveItem, setMoveItem] = useState(null)
+  const [reorderNotice, setReorderNotice] = useState(null)
   const [tripMembers, setTripMembers] = useState([])
   const [appDialog, setAppDialog] = useState(null)
   const [pendingInviteId, setPendingInviteId] = useState(readInviteIdFromUrl)
@@ -5943,7 +6215,9 @@ export default function App() {
   const dragDaySwitchRef = useRef(null)
   const dragAutoScrollFrameRef = useRef(null)
   const dragPointerRef = useRef({ x: 0, y: 0 })
+  const dragPreviewNodeRef = useRef(null)
   const dragStateRef = useRef(null)
+  const suppressDragClickRef = useRef(false)
   const guestMigrationRef = useRef({
     declinedForUid: '',
     inProgress: false,
@@ -6025,6 +6299,18 @@ export default function App() {
     () => movementItemsForDay(resolvedActiveDayId, tripState),
     [resolvedActiveDayId, tripState],
   )
+  const dragPreview = useMemo(() => {
+    if (!dragState?.active || !dragState.slot) return null
+    return buildReorderPreview(
+      tripState,
+      dragState.itemId,
+      dragState.slot.dayId,
+      dragState.slot.index,
+    )
+  }, [dragState?.active, dragState?.itemId, dragState?.slot, tripState])
+  const draggedItem = dragState?.itemId
+    ? tripState.items.find((item) => item.id === dragState.itemId) || dragState.item
+    : null
   const deferredItems = useDeferredValue(filteredItems)
   const navFocusedDayId =
     resolvedActiveDayId === DAY_VIEW_ALL ? focusedOverviewDayId || dayOptions[0]?.id || '' : ''
@@ -6269,6 +6555,12 @@ export default function App() {
   useEffect(() => {
     dragStateRef.current = dragState
   }, [dragState])
+
+  useEffect(() => {
+    if (!reorderNotice) return undefined
+    const timeout = window.setTimeout(() => setReorderNotice(null), 10000)
+    return () => window.clearTimeout(timeout)
+  }, [reorderNotice])
 
   useEffect(() => {
     return () => {
@@ -6775,6 +7067,8 @@ export default function App() {
     setNoteItem(null)
     setDetailItem(null)
     setDragState(null)
+    setMoveItem(null)
+    setReorderNotice(null)
     setRouteMap({})
     setActiveDayId(DAY_VIEW_ALL)
     setActiveTripId(tripId)
@@ -6801,8 +7095,13 @@ export default function App() {
     event.preventDefault()
     event.stopPropagation()
     clearPressState()
+    dragPointerRef.current = { x: event.clientX, y: event.clientY }
     setDragState({
+      active: false,
+      item,
       itemId: item.id,
+      originX: event.clientX,
+      originY: event.clientY,
       overDayId: item.dayId,
       slot: null,
     })
@@ -6817,12 +7116,21 @@ export default function App() {
       event.preventDefault()
     }
 
+    function updateCurrentDrag(updater) {
+      const current = dragStateRef.current
+      if (!current) return
+      const next = typeof updater === 'function' ? updater(current) : { ...current, ...updater }
+      if (!next || next === current) return
+      dragStateRef.current = next
+      setDragState(next)
+    }
+
     function updateDragTarget(clientX, clientY) {
       const currentDrag = dragStateRef.current
-      if (!currentDrag) return
+      if (!currentDrag?.active) return
       const target = document.elementFromPoint(clientX, clientY)
       if (!target) {
-        setDragState((current) => (current ? { ...current, overDayId: null, slot: null } : current))
+        updateCurrentDrag({ overDayId: null, slot: null })
         return
       }
 
@@ -6830,7 +7138,7 @@ export default function App() {
       if (slotNode) {
         const dayId = slotNode.getAttribute('data-drop-slot-day-id')
         const index = Number(slotNode.getAttribute('data-drop-slot-index'))
-        setDragState((current) =>
+        updateCurrentDrag((current) =>
           current
             ? {
                 ...current,
@@ -6845,7 +7153,7 @@ export default function App() {
       const dayNode = target.closest('[data-day-drop-id]')
       if (dayNode) {
         const dayId = dayNode.getAttribute('data-day-drop-id')
-        setDragState((current) => (current ? { ...current, overDayId: dayId, slot: null } : current))
+        updateCurrentDrag({ overDayId: dayId, slot: null })
 
         if (dayId && dayId !== resolvedActiveDayId) {
           if (dragDaySwitchRef.current) {
@@ -6860,16 +7168,52 @@ export default function App() {
         return
       }
 
+      const itemNode = target.closest('[data-itinerary-item-day-id]')
+      const listNode = target.closest('[data-itinerary-list-day-id]')
+      const dayId =
+        itemNode?.getAttribute('data-itinerary-item-day-id') ||
+        listNode?.getAttribute('data-itinerary-list-day-id') ||
+        ''
+
+      if (dayId) {
+        const dayNodes = [...document.querySelectorAll('[data-itinerary-item-day-id][data-itinerary-manual-index]')]
+          .filter(
+            (node) =>
+              node.getAttribute('data-itinerary-item-day-id') === dayId &&
+              node.getAttribute('data-itinerary-item-id') !== currentDrag.itemId,
+          )
+        let index = Number(dayNodes[0]?.getAttribute('data-itinerary-day-manual-count') || 0)
+
+        for (let nodeIndex = 0; nodeIndex < dayNodes.length; nodeIndex += 1) {
+          const dropAnchor = dayNodes[nodeIndex].querySelector('[data-itinerary-drop-anchor]')
+          const rect = (dropAnchor || dayNodes[nodeIndex]).getBoundingClientRect()
+          if (clientY < rect.top + rect.height / 2) {
+            index = Number(dayNodes[nodeIndex].getAttribute('data-itinerary-manual-index') || 0)
+            break
+          }
+        }
+
+        updateCurrentDrag((current) => {
+          if (current.slot?.dayId === dayId && current.slot?.index === index) return current
+          return { ...current, overDayId: dayId, slot: { dayId, index } }
+        })
+        return
+      }
+
       if (dragDaySwitchRef.current) {
         window.clearTimeout(dragDaySwitchRef.current)
         dragDaySwitchRef.current = null
       }
-      setDragState((current) => (current ? { ...current, overDayId: null, slot: null } : current))
+      updateCurrentDrag({ overDayId: null, slot: null })
     }
 
     function tickAutoScroll() {
       if (!dragStateRef.current) {
         dragAutoScrollFrameRef.current = null
+        return
+      }
+      if (!dragStateRef.current.active) {
+        dragAutoScrollFrameRef.current = window.requestAnimationFrame(tickAutoScroll)
         return
       }
 
@@ -6897,25 +7241,70 @@ export default function App() {
     }
 
     function handlePointerMove(event) {
-      if (!dragStateRef.current) return
+      const currentDrag = dragStateRef.current
+      if (!currentDrag) return
       dragPointerRef.current = { x: event.clientX, y: event.clientY }
+      if (currentDrag.active) {
+        dragStateRef.current = { ...currentDrag, x: event.clientX, y: event.clientY }
+      }
+      if (dragPreviewNodeRef.current) {
+        dragPreviewNodeRef.current.style.transform = dragPreviewTransform(event.clientX, event.clientY)
+      }
+
+      if (!currentDrag.active) {
+        const movedX = Math.abs(event.clientX - currentDrag.originX)
+        const movedY = Math.abs(event.clientY - currentDrag.originY)
+        if (Math.max(movedX, movedY) < 6) return
+        const nextDrag = { ...currentDrag, active: true, x: event.clientX, y: event.clientY }
+        dragStateRef.current = nextDrag
+        setDragState(nextDrag)
+      }
+
       updateDragTarget(event.clientX, event.clientY)
     }
 
     async function handlePointerUp() {
       const currentDrag = dragStateRef.current
       const dropSlot = currentDrag?.slot
+      const wasActive = Boolean(currentDrag?.active)
+      if (wasActive) {
+        suppressDragClickRef.current = true
+        window.setTimeout(() => {
+          suppressDragClickRef.current = false
+        }, 0)
+      }
       clearDragState()
-      if (!dropSlot) return
+      if (!wasActive || !dropSlot) return
 
-      const patchItems = reorderTripItems(tripState, currentDrag.itemId, dropSlot.dayId, dropSlot.index)
-      if (!patchItems.length) return
+      const preview = buildReorderPreview(tripState, currentDrag.itemId, dropSlot.dayId, dropSlot.index)
+      if (!preview?.patchItems.length) return
+
+      const affectedDayIds = new Set([
+        currentDrag.item?.dayId,
+        dropSlot.dayId,
+      ])
+      const inverseItems = Object.fromEntries(
+        tripState.items
+          .filter((item) => !item.generated && affectedDayIds.has(item.dayId))
+          .map((item) => [item.id, item]),
+      )
+      const patch = {
+        items: Object.fromEntries(preview.patchItems.map((item) => [item.id, item])),
+      }
+      const movedItem = currentDrag.item || tripState.items.find((item) => item.id === currentDrag.itemId)
+      const firstConflict = preview.movedItemConflicts[0]
+
+      setOverrides((current) => mergeTripOverrides(current, patch))
+      setReorderNotice({
+        inverseItems,
+        message: firstConflict
+          ? `Moved ${movedItem?.title || 'stop'}. ${firstConflict.message}`
+          : `Moved ${movedItem?.title || 'stop'}.`,
+      })
 
       await saveTripPatch(
         resolvedTripId,
-        {
-          items: Object.fromEntries(patchItems.map((item) => [item.id, item])),
-        },
+        patch,
       )
     }
 
@@ -7029,26 +7418,128 @@ export default function App() {
   async function saveItem(item) {
     if (!canEditCurrentTrip) return
     const normalizedItem = normalizeItemForSave(stripFlightLocationFields(normalizeItemTimeFields(item)))
+    const existingItem = [...tripState.items, ...(tripState.parkingLotItems || [])].find(
+      (entry) => entry.id === normalizedItem.id && !entry.generated,
+    )
     if (normalizedItem.date === PARKING_LOT_DATE) {
-      await saveTripPatch(resolvedTripId, {
-        items: {
-          [normalizedItem.id]: {
-            ...normalizedItem,
-            dayId: '',
-            date: PARKING_LOT_DATE,
-            travelModeToNext: '',
-          },
+      const patchItems = {
+        [normalizedItem.id]: {
+          ...normalizedItem,
+          dayId: '',
+          date: PARKING_LOT_DATE,
+          travelModeToNext: '',
         },
+      }
+      if (existingItem?.dayId && tripState.dayMap[existingItem.dayId]) {
+        renumberDaySequence(
+          tripState.dayMap[existingItem.dayId].items.filter(
+            (entry) => !entry.generated && entry.id !== normalizedItem.id,
+          ),
+          existingItem.dayId,
+        ).forEach((entry) => {
+          patchItems[entry.id] = entry
+        })
+      }
+      await saveTripPatch(resolvedTripId, {
+        items: patchItems,
       })
       return
     }
 
-    const sameDayItems = (tripState.dayMap[item.dayId]?.items || []).filter((existing) => existing.id !== item.id)
+    const sameDayItems = tripState.dayMap[item.dayId]?.items || []
     const manualItems = sameDayItems.filter((existing) => !existing.generated)
+    const movedBetweenDays = Boolean(existingItem && existingItem.dayId !== normalizedItem.dayId)
+    const targetItem = movedBetweenDays
+      ? { ...normalizedItem, date: '', order: undefined }
+      : { ...normalizedItem, date: '' }
+    const mergedTargetItems = mergeItemsForDay(manualItems, targetItem)
+    const sourceItems = movedBetweenDays
+      ? renumberDaySequence(
+          (tripState.dayMap[existingItem.dayId]?.items || []).filter(
+            (entry) => !entry.generated && entry.id !== normalizedItem.id,
+          ),
+          existingItem.dayId,
+        )
+      : []
     const patchItems = Object.fromEntries(
-      mergeItemsForDay(manualItems, { ...normalizedItem, date: '' }).map((entry) => [entry.id, entry]),
+      [...sourceItems, ...mergedTargetItems].map((entry) => [entry.id, entry]),
     )
     await saveTripPatch(resolvedTripId, { items: patchItems })
+  }
+
+  async function commitItemReorder(itemId, targetDayId, targetIndex) {
+    const sourceItem = tripState.items.find((item) => item.id === itemId && !item.generated)
+    if (!sourceItem) return false
+    const preview = buildReorderPreview(tripState, itemId, targetDayId, targetIndex)
+    if (!preview?.patchItems.length) return false
+
+    const affectedDayIds = new Set([sourceItem.dayId, targetDayId])
+    const inverseItems = Object.fromEntries(
+      tripState.items
+        .filter((item) => !item.generated && affectedDayIds.has(item.dayId))
+        .map((item) => [item.id, item]),
+    )
+    const patch = {
+      items: Object.fromEntries(preview.patchItems.map((item) => [item.id, item])),
+    }
+    const firstConflict = preview.movedItemConflicts[0]
+
+    setOverrides((current) => mergeTripOverrides(current, patch))
+    setReorderNotice({
+      inverseItems,
+      message: firstConflict
+        ? `Moved ${sourceItem.title}. ${firstConflict.message}`
+        : `Moved ${sourceItem.title}.`,
+    })
+    await saveTripPatch(resolvedTripId, patch)
+    return true
+  }
+
+  function requestMoveItem(item) {
+    if (suppressDragClickRef.current) return
+    const currentItem = tripState.items.find((candidate) => candidate.id === item.id) || item
+    if (currentItem.generated) return
+    setMoveItem(currentItem)
+  }
+
+  async function moveItemByStep(item, direction) {
+    const dayItems = (tripState.dayMap[item.dayId]?.items || []).filter((entry) => !entry.generated)
+    const itemIndex = dayItems.findIndex((entry) => entry.id === item.id)
+    const targetIndex = itemIndex + direction
+    if (itemIndex < 0 || targetIndex < 0 || targetIndex >= dayItems.length) return
+    setMoveItem(null)
+    await commitItemReorder(item.id, item.dayId, targetIndex)
+  }
+
+  async function moveItemToDay(item, dayId) {
+    if (!dayId || dayId === item.dayId || !tripState.dayMap[dayId]) return
+    const targetIndex = (tripState.dayMap[dayId].items || []).filter((entry) => !entry.generated).length
+    setMoveItem(null)
+    setActiveDayId(dayId)
+    await commitItemReorder(item.id, dayId, targetIndex)
+  }
+
+  async function sortDayByTime(dayId) {
+    const manualItems = (tripState.dayMap[dayId]?.items || []).filter((item) => !item.generated)
+    if (manualItems.length < 2) return
+    const sortedItems = normalizeDayTimelineOrder(manualItems, dayId)
+    const changed = sortedItems.some((item, index) => item.id !== manualItems[index]?.id)
+    if (!changed) return
+
+    const inverseItems = Object.fromEntries(manualItems.map((item) => [item.id, item]))
+    const patch = { items: Object.fromEntries(sortedItems.map((item) => [item.id, item])) }
+    setOverrides((current) => mergeTripOverrides(current, patch))
+    setReorderNotice({ inverseItems, message: 'Sorted this day by time.' })
+    await saveTripPatch(resolvedTripId, patch)
+  }
+
+  async function undoLastReorder() {
+    const inverseItems = reorderNotice?.inverseItems
+    if (!inverseItems || !Object.keys(inverseItems).length) return
+    const patch = { items: inverseItems }
+    setReorderNotice(null)
+    setOverrides((current) => mergeTripOverrides(current, patch))
+    await saveTripPatch(resolvedTripId, patch)
   }
 
   async function createTrip() {
@@ -7442,12 +7933,16 @@ export default function App() {
       substituteOfItemId: item.substituteOfItemId || item.id,
       order: (item.order ?? 0) + 1,
     })
-    const sameDayItems = (tripState.dayMap[item.dayId]?.items || []).filter(
-      (existing) => !existing.generated && ![sourceItem.id, substitute.id].includes(existing.id),
+    const sameDayItems = sortItemsBySequence(
+      (tripState.dayMap[item.dayId]?.items || [])
+        .filter((existing) => !existing.generated && existing.id !== substitute.id)
+        .map((existing) => (existing.id === sourceItem.id ? sourceItem : existing)),
     )
+    const sourceIndex = sameDayItems.findIndex((existing) => existing.id === sourceItem.id)
+    sameDayItems.splice(sourceIndex < 0 ? sameDayItems.length : sourceIndex + 1, 0, substitute)
     const patchItems = Object.fromEntries(
-      normalizeDayTimelineOrder(
-        [...sameDayItems, sourceItem, substitute].map((entry) => normalizeItemForSave(entry)),
+      renumberDaySequence(
+        sameDayItems.map((entry) => normalizeItemForSave(entry)),
         item.dayId,
       ).map((entry) => [entry.id, entry]),
     )
@@ -7769,6 +8264,13 @@ export default function App() {
     }
   }
 
+  const moveMenuDayItems = moveItem
+    ? (tripState.dayMap[moveItem.dayId]?.items || []).filter((item) => !item.generated)
+    : []
+  const moveMenuItemIndex = moveItem
+    ? moveMenuDayItems.findIndex((item) => item.id === moveItem.id)
+    : -1
+
   if (!authReady) {
     return (
       <main className="mx-auto flex min-h-screen max-w-7xl items-center justify-center px-4 py-10 text-slate-600">
@@ -7920,6 +8422,7 @@ export default function App() {
                 canEdit={canEditCurrentTrip}
                 dayOptions={dayOptions}
                 dayMap={tripState.dayMap}
+                dragPreview={dragPreview}
                 dragState={dragState}
                 filteredItems={filteredItems}
                 focusedDayId={navFocusedDayId}
@@ -7928,6 +8431,7 @@ export default function App() {
                 isMobilePortrait={isMobilePortrait}
                 mapsReady={googleMapsState.ready}
                 onDragStart={beginItemDrag}
+                onMoveRequest={requestMoveItem}
                 onOpenDetails={{
                   startPress,
                   movePress,
@@ -7935,7 +8439,9 @@ export default function App() {
                   cancelPress: clearPressState,
                 }}
                 onPromoteSubstitute={(item) => promoteSubstituteItem(item)}
+                onReviewConflict={openDetails}
                 onSaveNewItem={saveItem}
+                onSortDayByTime={(dayId) => void sortDayByTime(dayId)}
                 onUpdateTravelMode={(itemId, mode) => void updateTravelMode(itemId, mode)}
                 routeSegmentMap={routeSegmentMap}
                 selectedWeather={selectedWeather}
@@ -7990,6 +8496,56 @@ export default function App() {
           onMoveDay={moveDay}
           onUpdateDay={updateDay}
         />
+      ) : null}
+
+      {moveItem ? (
+        <MoveItemModal
+          dayOptions={dayOptions}
+          item={moveItem}
+          itemCount={moveMenuDayItems.length}
+          itemIndex={moveMenuItemIndex}
+          onClose={() => setMoveItem(null)}
+          onMoveEarlier={() => void moveItemByStep(moveItem, -1)}
+          onMoveLater={() => void moveItemByStep(moveItem, 1)}
+          onMoveToDay={(dayId) => void moveItemToDay(moveItem, dayId)}
+        />
+      ) : null}
+
+      {dragState?.active && draggedItem
+        ? createPortal(
+            <div
+              ref={dragPreviewNodeRef}
+              className={`pointer-events-none fixed left-0 top-0 z-[100] max-w-[17rem] rounded-[1rem] border bg-white/95 px-3.5 py-3 shadow-[0_22px_50px_rgba(15,23,42,0.22)] backdrop-blur transition-colors ${
+                dragPreview?.movedItemConflicts?.length ? 'border-rose-300 ring-2 ring-rose-200/80' : 'border-white/80'
+              }`}
+              style={{ transform: dragPreviewTransform(dragState.x ?? dragState.originX, dragState.y ?? dragState.originY) }}
+              aria-hidden="true"
+            >
+              <div className="truncate text-sm font-bold text-slate-950">{draggedItem.title}</div>
+              <div className={`mt-0.5 text-[11px] font-semibold ${dragPreview?.movedItemConflicts?.length ? 'text-rose-700' : 'text-slate-500'}`}>
+                {draggedItem.startTime}{draggedItem.endTime ? `–${draggedItem.endTime}` : ''}
+                {dragPreview?.movedItemConflicts?.length ? ' · Time conflict' : ''}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
+      {reorderNotice ? (
+        <div
+          className="fixed bottom-24 left-1/2 z-[95] flex w-[min(calc(100vw-1.5rem),34rem)] -translate-x-1/2 items-center gap-3 rounded-[1rem] bg-slate-950 px-4 py-3 text-white shadow-[0_20px_50px_rgba(15,23,42,0.28)]"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="min-w-0 flex-1 text-[12px] font-semibold leading-5">{reorderNotice.message}</div>
+          <button
+            type="button"
+            onClick={() => void undoLastReorder()}
+            className="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-white/20"
+          >
+            Undo
+          </button>
+        </div>
       ) : null}
 
       {noteItem ? (

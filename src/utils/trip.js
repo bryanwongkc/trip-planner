@@ -93,11 +93,104 @@ export function sortItemsByTimeline(items) {
     })
 }
 
+export function sortItemsBySequence(items) {
+  return [...items]
+    .filter((item) => !item.hidden)
+    .sort((a, b) => {
+      const aOrder = Number(a.order)
+      const bOrder = Number(b.order)
+      const aHasOrder = Number.isFinite(aOrder)
+      const bHasOrder = Number.isFinite(bOrder)
+
+      if (aHasOrder && bHasOrder && aOrder !== bOrder) return aOrder - bOrder
+      if (aHasOrder !== bHasOrder) return aHasOrder ? -1 : 1
+
+      const timeCompare = compareTime(a.startTime || '23:59', b.startTime || '23:59')
+      if (timeCompare !== 0) return timeCompare
+      return String(a.id || '').localeCompare(String(b.id || ''))
+    })
+}
+
 export function normalizeDayTimelineOrder(items, dayId) {
   return sortItemsByTimeline(items.filter((item) => item.dayId === dayId)).map((item, index) => ({
     ...normalizeItemTimeFields(item),
     order: index,
   }))
+}
+
+export function renumberDaySequence(items, dayId) {
+  return items.filter((item) => item.dayId === dayId && !item.hidden).map((item, index) => ({
+    ...normalizeItemTimeFields(item),
+    order: index,
+  }))
+}
+
+function parseScheduleTime(value) {
+  const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/)
+  if (!match) return null
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null
+  return hours * 60 + minutes
+}
+
+function addScheduleConflict(result, conflict) {
+  if (result.conflicts.some((entry) => entry.key === conflict.key)) return
+  result.conflicts.push(conflict)
+  conflict.itemIds.forEach((itemId) => {
+    result.byItemId[itemId] = [...(result.byItemId[itemId] || []), conflict]
+  })
+}
+
+export function getScheduleConflicts(items) {
+  const orderedItems = items.filter((item) => !item.hidden && item.dayId && item.startTime)
+  const result = { conflicts: [], byItemId: {} }
+
+  for (let index = 0; index < orderedItems.length - 1; index += 1) {
+    const current = orderedItems[index]
+    const next = orderedItems[index + 1]
+    if (current.dayId !== next.dayId) continue
+
+    const currentStart = parseScheduleTime(current.startTime)
+    const nextStart = parseScheduleTime(next.startTime)
+    if (currentStart === null || nextStart === null || currentStart <= nextStart) continue
+
+    addScheduleConflict(result, {
+      key: `out-of-sequence:${current.id}:${next.id}`,
+      type: 'out_of_sequence',
+      dayId: current.dayId,
+      itemIds: [current.id, next.id],
+      message: `${current.title} at ${current.startTime} is before ${next.title} at ${next.startTime} in the itinerary.`,
+    })
+  }
+
+  for (let leftIndex = 0; leftIndex < orderedItems.length; leftIndex += 1) {
+    const left = orderedItems[leftIndex]
+    const leftStart = parseScheduleTime(left.startTime)
+    const leftEnd = parseScheduleTime(left.endTime)
+    if (leftStart === null || leftEnd === null || leftEnd <= leftStart) continue
+
+    for (let rightIndex = leftIndex + 1; rightIndex < orderedItems.length; rightIndex += 1) {
+      const right = orderedItems[rightIndex]
+      if (left.dayId !== right.dayId) continue
+      const rightStart = parseScheduleTime(right.startTime)
+      const rightEnd = parseScheduleTime(right.endTime)
+      if (rightStart === null || rightEnd === null || rightEnd <= rightStart) continue
+      if (leftStart >= rightEnd || rightStart >= leftEnd) continue
+
+      const overlapMinutes = Math.min(leftEnd, rightEnd) - Math.max(leftStart, rightStart)
+      addScheduleConflict(result, {
+        key: `overlap:${[left.id, right.id].sort().join(':')}`,
+        type: 'overlap',
+        dayId: left.dayId,
+        itemIds: [left.id, right.id],
+        overlapMinutes,
+        message: `${left.title} overlaps ${right.title} by ${overlapMinutes} minute${overlapMinutes === 1 ? '' : 's'}.`,
+      })
+    }
+  }
+
+  return result
 }
 
 export function formatDayDate(date) {
@@ -200,17 +293,9 @@ function sortDays(days) {
 }
 
 export function sortItems(items) {
-  return sortItemsByTimeline(
+  return sortItemsBySequence(
     items.map((item) => stripFlightLocationFields(normalizeItemTimeFields(item))),
   )
-    .sort((a, b) => {
-      if ((a.generated ? 0 : 1) !== (b.generated ? 0 : 1)) {
-        return (a.generated ? 0 : 1) - (b.generated ? 0 : 1)
-      }
-      const timeCompare = compareTime(a.startTime || '23:59', b.startTime || '23:59')
-      if (timeCompare !== 0) return timeCompare
-      return (a.order ?? 0) - (b.order ?? 0)
-    })
 }
 
 export function reorderTripItems(tripState, itemId, targetDayId, targetIndex) {
@@ -324,14 +409,16 @@ export function deriveTripState(overrides, options = {}) {
     const nextDay = days[index + 1]
     const dayItems = itemBuckets[day.id] || []
     const nextDayItems = itemBuckets[nextDay.id] || []
+    const chronologicalDayItems = sortItemsByTimeline(dayItems)
+    const chronologicalNextDayItems = sortItemsByTimeline(nextDayItems)
     const trailingHotel = selectContinuityHotel(
       dayItems,
-      [...dayItems].reverse().find((item) => item.category === 'Hotel' && !item.generated),
+      [...chronologicalDayItems].reverse().find((item) => item.category === 'Hotel' && !item.generated),
     )
 
     if (!trailingHotel) continue
 
-    const firstManual = nextDayItems.find((item) => !item.generated)
+    const firstManual = chronologicalNextDayItems.find((item) => !item.generated)
     if (firstManual?.category === 'Hotel' && isSameHotel(trailingHotel, firstManual)) {
       continue
     }
