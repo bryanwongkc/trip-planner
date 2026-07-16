@@ -67,7 +67,7 @@ test.beforeEach(async ({ page }) => {
   }, guestStore)
 })
 
-test('persists independent guest trips and preserves app-like selection behavior', async ({ page }) => {
+test('persists independent guest trips and preserves app-like zoom and selection behavior', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText('Alpha stop')).toBeVisible()
 
@@ -87,12 +87,17 @@ test('persists independent guest trips and preserves app-like selection behavior
   await expect(page.getByText('Beta stop')).toBeVisible()
 
   const viewport = await page.locator('meta[name="viewport"]').getAttribute('content')
-  expect(viewport).not.toContain('user-scalable=no')
-  expect(viewport).not.toContain('maximum-scale')
+  expect(viewport).toContain('user-scalable=no')
+  expect(viewport).toContain('maximum-scale=1.0')
 
   const guards = await page.evaluate(() => {
     const wheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, ctrlKey: true })
     document.dispatchEvent(wheel)
+    const gesture = new Event('gesturestart', { bubbles: true, cancelable: true })
+    document.dispatchEvent(gesture)
+    const multiTouch = new Event('touchmove', { bubbles: true, cancelable: true })
+    Object.defineProperty(multiTouch, 'touches', { value: [{}, {}] })
+    document.dispatchEvent(multiTouch)
     const selection = new Event('selectstart', { bubbles: true, cancelable: true })
     document.body.dispatchEvent(selection)
     const input = document.createElement('input')
@@ -102,12 +107,16 @@ test('persists independent guest trips and preserves app-like selection behavior
     input.remove()
     return {
       zoomPrevented: wheel.defaultPrevented,
+      pinchGesturePrevented: gesture.defaultPrevented,
+      multiTouchPrevented: multiTouch.defaultPrevented,
       bodySelectionPrevented: selection.defaultPrevented,
       inputSelectionPrevented: inputSelection.defaultPrevented,
     }
   })
   expect(guards).toEqual({
-    zoomPrevented: false,
+    zoomPrevented: true,
+    pinchGesturePrevented: true,
+    multiTouchPrevented: true,
     bodySelectionPrevented: true,
     inputSelectionPrevented: false,
   })
