@@ -478,7 +478,7 @@ body::before {
 }
 
 .browse-ui button[data-drag-handle='true'] {
-  touch-action: none;
+  touch-action: pan-y;
 }
 
 .no-scrollbar {

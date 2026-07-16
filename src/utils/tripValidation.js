@@ -7,6 +7,54 @@ export function mergeTripEntityMaps(current = {}, patch = {}) {
   )
 }
 
+function timestampsMatch(left, right) {
+  if (!left || !right) return true
+  if (typeof left.isEqual === 'function') return left.isEqual(right)
+  if (typeof left.toMillis === 'function' && typeof right.toMillis === 'function') {
+    return left.toMillis() === right.toMillis()
+  }
+  return String(left) === String(right)
+}
+
+function normalizeComparableValue(value) {
+  if (value === undefined) return undefined
+  if (value === null || typeof value !== 'object') return value
+  if (typeof value.toMillis === 'function') return value.toMillis()
+  if (Array.isArray(value)) return value.map(normalizeComparableValue)
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, nestedValue]) => nestedValue !== undefined)
+      .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+      .map(([key, nestedValue]) => [key, normalizeComparableValue(nestedValue)]),
+  )
+}
+
+function entitiesMatchIgnoringUpdatedAt(left, right) {
+  if (!left || !right) return false
+  const withoutTimestamp = (entity) => {
+    const { updatedAt: _updatedAt, ...rest } = entity
+    return normalizeComparableValue(rest)
+  }
+  return JSON.stringify(withoutTimestamp(left)) === JSON.stringify(withoutTimestamp(right))
+}
+
+export function assertTripPatchIsCurrent(current, patch, expectedCurrent = {}) {
+  for (const key of ['days', 'items', 'bookingOptions']) {
+    for (const [id, incoming] of Object.entries(patch[key] || {})) {
+      const existing = current?.[key]?.[id]
+      if (!incoming?.updatedAt || !existing?.updatedAt || timestampsMatch(incoming.updatedAt, existing.updatedAt)) {
+        continue
+      }
+
+      const expectedEntity = expectedCurrent?.[key]?.[id]
+      if (expectedEntity && entitiesMatchIgnoringUpdatedAt(existing, expectedEntity)) continue
+
+      throw new Error('This trip changed on another device. Review the latest version and try again.')
+    }
+  }
+}
+
 export function validateTripPatch(current, patch) {
   const merged = mergeTripEntityMaps(current, patch)
   const visibleDates = Object.values(merged.days)

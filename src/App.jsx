@@ -116,6 +116,10 @@ import {
   timeToMinutes,
 } from './utils/trip'
 import { validateTripPatch } from './utils/tripValidation'
+import {
+  pendingReorderGestureAction,
+  REORDER_TOUCH_HOLD_MS,
+} from './utils/dragGesture'
 
 const LONG_PRESS_MS = 600
 const MOVE_THRESHOLD = 10
@@ -5537,7 +5541,7 @@ function PlannerPanel({
                             }}
                             data-drag-handle="true"
                             title="Drag to reorder or tap for move options"
-                            className="inline-flex h-11 w-11 touch-none shrink-0 items-center justify-center text-slate-500 transition hover:text-slate-800 active:scale-95"
+                            className="inline-flex h-11 w-11 touch-pan-y shrink-0 items-center justify-center text-slate-500 transition hover:text-slate-800 active:scale-95"
                             aria-label={`Reorder ${item.title}`}
                           >
                             <ArrowUpDown className="h-4 w-4" />
@@ -6412,6 +6416,7 @@ export default function App() {
   const flightLookupCacheRef = useRef(new Map())
   const dragDaySwitchRef = useRef(null)
   const dragAutoScrollFrameRef = useRef(null)
+  const dragActivationTimerRef = useRef(null)
   const dragPointerRef = useRef({ x: 0, y: 0 })
   const dragPreviewNodeRef = useRef(null)
   const dragStateRef = useRef(null)
@@ -6723,7 +6728,7 @@ export default function App() {
     [],
   )
 
-  const performTripPatch = useCallback(async (tripId, patch) => {
+  const performTripPatch = useCallback(async (tripId, patch, options) => {
     const currentOverrides = overridesRef.current
     const nextOverrides = mergeTripOverrides(currentOverrides, patch)
     try {
@@ -6755,7 +6760,7 @@ export default function App() {
       }
 
       overridesRef.current = nextOverrides
-      await mergeTripPatch(tripId, patch)
+      await mergeTripPatch(tripId, patch, options)
       if (datePatch && globalThis.navigator?.onLine !== false) {
         try {
           await upsertTripMeta(tripId, {
@@ -6779,8 +6784,8 @@ export default function App() {
     }
   }, [activeTripSummary, isGuestMode])
 
-  const saveTripPatch = useCallback((tripId, patch) => {
-    const pending = saveQueueRef.current.then(() => performTripPatch(tripId, patch))
+  const saveTripPatch = useCallback((tripId, patch, options) => {
+    const pending = saveQueueRef.current.then(() => performTripPatch(tripId, patch, options))
     saveQueueRef.current = pending.catch(() => undefined)
     return pending
   }, [performTripPatch])
@@ -6840,6 +6845,9 @@ export default function App() {
 
   useEffect(() => {
     return () => {
+      if (dragActivationTimerRef.current) {
+        window.clearTimeout(dragActivationTimerRef.current)
+      }
       if (dragDaySwitchRef.current) {
         window.clearTimeout(dragDaySwitchRef.current)
       }
@@ -7391,6 +7399,10 @@ export default function App() {
   const routePairs = useMemo(() => makeMovementPairs(routeItems), [routeItems])
 
   function clearDragState() {
+    if (dragActivationTimerRef.current) {
+      window.clearTimeout(dragActivationTimerRef.current)
+      dragActivationTimerRef.current = null
+    }
     if (dragDaySwitchRef.current) {
       window.clearTimeout(dragDaySwitchRef.current)
       dragDaySwitchRef.current = null
@@ -7405,31 +7417,62 @@ export default function App() {
 
   function beginItemDrag(event, item) {
     if (!firestoreReady || item.generated) return
-    if (event.currentTarget?.setPointerCapture) {
-      event.currentTarget.setPointerCapture(event.pointerId)
-    }
-    event.preventDefault()
     event.stopPropagation()
     clearPressState()
+    clearDragState()
+    const pointerTarget = event.currentTarget
+    const pointerId = event.pointerId
+    const requiresHold = event.pointerType === 'touch'
+    if (!requiresHold) {
+      if (pointerTarget?.setPointerCapture) pointerTarget.setPointerCapture(pointerId)
+      event.preventDefault()
+    }
     dragPointerRef.current = { x: event.clientX, y: event.clientY }
-    setDragState({
+    const nextDrag = {
       active: false,
       item,
       itemId: item.id,
       originX: event.clientX,
       originY: event.clientY,
       overDayId: item.dayId,
+      pointerId,
+      pointerType: event.pointerType,
       slot: null,
-    })
+    }
+    dragStateRef.current = nextDrag
+    setDragState(nextDrag)
+
+    if (requiresHold) {
+      dragActivationTimerRef.current = window.setTimeout(() => {
+        const currentDrag = dragStateRef.current
+        if (!currentDrag || currentDrag.pointerId !== pointerId || currentDrag.active) return
+        if (pointerTarget?.setPointerCapture) {
+          try {
+            pointerTarget.setPointerCapture(pointerId)
+          } catch {
+            // The browser may have already claimed a scroll gesture.
+          }
+        }
+        const activeDrag = {
+          ...currentDrag,
+          active: true,
+          x: dragPointerRef.current.x,
+          y: dragPointerRef.current.y,
+        }
+        dragActivationTimerRef.current = null
+        dragStateRef.current = activeDrag
+        setDragState(activeDrag)
+      }, REORDER_TOUCH_HOLD_MS)
+    }
   }
 
   useEffect(() => {
     if (!dragState?.itemId) return undefined
     const previousTouchAction = document.body.style.touchAction
-    document.body.style.touchAction = 'none'
+    if (dragState.active) document.body.style.touchAction = 'none'
 
     function preventTouchMove(event) {
-      event.preventDefault()
+      if (dragStateRef.current?.active) event.preventDefault()
     }
 
     function updateCurrentDrag(updater) {
@@ -7558,7 +7601,7 @@ export default function App() {
 
     function handlePointerMove(event) {
       const currentDrag = dragStateRef.current
-      if (!currentDrag) return
+      if (!currentDrag || currentDrag.pointerId !== event.pointerId) return
       dragPointerRef.current = { x: event.clientX, y: event.clientY }
       if (currentDrag.active) {
         dragStateRef.current = { ...currentDrag, x: event.clientX, y: event.clientY }
@@ -7568,9 +7611,18 @@ export default function App() {
       }
 
       if (!currentDrag.active) {
-        const movedX = Math.abs(event.clientX - currentDrag.originX)
-        const movedY = Math.abs(event.clientY - currentDrag.originY)
-        if (Math.max(movedX, movedY) < 6) return
+        const action = pendingReorderGestureAction({
+          pointerType: currentDrag.pointerType,
+          originX: currentDrag.originX,
+          originY: currentDrag.originY,
+          clientX: event.clientX,
+          clientY: event.clientY,
+        })
+        if (action === 'cancel') {
+          clearDragState()
+          return
+        }
+        if (action === 'wait') return
         const nextDrag = { ...currentDrag, active: true, x: event.clientX, y: event.clientY }
         dragStateRef.current = nextDrag
         setDragState(nextDrag)
@@ -7579,8 +7631,9 @@ export default function App() {
       updateDragTarget(event.clientX, event.clientY)
     }
 
-    async function handlePointerUp() {
+    async function handlePointerUp(event) {
       const currentDrag = dragStateRef.current
+      if (!currentDrag || currentDrag.pointerId !== event.pointerId) return
       const dropSlot = currentDrag?.slot
       const wasActive = Boolean(currentDrag?.active)
       if (wasActive) {
@@ -7612,6 +7665,7 @@ export default function App() {
 
       setOverrides((current) => mergeTripOverrides(current, patch))
       setReorderNotice({
+        forwardItems: patch.items,
         inverseItems,
         message: firstConflict
           ? `Moved ${movedItem?.title || 'stop'}. ${firstConflict.message}`
@@ -7628,7 +7682,9 @@ export default function App() {
     window.addEventListener('pointerup', handlePointerUp)
     window.addEventListener('pointercancel', clearDragState)
     window.addEventListener('touchmove', preventTouchMove, { passive: false })
-    dragAutoScrollFrameRef.current = window.requestAnimationFrame(tickAutoScroll)
+    if (dragState.active) {
+      dragAutoScrollFrameRef.current = window.requestAnimationFrame(tickAutoScroll)
+    }
 
     return () => {
       document.body.style.touchAction = previousTouchAction
@@ -7641,7 +7697,7 @@ export default function App() {
       window.removeEventListener('pointercancel', clearDragState)
       window.removeEventListener('touchmove', preventTouchMove)
     }
-  }, [dragState?.itemId, resolvedActiveDayId, resolvedTripId, saveTripPatch, tripState])
+  }, [dragState?.active, dragState?.itemId, resolvedActiveDayId, resolvedTripId, saveTripPatch, tripState])
 
   useEffect(() => {
     let cancelled = false
@@ -7810,6 +7866,7 @@ export default function App() {
 
     setOverrides((current) => mergeTripOverrides(current, patch))
     setReorderNotice({
+      forwardItems: patch.items,
       inverseItems,
       message: firstConflict
         ? `Moved ${sourceItem.title}. ${firstConflict.message}`
@@ -7853,17 +7910,20 @@ export default function App() {
     const inverseItems = Object.fromEntries(manualItems.map((item) => [item.id, item]))
     const patch = { items: Object.fromEntries(sortedItems.map((item) => [item.id, item])) }
     setOverrides((current) => mergeTripOverrides(current, patch))
-    setReorderNotice({ inverseItems, message: 'Sorted this day by time.' })
+    setReorderNotice({ forwardItems: patch.items, inverseItems, message: 'Sorted this day by time.' })
     await saveTripPatch(resolvedTripId, patch)
   }
 
   async function undoLastReorder() {
     const inverseItems = reorderNotice?.inverseItems
+    const forwardItems = reorderNotice?.forwardItems
     if (!inverseItems || !Object.keys(inverseItems).length) return
     const patch = { items: inverseItems }
     setReorderNotice(null)
     setOverrides((current) => mergeTripOverrides(current, patch))
-    await saveTripPatch(resolvedTripId, patch)
+    await saveTripPatch(resolvedTripId, patch, {
+      expectedCurrent: forwardItems ? { items: forwardItems } : undefined,
+    })
   }
 
   async function createTrip() {

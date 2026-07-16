@@ -1,4 +1,4 @@
-import { validateTripPatch } from '../utils/tripValidation'
+import { assertTripPatchIsCurrent, validateTripPatch } from '../utils/tripValidation'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -338,15 +338,6 @@ export async function acceptTripInvite(inviteId, user) {
   return { ...invite, id: inviteId }
 }
 
-function timestampsMatch(left, right) {
-  if (!left || !right) return true
-  if (typeof left.isEqual === 'function') return left.isEqual(right)
-  if (typeof left.toMillis === 'function' && typeof right.toMillis === 'function') {
-    return left.toMillis() === right.toMillis()
-  }
-  return String(left) === String(right)
-}
-
 function buildStampedPatch(patch, serverTimestamp) {
   const payload = { updatedAt: serverTimestamp() }
   for (const key of ['days', 'items', 'bookingOptions']) {
@@ -355,18 +346,7 @@ function buildStampedPatch(patch, serverTimestamp) {
   return payload
 }
 
-function assertNoStaleEntities(current, patch) {
-  for (const key of ['days', 'items', 'bookingOptions']) {
-    for (const [id, incoming] of Object.entries(patch[key] || {})) {
-      const existing = current?.[key]?.[id]
-      if (incoming?.updatedAt && existing?.updatedAt && !timestampsMatch(incoming.updatedAt, existing.updatedAt)) {
-        throw new Error('This trip changed on another device. Review the latest version and try again.')
-      }
-    }
-  }
-}
-
-export async function mergeTripPatch(tripId, patch) {
+export async function mergeTripPatch(tripId, patch, { expectedCurrent } = {}) {
   const { db, doc, runTransaction, serverTimestamp, setDoc } = await loadFirebaseServices()
   if (!db || !tripId) return
 
@@ -384,7 +364,7 @@ export async function mergeTripPatch(tripId, patch) {
     await runTransaction(db, async (transaction) => {
       const snapshot = await transaction.get(overridesDoc)
       const current = snapshot.exists() ? snapshot.data() : {}
-      assertNoStaleEntities(current, patch)
+      assertTripPatchIsCurrent(current, patch, expectedCurrent)
       validateTripPatch(current, patch)
       transaction.set(overridesDoc, buildStampedPatch(patch, serverTimestamp), { merge: true })
     })

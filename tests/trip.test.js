@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { formatDayDate, formatFullDayDate, nextDayDate, parseIsoDay } from '../src/utils/trip'
-import { validateTripPatch } from '../src/utils/tripValidation'
+import { assertTripPatchIsCurrent, validateTripPatch } from '../src/utils/tripValidation'
 
 describe('trip date handling', () => {
   it('renders invalid or empty day dates without throwing', () => {
@@ -29,5 +29,49 @@ describe('trip date handling', () => {
         { items: { large: { description: '旅'.repeat(260_000) } } },
       ),
     ).toThrow(/too large/i)
+  })
+})
+
+describe('trip patch concurrency', () => {
+  const beforeReorder = {
+    items: {
+      first: { id: 'first', dayId: 'day-a', order: 0, title: 'First', updatedAt: 'version-1' },
+      second: { id: 'second', dayId: 'day-a', order: 1, title: 'Second', updatedAt: 'version-1' },
+    },
+  }
+  const forwardReorder = {
+    items: {
+      first: { ...beforeReorder.items.first, order: 1 },
+      second: { ...beforeReorder.items.second, order: 0 },
+    },
+  }
+  const savedReorder = {
+    items: {
+      first: { ...forwardReorder.items.first, updatedAt: 'version-2' },
+      second: { ...forwardReorder.items.second, updatedAt: 'version-2' },
+    },
+  }
+
+  it('allows an inverse patch when Firestore contains the associated forward reorder', () => {
+    expect(() =>
+      assertTripPatchIsCurrent(savedReorder, beforeReorder, forwardReorder),
+    ).not.toThrow()
+  })
+
+  it('still rejects undo after a real intervening edit', () => {
+    const remotelyEdited = {
+      items: {
+        ...savedReorder.items,
+        first: { ...savedReorder.items.first, title: 'Changed elsewhere', updatedAt: 'version-3' },
+      },
+    }
+
+    expect(() =>
+      assertTripPatchIsCurrent(remotelyEdited, beforeReorder, forwardReorder),
+    ).toThrow(/another device/i)
+  })
+
+  it('rejects an ordinary stale patch without an explicit expected state', () => {
+    expect(() => assertTripPatchIsCurrent(savedReorder, beforeReorder)).toThrow(/another device/i)
   })
 })
