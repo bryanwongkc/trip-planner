@@ -1,15 +1,11 @@
-const FLIGHT_NUMBER_PATTERNS = [
-  /\(([A-Z0-9]{2,3}\d{1,4}[A-Z]?)\)/i,
-  /\b([A-Z0-9]{2,3}\d{1,4}[A-Z]?)\b/i,
-]
+const FLIGHT_NUMBER_PATTERN = /\b([A-Z0-9]{2,3})\s*(\d{1,4}[A-Z]?)\b/gi
 
 export function extractFlightNumber(value = '') {
   const normalized = String(value).trim().toUpperCase()
   if (!normalized) return ''
 
-  for (const pattern of FLIGHT_NUMBER_PATTERNS) {
-    const match = normalized.match(pattern)
-    if (match?.[1]) return match[1]
+  for (const match of normalized.matchAll(FLIGHT_NUMBER_PATTERN)) {
+    if (/[A-Z]/.test(match[1])) return `${match[1]}${match[2]}`
   }
 
   return ''
@@ -81,10 +77,6 @@ async function requestAeroDataBox(params) {
   }
 
   return payload
-}
-
-export async function fetchAeroDataBoxBalance() {
-  return requestAeroDataBox({ resource: 'balance' })
 }
 
 export async function fetchFlightStatusByNumber({

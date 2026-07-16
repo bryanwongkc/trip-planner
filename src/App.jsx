@@ -82,6 +82,14 @@ import {
   inferFlightLookupFromItem,
 } from './services/aerodatabox'
 import { fetchWeatherSnapshot } from './services/weather'
+import { formatDateTimeForLocalInput, normalizeDateTimeForStorage } from './utils/dateTime'
+import {
+  deleteGuestTrip as deleteStoredGuestTrip,
+  emptyTripOverrides,
+  listGuestTripSummaries,
+  readGuestTrip,
+  saveGuestTrip,
+} from './utils/guestTrips'
 import {
   DAY_VIEW_ALL,
   PARKING_LOT_DATE,
@@ -95,6 +103,7 @@ import {
   getScheduleConflicts,
   movementItemsForDay,
   nextDayDate,
+  parseIsoDay,
   normalizeDayTimelineOrder,
   normalizeItemTimeFields,
   renumberDaySequence,
@@ -106,6 +115,7 @@ import {
   stripFlightLocationFields,
   timeToMinutes,
 } from './utils/trip'
+import { validateTripPatch } from './utils/tripValidation'
 
 const LONG_PRESS_MS = 600
 const MOVE_THRESHOLD = 10
@@ -149,7 +159,6 @@ const GUEST_USER = {
   email: '',
   photoURL: '',
 }
-const LOCAL_TRIP_OVERRIDES_KEY = 'trip-planner-temporary-overrides'
 
 function canViewTrip(role) {
   return ['owner', 'admin', 'editor', 'viewer'].includes(role)
@@ -222,9 +231,11 @@ function useResponsiveMode() {
 }
 
 function useGoogleMapsApi(apiKey) {
-  const [loaded, setLoaded] = useState(Boolean(apiKey && window.google?.maps?.places))
+  const [loaded, setLoaded] = useState(() =>
+    Boolean(apiKey && typeof window !== 'undefined' && window.google?.maps?.places),
+  )
   const [error, setError] = useState('')
-  const ready = Boolean(apiKey && (loaded || window.google?.maps?.places))
+  const ready = Boolean(apiKey && (loaded || (typeof window !== 'undefined' && window.google?.maps?.places)))
 
   useEffect(() => {
     if (!apiKey || window.google?.maps?.places) return undefined
@@ -245,20 +256,22 @@ function useGoogleMapsApi(apiKey) {
     }
 
     const script = document.createElement('script')
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`
     script.async = true
     script.defer = true
     script.dataset.googleMapsLoader = 'trip-planner'
-    script.addEventListener('load', () => {
+    const handleLoad = () => {
       setLoaded(true)
       setError('')
-    })
-    script.addEventListener('error', () => setError('Map preview is temporarily unavailable.'))
+    }
+    const handleError = () => setError('Map preview is temporarily unavailable.')
+    script.addEventListener('load', handleLoad)
+    script.addEventListener('error', handleError)
     document.head.appendChild(script)
 
     return () => {
-      script.removeEventListener('load', () => {})
-      script.removeEventListener('error', () => {})
+      script.removeEventListener('load', handleLoad)
+      script.removeEventListener('error', handleError)
     }
   }, [apiKey])
 
@@ -978,21 +991,73 @@ function buildDefaultTripSummary() {
   }
 }
 
-function readLocalTripOverrides() {
-  if (typeof window === 'undefined') {
-    return { days: {}, items: {}, bookingOptions: {} }
+function localGuestOptions() {
+  if (typeof window === 'undefined') return {}
+  const legacyTripId = window.localStorage.getItem(ACTIVE_TRIP_STORAGE_KEY) || TRIP_ID
+  return {
+    legacyTripId,
+    legacySummary: { ...buildDefaultTripSummary(), id: legacyTripId },
   }
+}
 
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(LOCAL_TRIP_OVERRIDES_KEY) || '')
-    return {
-      days: parsed?.days || {},
-      items: parsed?.items || {},
-      bookingOptions: parsed?.bookingOptions || {},
+function useModalDialog(onClose, active = true) {
+  const dialogRef = useRef(null)
+  const closeRef = useRef(onClose)
+
+  useEffect(() => {
+    closeRef.current = onClose
+  }, [onClose])
+
+  useEffect(() => {
+    if (!active) return undefined
+    const previouslyFocused = document.activeElement
+    const dialog = dialogRef.current
+    const focusableSelector =
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+    const focusFirst = window.requestAnimationFrame(() => {
+      const firstFocusable = dialog?.querySelector(focusableSelector)
+      ;(firstFocusable || dialog)?.focus?.()
+    })
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeRef.current?.()
+        return
+      }
+      if (event.key !== 'Tab' || !dialog) return
+      const focusable = [...dialog.querySelectorAll(focusableSelector)]
+      if (!focusable.length) {
+        event.preventDefault()
+        dialog.focus()
+        return
+      }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
     }
-  } catch {
-    return { days: {}, items: {}, bookingOptions: {} }
-  }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.cancelAnimationFrame(focusFirst)
+      document.removeEventListener('keydown', handleKeyDown)
+      previouslyFocused?.focus?.()
+    }
+  }, [active])
+
+  return dialogRef
+}
+
+function readLocalTripOverrides(tripId) {
+  if (typeof window === 'undefined') return emptyTripOverrides()
+  const resolvedId = tripId || window.localStorage.getItem(ACTIVE_TRIP_STORAGE_KEY) || TRIP_ID
+  return readGuestTrip(window.localStorage, resolvedId, localGuestOptions())
 }
 
 function readInviteIdFromUrl() {
@@ -1006,8 +1071,9 @@ function hasTripOverrides(overrides) {
   )
 }
 
-function buildLocalTripSummaries(overrides) {
-  return hasTripOverrides(overrides) ? [buildDefaultTripSummary()] : []
+function buildLocalTripSummaries() {
+  if (typeof window === 'undefined') return []
+  return listGuestTripSummaries(window.localStorage, localGuestOptions())
 }
 
 function mergeTripOverrides(current, patch) {
@@ -1443,6 +1509,7 @@ function normalizeItemForSave(item) {
   return {
     ...item,
     title: deriveItemTitle(item),
+    cancellationDeadline: normalizeDateTimeForStorage(item.cancellationDeadline),
   }
 }
 
@@ -1532,8 +1599,7 @@ function formatBookingDateTime(value) {
 }
 
 function formatDateTimeInputValue(value) {
-  if (!value) return ''
-  return String(value).slice(0, 16)
+  return formatDateTimeForLocalInput(value)
 }
 
 function itemStatusLabel(status) {
@@ -1555,6 +1621,7 @@ function generatedItemPatch(item) {
     bookingRef: item.bookingRef,
     travelModeToNext: item.travelModeToNext || '',
     flightInfo: item.flightInfo || null,
+    updatedAt: item.updatedAt,
   }
 }
 
@@ -1991,10 +2058,30 @@ async function requestDirectionsRoute(from, to, mode) {
           resolve(response)
           return
         }
-        reject(new Error(`Route failed: ${status}`))
+        const error = new Error(`Route failed: ${status}`)
+        error.status = status
+        reject(error)
       },
     )
   })
+}
+
+async function mapWithConcurrency(values, limit, mapper) {
+  const results = new Array(values.length)
+  let nextIndex = 0
+  const workers = Array.from({ length: Math.min(limit, values.length) }, async () => {
+    while (nextIndex < values.length) {
+      const index = nextIndex
+      nextIndex += 1
+      results[index] = await mapper(values[index], index)
+    }
+  })
+  await Promise.all(workers)
+  return results
+}
+
+function isTransientDirectionsError(error) {
+  return ['OVER_QUERY_LIMIT', 'UNKNOWN_ERROR'].includes(error?.status)
 }
 
 function GooglePlaceField({
@@ -2006,12 +2093,14 @@ function GooglePlaceField({
   value,
 }) {
   const [predictions, setPredictions] = useState([])
+  const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState('')
   const autocompleteRef = useRef(null)
   const placesRef = useRef(null)
   const tokenRef = useRef(null)
   const selectedLabelRef = useRef('')
+  const listboxId = React.useId()
 
   useEffect(() => {
     if (!mapsReady || !window.google?.maps?.places) return
@@ -2032,12 +2121,14 @@ function GooglePlaceField({
   useEffect(() => {
     if (!mapsReady || disabled || !value.trim() || !autocompleteRef.current) {
       setPredictions([])
+      setHighlightedIndex(-1)
       setSearching(false)
       return undefined
     }
 
     if (selectedLabelRef.current && value.trim() === selectedLabelRef.current) {
       setPredictions([])
+      setHighlightedIndex(-1)
       setSearching(false)
       return undefined
     }
@@ -2060,14 +2151,17 @@ function GooglePlaceField({
             !results?.length
           ) {
             setPredictions([])
+            setHighlightedIndex(-1)
             return
           }
           if (status !== window.google.maps.places.PlacesServiceStatus.OK) {
             setPredictions([])
+            setHighlightedIndex(-1)
             setError('Place search is temporarily unavailable.')
             return
           }
           setPredictions(results.slice(0, 5))
+          setHighlightedIndex(-1)
         },
       )
     }, 250)
@@ -2098,6 +2192,7 @@ function GooglePlaceField({
         tokenRef.current = new window.google.maps.places.AutocompleteSessionToken()
         selectedLabelRef.current = resolvedLabel.trim()
         setPredictions([])
+        setHighlightedIndex(-1)
         setSearching(false)
         onSelect({
           placeId: place.place_id || '',
@@ -2114,6 +2209,11 @@ function GooglePlaceField({
     <div className="space-y-2">
       <div className="flex gap-2">
         <input
+          aria-activedescendant={highlightedIndex >= 0 ? `${listboxId}-${highlightedIndex}` : undefined}
+          aria-autocomplete="list"
+          aria-controls={listboxId}
+          aria-expanded={predictions.length > 0}
+          role="combobox"
           value={value}
           onChange={(event) => {
             selectedLabelRef.current = ''
@@ -2123,6 +2223,21 @@ function GooglePlaceField({
             window.setTimeout(() => {
               setPredictions([])
             }, 120)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown' && predictions.length) {
+              event.preventDefault()
+              setHighlightedIndex((current) => Math.min(current + 1, predictions.length - 1))
+            } else if (event.key === 'ArrowUp' && predictions.length) {
+              event.preventDefault()
+              setHighlightedIndex((current) => Math.max(current - 1, 0))
+            } else if (event.key === 'Enter' && highlightedIndex >= 0) {
+              event.preventDefault()
+              selectPrediction(predictions[highlightedIndex])
+            } else if (event.key === 'Escape') {
+              setPredictions([])
+              setHighlightedIndex(-1)
+            }
           }}
           disabled={disabled || !mapsReady}
           placeholder="Search with Google Maps"
@@ -2142,13 +2257,20 @@ function GooglePlaceField({
       ) : null}
 
       {predictions.length ? (
-        <div className="space-y-1.5 rounded-[1.15rem] bg-slate-50/90 p-2">
-          {predictions.map((prediction) => (
+        <div id={listboxId} role="listbox" className="space-y-1.5 rounded-[1.15rem] bg-slate-50/90 p-2">
+          {predictions.map((prediction, index) => (
             <button
+              id={`${listboxId}-${index}`}
               key={prediction.place_id}
               type="button"
+              role="option"
+              aria-selected={highlightedIndex === index}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => setHighlightedIndex(index)}
               onClick={() => selectPrediction(prediction)}
-              className="block w-full rounded-[1rem] bg-white px-3.5 py-3 text-left transition hover:bg-slate-50"
+              className={`block w-full rounded-[1rem] px-3.5 py-3 text-left transition ${
+                highlightedIndex === index ? 'bg-slate-100' : 'bg-white hover:bg-slate-50'
+              }`}
             >
               <div className="truncate text-[13px] font-semibold tracking-[-0.01em] text-slate-900">
                 {prediction.structured_formatting?.main_text || prediction.description}
@@ -2781,6 +2903,7 @@ function AppDrawer({
   showingUtilityScreen,
   urgentDeadlineCount,
 }) {
+  const drawerRef = useModalDialog(onClose, open)
   return (
     <>
       <div
@@ -2791,6 +2914,11 @@ function AppDrawer({
         aria-hidden="true"
       />
       <aside
+        ref={drawerRef}
+        aria-hidden={!open}
+        aria-label="Trip menu"
+        inert={!open}
+        role="navigation"
         className={`app-drawer fixed bottom-0 left-0 top-0 z-50 flex w-[min(22rem,calc(100vw-1.4rem))] flex-col border-r border-white/70 bg-white/96 px-3.5 py-4 shadow-[18px_0_42px_rgba(15,23,42,0.11)] transition-transform duration-200 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
@@ -2923,6 +3051,7 @@ function AppDrawer({
 }
 
 function PdfExportSheet({ loading, onClose, onDownload, onShare, open }) {
+  const dialogRef = useModalDialog(onClose, open)
   if (!open) return null
 
   return (
@@ -2931,6 +3060,11 @@ function PdfExportSheet({ loading, onClose, onDownload, onShare, open }) {
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        aria-label="Export itinerary PDF"
+        aria-modal="true"
+        role="dialog"
+        tabIndex={-1}
         className="premium-modal w-full max-w-[min(24rem,calc(100vw-1.5rem))] overflow-x-hidden rounded-[1.45rem] border border-white/70 bg-white/96 p-4 shadow-[0_24px_70px_rgba(15,23,42,0.18)]"
         onClick={(event) => event.stopPropagation()}
       >
@@ -3231,6 +3365,7 @@ function CollaboratorsModal({
   const [inviteLink, setInviteLink] = useState('')
   const [busy, setBusy] = useState(false)
   const canManage = canManageTrip ?? canManageMembers(currentRole)
+  const dialogRef = useModalDialog(onClose)
 
   async function handleAddMember() {
     if (!email.trim()) return
@@ -3286,6 +3421,11 @@ function CollaboratorsModal({
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        aria-label="Share this trip"
+        aria-modal="true"
+        role="dialog"
+        tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
         className={`premium-modal glass-panel w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
           isMobilePortrait ? 'rounded-[1.5rem] sm:max-w-md' : 'max-w-2xl rounded-[1.8rem]'
@@ -3458,6 +3598,7 @@ function DayManagerModal({
   onMoveDay,
   onUpdateDay,
 }) {
+  const dialogRef = useModalDialog(onClose)
   const [newDay, setNewDay] = useState({
     date: nextDayDate(days),
     name: '',
@@ -3482,6 +3623,11 @@ function DayManagerModal({
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        aria-label="Manage days"
+        aria-modal="true"
+        role="dialog"
+        tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
         className={`premium-modal glass-panel w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
           isMobilePortrait ? 'rounded-[1.55rem] sm:max-w-md' : 'max-w-3xl rounded-[1.8rem]'
@@ -3611,6 +3757,7 @@ function NoteModal({
   const mapsUrl = item.category === 'Flight' ? '' : getGoogleMapsUrl(item)
   const locationSummary = itemLocationSummary(item)
   const canAddSubstitute = canEdit && !item.generated
+  const dialogRef = useModalDialog(onClose)
 
   return (
     <div
@@ -3618,6 +3765,11 @@ function NoteModal({
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        aria-label={item.title || 'Itinerary item'}
+        aria-modal="true"
+        role="dialog"
+        tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
         className={`premium-modal glass-panel browse-ui w-full max-w-[calc(100vw-1.5rem)] max-h-[78svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
           isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-lg rounded-[1.65rem]'
@@ -3769,6 +3921,7 @@ function MoveItemModal({
 }) {
   const otherDays = dayOptions.filter((day) => day.id !== item.dayId)
   const [targetDayId, setTargetDayId] = useState(otherDays[0]?.id || '')
+  const dialogRef = useModalDialog(onClose)
 
   return (
     <div
@@ -3776,6 +3929,7 @@ function MoveItemModal({
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         className="premium-modal glass-panel w-full max-w-md rounded-[1.45rem] border border-white/60 p-4 sm:p-5"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
@@ -3880,6 +4034,9 @@ function AddStopComposer({
     date: defaultParkingLot ? PARKING_LOT_DATE : '',
   }))
   const [isComposerOpen, setIsComposerOpen] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const saveInFlightRef = useRef(false)
+  const composerDialogRef = useModalDialog(closeAddComposer, isComposerOpen && canEdit)
   const draftConflictId = '__draft__'
   const effectiveDraftDayId =
     activeDayId !== DAY_VIEW_ALL && dayOptions.some((day) => day.id === activeDayId)
@@ -4006,15 +4163,18 @@ function AddStopComposer({
   ])
 
   async function saveNewItem() {
-    if (!firestoreReady || !effectiveDraftDayId || !canEdit || !canSaveDraft) return
+    if (!firestoreReady || !effectiveDraftDayId || !canEdit || !canSaveDraft || saveInFlightRef.current) return
+    saveInFlightRef.current = true
+    setIsSaving(true)
+    try {
 
-    let nextDraft = normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields({
-      ...draft,
-      dayId: effectiveDraftDayId,
-    })))
+      let nextDraft = normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields({
+        ...draft,
+        dayId: effectiveDraftDayId,
+      })))
 
-    if (nextDraft.category === 'Flight' && draftFlightLookup?.flightNumber && draftFlightLookup.date) {
-      try {
+      if (nextDraft.category === 'Flight' && draftFlightLookup?.flightNumber && draftFlightLookup.date) {
+        try {
         const record = await getFlightRecord({
           date: draftFlightLookup.date,
           flightCode: draftFlightLookup.flightNumber,
@@ -4029,19 +4189,23 @@ function AddStopComposer({
             draftLookupKey,
           )
         }
-      } catch (error) {
-        console.error(error)
+        } catch (error) {
+          console.error(error)
+        }
       }
+
+      await onSaveNewItem({
+        ...normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields(nextDraft))),
+        dayId: effectiveDraftDayId,
+        id: slugId('item'),
+      })
+
+      setDraft(buildComposerDraft())
+      setIsComposerOpen(false)
+    } finally {
+      saveInFlightRef.current = false
+      setIsSaving(false)
     }
-
-    await onSaveNewItem({
-      ...normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields(nextDraft))),
-      dayId: effectiveDraftDayId,
-      id: slugId('item'),
-    })
-
-    setDraft(buildComposerDraft())
-    setIsComposerOpen(false)
   }
 
   return (
@@ -4063,6 +4227,11 @@ function AddStopComposer({
           onClick={closeAddComposer}
         >
           <div
+            ref={composerDialogRef}
+            aria-label="Add itinerary detail"
+            aria-modal="true"
+            role="dialog"
+            tabIndex={-1}
             onClick={(event) => event.stopPropagation()}
             className={`premium-modal glass-panel browse-ui w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 shadow-[0_24px_70px_rgba(15,23,42,0.18)] sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
               isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-xl rounded-[1.7rem]'
@@ -4277,7 +4446,7 @@ function AddStopComposer({
             <button
               type="button"
               onClick={() => void saveNewItem()}
-              disabled={!firestoreReady || !effectiveDraftDayId || !canSaveDraft}
+              disabled={!firestoreReady || !effectiveDraftDayId || !canSaveDraft || isSaving}
               className="mt-5 w-full rounded-[1.1rem] bg-slate-900 px-4 py-4 text-sm font-bold text-white disabled:bg-slate-300"
             >
               Save new itinerary detail
@@ -4578,6 +4747,7 @@ function DetailModal({
     return null
   }, [detailItem.travelModeToNext])
   const TravelModeIcon = travelModeMeta?.icon
+  const dialogRef = useModalDialog(onClose)
 
   return (
     <div
@@ -4585,6 +4755,11 @@ function DetailModal({
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        aria-label={`Edit ${detailItem.title || 'itinerary item'}`}
+        aria-modal="true"
+        role="dialog"
+        tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
         className={`premium-modal glass-panel w-full max-w-[calc(100vw-1.5rem)] max-h-[78svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 pb-0 sm:max-h-[calc(100svh-4rem)] sm:p-5 sm:pb-0 ${
           isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-xl rounded-[1.7rem]'
@@ -4839,6 +5014,8 @@ function PlannerPanel({
         ? focusedDayId
         : dayOptions[0]?.id || ''
   const [draft, setDraft] = useState(() => buildEmptyDraft(defaultDayId))
+  const [isSaving, setIsSaving] = useState(false)
+  const saveInFlightRef = useRef(false)
   const [expandedStacks, setExpandedStacks] = useState({})
   const [stackLayoutRefreshKey, setStackLayoutRefreshKey] = useState(0)
   const promotingSubstituteIdRef = useRef('')
@@ -4868,6 +5045,7 @@ function PlannerPanel({
         : dayOptions[0]?.id || ''
   const isDraftParkingLotItem = draft.date === PARKING_LOT_DATE
   const [isComposerOpen, setIsComposerOpen] = useState(false)
+  const composerDialogRef = useModalDialog(closeAddComposer, isComposerOpen && canEdit)
   const draftFlightCode = draft.flightCode || extractFlightNumber(draft.title || '')
   const draftDayDate = dayMap[effectiveDraftDayId]?.date || ''
   const draftAppliedLookupKey = draft.flightInfo?.lookupKey || ''
@@ -5030,15 +5208,18 @@ function PlannerPanel({
   ])
 
   async function saveNewItem() {
-    if (!firestoreReady || !effectiveDraftDayId || !canEdit || !canSaveDraft) return
+    if (!firestoreReady || !effectiveDraftDayId || !canEdit || !canSaveDraft || saveInFlightRef.current) return
+    saveInFlightRef.current = true
+    setIsSaving(true)
+    try {
 
-    let nextDraft = normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields({
-      ...draft,
-      dayId: effectiveDraftDayId,
-    })))
+      let nextDraft = normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields({
+        ...draft,
+        dayId: effectiveDraftDayId,
+      })))
 
-    if (nextDraft.category === 'Flight' && draftFlightLookup?.flightNumber && draftFlightLookup.date) {
-      try {
+      if (nextDraft.category === 'Flight' && draftFlightLookup?.flightNumber && draftFlightLookup.date) {
+        try {
         const record = await getFlightRecord({
           date: draftFlightLookup.date,
           flightCode: draftFlightLookup.flightNumber,
@@ -5053,19 +5234,23 @@ function PlannerPanel({
             draftLookupKey,
           )
         }
-      } catch (error) {
-        console.error(error)
+        } catch (error) {
+          console.error(error)
+        }
       }
+
+      await onSaveNewItem({
+        ...normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields(nextDraft))),
+        dayId: effectiveDraftDayId,
+        id: slugId('item'),
+      })
+
+      setDraft(buildEmptyDraft(getComposerDayId()))
+      setIsComposerOpen(false)
+    } finally {
+      saveInFlightRef.current = false
+      setIsSaving(false)
     }
-
-    await onSaveNewItem({
-      ...normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields(nextDraft))),
-      dayId: effectiveDraftDayId,
-      id: slugId('item'),
-    })
-
-    setDraft(buildEmptyDraft(getComposerDayId()))
-    setIsComposerOpen(false)
   }
 
   return (
@@ -5721,6 +5906,11 @@ function PlannerPanel({
           onClick={closeAddComposer}
         >
           <div
+            ref={composerDialogRef}
+            aria-label="Add itinerary detail"
+            aria-modal="true"
+            role="dialog"
+            tabIndex={-1}
             onClick={(event) => event.stopPropagation()}
             className={`premium-modal glass-panel browse-ui w-full max-w-[calc(100vw-1.5rem)] max-h-[82svh] overflow-x-hidden overflow-y-auto border border-white/60 p-4 shadow-[0_24px_70px_rgba(15,23,42,0.18)] sm:max-h-[calc(100svh-4rem)] sm:p-5 ${
               isMobilePortrait ? 'rounded-[1.35rem] sm:max-w-md' : 'max-w-xl rounded-[1.7rem]'
@@ -5935,7 +6125,7 @@ function PlannerPanel({
             <button
               type="button"
               onClick={() => void saveNewItem()}
-              disabled={!firestoreReady || !effectiveDraftDayId || !canSaveDraft}
+              disabled={!firestoreReady || !effectiveDraftDayId || !canSaveDraft || isSaving}
               className="mt-5 w-full rounded-[1.1rem] bg-slate-900 px-4 py-4 text-sm font-bold text-white disabled:bg-slate-300"
             >
               Save new itinerary detail
@@ -6013,6 +6203,7 @@ function AppDialog({ dialog, onCancel, onSubmit }) {
   const tripStartDateRef = useRef(null)
   const tripEndDateRef = useRef(null)
   const tripCityRef = useRef(null)
+  const dialogRef = useModalDialog(onCancel, Boolean(dialog))
 
   if (!dialog) return null
 
@@ -6028,6 +6219,11 @@ function AppDialog({ dialog, onCancel, onSubmit }) {
       onClick={onCancel}
     >
       <form
+        ref={dialogRef}
+        aria-label={dialog.title || 'Dialog'}
+        aria-modal="true"
+        role="dialog"
+        tabIndex={-1}
         onSubmit={(event) => {
           event.preventDefault()
           if (isTripSetup) {
@@ -6176,7 +6372,7 @@ export default function App() {
     firebaseEnabled ? { days: {}, items: {}, bookingOptions: {} } : readLocalTripOverrides(),
   )
   const [tripSummaries, setTripSummaries] = useState(() =>
-    firebaseEnabled ? [] : buildLocalTripSummaries(readLocalTripOverrides()),
+    firebaseEnabled ? [] : buildLocalTripSummaries(),
   )
   const [tripDirectoryLoaded, setTripDirectoryLoaded] = useState(!firebaseEnabled)
   const [currentUser, setCurrentUser] = useState(null)
@@ -6208,6 +6404,8 @@ export default function App() {
   const [tripMembers, setTripMembers] = useState([])
   const [appDialog, setAppDialog] = useState(null)
   const [pendingInviteId, setPendingInviteId] = useState(readInviteIdFromUrl)
+  const overridesRef = useRef(overrides)
+  const saveQueueRef = useRef(Promise.resolve())
 
   const isMobilePortrait = useResponsiveMode()
   const routeCacheRef = useRef(new Map())
@@ -6222,6 +6420,7 @@ export default function App() {
     declinedForUid: '',
     inProgress: false,
     localOverrides: null,
+    localTripId: '',
     localTitle: '',
     promptedForUid: '',
   })
@@ -6230,6 +6429,7 @@ export default function App() {
     promptedForId: '',
   })
   const appDialogResolveRef = useRef(null)
+  const saveDetailInFlightRef = useRef(false)
   const pressStateRef = useRef({
     timer: null,
     pointerId: null,
@@ -6307,7 +6507,7 @@ export default function App() {
       dragState.slot.dayId,
       dragState.slot.index,
     )
-  }, [dragState?.active, dragState?.itemId, dragState?.slot, tripState])
+  }, [dragState, tripState])
   const draggedItem = dragState?.itemId
     ? tripState.items.find((item) => item.id === dragState.itemId) || dragState.item
     : null
@@ -6464,7 +6664,8 @@ export default function App() {
       }
     : { loading: false, data: null, error: '' }
   const firestoreReady =
-    isGuestMode || (firebaseEnabled && authReady && isSignedIn && firestoreState.status === 'ready')
+    isGuestMode ||
+    (firebaseEnabled && authReady && isSignedIn && ['ready', 'warning'].includes(firestoreState.status))
   const detailItemId = detailItem?.id || ''
   const detailCategory = detailItem?.category || ''
   const detailAppliedLookupKey = detailItem?.flightInfo?.lookupKey || ''
@@ -6522,14 +6723,81 @@ export default function App() {
     [],
   )
 
-  const saveTripPatch = useCallback(async (tripId, patch) => {
-    if (isGuestMode) {
-      setOverrides((current) => mergeTripOverrides(current, patch))
-      setFirestoreState({ status: 'ready', error: '' })
-      return
-    }
+  const performTripPatch = useCallback(async (tripId, patch) => {
+    const currentOverrides = overridesRef.current
+    const nextOverrides = mergeTripOverrides(currentOverrides, patch)
+    try {
+      validateTripPatch(currentOverrides, patch)
+      const nextTripState = patch.days
+        ? deriveTripState(nextOverrides, { includeSeed: false })
+        : null
+      const datePatch = nextTripState
+        ? {
+            startDate: nextTripState.days[0]?.date || '',
+            endDate: nextTripState.days[nextTripState.days.length - 1]?.date || '',
+          }
+        : null
 
-    await mergeTripPatch(tripId, patch)
+      if (isGuestMode) {
+        const nextSummary = datePatch ? { ...activeTripSummary, ...datePatch } : activeTripSummary
+        if (!saveGuestTrip(window.localStorage, tripId, nextSummary, nextOverrides)) {
+          throw new Error('This device could not save the trip.')
+        }
+        overridesRef.current = nextOverrides
+        setOverrides(nextOverrides)
+        if (datePatch) {
+          setTripSummaries((current) =>
+            current.map((trip) => (trip.id === tripId ? { ...trip, ...datePatch } : trip)),
+          )
+        }
+        setFirestoreState({ status: 'ready', error: '' })
+        return
+      }
+
+      overridesRef.current = nextOverrides
+      await mergeTripPatch(tripId, patch)
+      if (datePatch && globalThis.navigator?.onLine !== false) {
+        try {
+          await upsertTripMeta(tripId, {
+            ...datePatch,
+            title: activeTripSummary?.title || '',
+            city: activeTripSummary?.city || '',
+          })
+        } catch (error) {
+          console.error(error)
+          setFirestoreState({ status: 'warning', error: 'The itinerary saved, but trip dates are still synchronizing.' })
+          return
+        }
+      }
+      setFirestoreState({ status: 'ready', error: '' })
+    } catch (error) {
+      if (overridesRef.current === nextOverrides) overridesRef.current = currentOverrides
+      console.error(error)
+      const message = error instanceof Error ? error.message : 'We could not save that change. Please try again.'
+      setFirestoreState({ status: 'error', error: message })
+      throw error
+    }
+  }, [activeTripSummary, isGuestMode])
+
+  const saveTripPatch = useCallback((tripId, patch) => {
+    const pending = saveQueueRef.current.then(() => performTripPatch(tripId, patch))
+    saveQueueRef.current = pending.catch(() => undefined)
+    return pending
+  }, [performTripPatch])
+
+  const selectTrip = useCallback((tripId) => {
+    const nextOverrides = isGuestMode ? readLocalTripOverrides(tripId) : emptyTripOverrides()
+    overridesRef.current = nextOverrides
+    setOverrides(nextOverrides)
+    if (!isGuestMode) setFirestoreState({ status: 'connecting', error: '' })
+    setNoteItem(null)
+    setDetailItem(null)
+    setDragState(null)
+    setMoveItem(null)
+    setReorderNotice(null)
+    setRouteMap({})
+    setActiveDayId(DAY_VIEW_ALL)
+    setActiveTripId(tripId)
   }, [isGuestMode])
 
   const clearInviteUrl = useCallback(() => {
@@ -6540,6 +6808,10 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    overridesRef.current = overrides
+  }, [overrides])
+
+  useEffect(() => {
     if (typeof window === 'undefined') return
     if (resolvedTripId) {
       window.localStorage.setItem(ACTIVE_TRIP_STORAGE_KEY, resolvedTripId)
@@ -6548,9 +6820,13 @@ export default function App() {
 
   useEffect(() => {
     if (!isGuestMode || !authReady || typeof window === 'undefined') return
-    if (firebaseEnabled && !hasTripOverrides(overrides)) return
-    window.localStorage.setItem(LOCAL_TRIP_OVERRIDES_KEY, JSON.stringify(overrides))
-  }, [authReady, isGuestMode, overrides])
+    if (!resolvedTripId || !activeTripSummary) return
+    if (!saveGuestTrip(window.localStorage, resolvedTripId, activeTripSummary, overrides)) {
+      queueMicrotask(() =>
+        setFirestoreState({ status: 'error', error: 'This device could not save the trip.' }),
+      )
+    }
+  }, [activeTripSummary, authReady, isGuestMode, overrides, resolvedTripId])
 
   useEffect(() => {
     dragStateRef.current = dragState
@@ -6576,12 +6852,18 @@ export default function App() {
     if (!firebaseEnabled) {
       queueMicrotask(() => {
         if (!active) return
-        const localOverrides = readLocalTripOverrides()
+        const localTrips = buildLocalTripSummaries()
+        const storedActiveTripId = window.localStorage.getItem(ACTIVE_TRIP_STORAGE_KEY) || ''
+        const localTripId = localTrips.some((trip) => trip.id === storedActiveTripId)
+          ? storedActiveTripId
+          : localTrips[0]?.id || ''
+        const localOverrides = readLocalTripOverrides(localTripId)
         setCurrentUser(null)
         setAuthReady(true)
-        setTripSummaries(buildLocalTripSummaries(localOverrides))
+        setTripSummaries(localTrips)
         setTripDirectoryLoaded(true)
         setOverrides(localOverrides)
+        if (localTripId) setActiveTripId(localTripId)
         setFirestoreState({ status: 'disabled', error: 'Saved on this device' })
       })
       return () => {
@@ -6610,9 +6892,15 @@ export default function App() {
               console.error(error)
             }
           } else {
-            setTripSummaries([])
+            const localTrips = buildLocalTripSummaries()
+            const storedActiveTripId = window.localStorage.getItem(ACTIVE_TRIP_STORAGE_KEY) || ''
+            const localTripId = localTrips.some((trip) => trip.id === storedActiveTripId)
+              ? storedActiveTripId
+              : localTrips[0]?.id || ''
+            setTripSummaries(localTrips)
             setTripDirectoryLoaded(true)
-            setOverrides({ days: {}, items: {}, bookingOptions: {} })
+            setOverrides(readLocalTripOverrides(localTripId))
+            if (localTripId) setActiveTripId(localTripId)
             setFirestoreState({ status: 'ready', error: '' })
           }
         },
@@ -6622,9 +6910,12 @@ export default function App() {
             setAuthReady(true)
             setAuthError('Sign-in could not be completed. Please try again.')
             setCurrentUser(null)
-            setTripSummaries([])
+            const localTrips = buildLocalTripSummaries()
+            const localTripId = localTrips[0]?.id || ''
+            setTripSummaries(localTrips)
             setTripDirectoryLoaded(true)
-            setOverrides({ days: {}, items: {}, bookingOptions: {} })
+            setOverrides(readLocalTripOverrides(localTripId))
+            if (localTripId) setActiveTripId(localTripId)
             setFirestoreState({ status: 'ready', error: '' })
           }
         },
@@ -6772,6 +7063,7 @@ export default function App() {
     currentUser,
     isGuestMode,
     pendingInviteId,
+    selectTrip,
     showAlert,
   ])
 
@@ -6788,7 +7080,7 @@ export default function App() {
 
     const localOverrides = hasTripOverrides(migration.localOverrides)
       ? migration.localOverrides
-      : readLocalTripOverrides()
+      : readLocalTripOverrides(migration.localTripId)
 
     if (!hasTripOverrides(localOverrides)) return undefined
 
@@ -6812,8 +7104,9 @@ export default function App() {
         if (!active) return
 
         if (migrationChoice === 'delete') {
-          window.localStorage.removeItem(LOCAL_TRIP_OVERRIDES_KEY)
+          if (migration.localTripId) deleteStoredGuestTrip(window.localStorage, migration.localTripId)
           migration.localOverrides = null
+          migration.localTripId = ''
           migration.localTitle = ''
           migration.declinedForUid = uid
           return
@@ -6872,8 +7165,9 @@ export default function App() {
 
         if (!active) return
 
-        window.localStorage.removeItem(LOCAL_TRIP_OVERRIDES_KEY)
+        if (migration.localTripId) deleteStoredGuestTrip(window.localStorage, migration.localTripId)
         migration.localOverrides = null
+        migration.localTripId = ''
         migration.localTitle = ''
       } catch (error) {
         console.error(error)
@@ -6895,6 +7189,7 @@ export default function App() {
     authReady,
     currentUser,
     isGuestMode,
+    selectTrip,
     showAlert,
     showChoice,
     tripDirectoryLoaded,
@@ -6934,6 +7229,39 @@ export default function App() {
       unsubscribe()
     }
   }, [authReady, currentUser?.uid, isGuestMode, resolvedTripId])
+
+  useEffect(() => {
+    if (
+      isGuestMode ||
+      !['ready', 'warning'].includes(firestoreState.status) ||
+      !resolvedTripId ||
+      !activeTripSummary
+    ) {
+      return undefined
+    }
+
+    const syncDateMetadata = async () => {
+      if (globalThis.navigator?.onLine === false) return
+      const startDate = tripState.days[0]?.date || ''
+      const endDate = tripState.days[tripState.days.length - 1]?.date || ''
+      if (startDate === activeTripSummary.startDate && endDate === activeTripSummary.endDate) return
+      try {
+        await upsertTripMeta(resolvedTripId, {
+          title: activeTripSummary.title || '',
+          city: activeTripSummary.city || '',
+          startDate,
+          endDate,
+        })
+      } catch (error) {
+        console.error(error)
+        setFirestoreState({ status: 'error', error: 'Trip dates could not be synchronized.' })
+      }
+    }
+
+    void syncDateMetadata()
+    window.addEventListener('online', syncDateMetadata)
+    return () => window.removeEventListener('online', syncDateMetadata)
+  }, [activeTripSummary, firestoreState.status, isGuestMode, resolvedTripId, tripState.days])
 
   useEffect(() => {
     let cancelled = false
@@ -7061,18 +7389,6 @@ export default function App() {
 
   const routeItems = useMemo(() => buildRouteTimelineItems(deferredItems), [deferredItems])
   const routePairs = useMemo(() => makeMovementPairs(routeItems), [routeItems])
-
-  function selectTrip(tripId) {
-    setOverrides({ days: {}, items: {}, bookingOptions: {} })
-    setNoteItem(null)
-    setDetailItem(null)
-    setDragState(null)
-    setMoveItem(null)
-    setReorderNotice(null)
-    setRouteMap({})
-    setActiveDayId(DAY_VIEW_ALL)
-    setActiveTripId(tripId)
-  }
 
   function clearDragState() {
     if (dragDaySwitchRef.current) {
@@ -7332,8 +7648,10 @@ export default function App() {
     if (!googleMapsState.ready || !window.google?.maps || !routePairs.length) return undefined
 
     async function loadRoutes() {
-      const entries = await Promise.all(
-        routePairs.map(async ([fromPoint, toPoint, fromItem, toItem]) => {
+      const entries = await mapWithConcurrency(
+        routePairs,
+        3,
+        async ([fromPoint, toPoint, fromItem, toItem]) => {
           const mode = getRouteMode(fromItem, toItem)
           const key = `${fromItem.id}:${toItem.id}:${mode}:${fromPoint.lat},${fromPoint.lng}:${toPoint.lat},${toPoint.lng}`
           const cached = routeCacheRef.current.get(key)
@@ -7346,8 +7664,13 @@ export default function App() {
             routeCacheRef.current.set(key, summary)
             return [key, summary]
           } catch (error) {
-            console.error(error)
+            if (!isTransientDirectionsError(error)) {
+              const fallback = buildFallbackRouteSummary(fromPoint, toPoint, mode)
+              routeCacheRef.current.set(key, fallback)
+              return [key, fallback]
+            }
             try {
+              await new Promise((resolve) => window.setTimeout(resolve, 300))
               const retried = await requestDirectionsRoute(fromPoint, toPoint, mode)
               const summary = toRouteSummary(retried, mode)
               routeCacheRef.current.set(key, summary)
@@ -7359,7 +7682,7 @@ export default function App() {
               return [key, fallback]
             }
           }
-        }),
+        },
       )
 
       if (!cancelled) {
@@ -7390,6 +7713,7 @@ export default function App() {
   async function handleSignIn() {
     if (isGuestMode && hasTripOverrides(overrides)) {
       guestMigrationRef.current.localOverrides = overrides
+      guestMigrationRef.current.localTripId = resolvedTripId
       guestMigrationRef.current.localTitle = activeTripSummary?.title || defaultTripSummary.title
     }
 
@@ -7559,10 +7883,21 @@ export default function App() {
     const title = tripDraft.title.trim()
     const city = normalizeTripCity(tripDraft.city)
     if (!title || !tripDraft.startDate || !tripDraft.endDate || !city) return
+    if (!parseIsoDay(tripDraft.startDate) || !parseIsoDay(tripDraft.endDate)) {
+      await showAlert('Choose valid start and end dates.', { title: 'Check trip dates' })
+      return
+    }
     if (isoDateToUtcMs(tripDraft.endDate) < isoDateToUtcMs(tripDraft.startDate)) {
       await showAlert('End date must be the same as or after the start date.', {
         title: 'Check trip dates',
       })
+      return
+    }
+    const tripDayCount = Math.floor(
+      (isoDateToUtcMs(tripDraft.endDate) - isoDateToUtcMs(tripDraft.startDate)) / (24 * 60 * 60 * 1000),
+    ) + 1
+    if (tripDayCount > 120) {
+      await showAlert('Trips can contain up to 120 days.', { title: 'Check trip dates' })
       return
     }
 
@@ -7581,14 +7916,19 @@ export default function App() {
     }
 
     if (isGuestMode) {
-      setTripSummaries((current) =>
-        current.some((trip) => trip.id === tripId) ? current : [...current, nextSummary],
-      )
-      setOverrides({
+      const guestOverrides = {
         days: snapshot.days,
         items: snapshot.items,
         bookingOptions: snapshot.bookingOptions,
-      })
+      }
+      if (!saveGuestTrip(window.localStorage, tripId, nextSummary, guestOverrides)) {
+        await showAlert('This device could not save the trip.', { title: 'Save failed', tone: 'danger' })
+        return
+      }
+      setTripSummaries((current) =>
+        current.some((trip) => trip.id === tripId) ? current : [...current, nextSummary],
+      )
+      setOverrides(guestOverrides)
       setActiveTripId(tripId)
       setActiveDayId(DAY_VIEW_ALL)
       setNoteItem(null)
@@ -7641,25 +7981,31 @@ export default function App() {
     const tripId = slugId('trip')
 
     if (isGuestMode) {
-      setTripSummaries((current) => [
-        ...current,
-        {
-          id: tripId,
-          title,
-          role: 'owner',
-          hidden: false,
-          startDate: snapshot.startDate,
-          endDate: snapshot.endDate,
-          city: activeTripSummary.city || '',
-          ownerId: currentUser?.uid || '',
-          createdBy: currentUser?.uid || '',
-        },
-      ])
-      setOverrides({
+      const guestSummary = {
+        id: tripId,
+        title,
+        role: 'owner',
+        hidden: false,
+        startDate: snapshot.startDate,
+        endDate: snapshot.endDate,
+        city: activeTripSummary.city || '',
+        ownerId: currentUser?.uid || '',
+        createdBy: currentUser?.uid || '',
+      }
+      const guestOverrides = {
         days: snapshot.days,
         items: snapshot.items,
         bookingOptions: snapshot.bookingOptions,
-      })
+      }
+      if (!saveGuestTrip(window.localStorage, tripId, guestSummary, guestOverrides)) {
+        await showAlert('This device could not save the trip.', { title: 'Save failed', tone: 'danger' })
+        return
+      }
+      setTripSummaries((current) => [
+        ...current,
+        guestSummary,
+      ])
+      setOverrides(guestOverrides)
       setActiveTripId(tripId)
       setActiveDayId(DAY_VIEW_ALL)
       setNoteItem(null)
@@ -7756,6 +8102,7 @@ export default function App() {
       availableTrips.find((trip) => trip.id !== resolvedTripId && !trip.hidden) || defaultTripSummary
 
     if (isGuestMode) {
+      deleteStoredGuestTrip(window.localStorage, resolvedTripId)
       setTripSummaries((current) => current.filter((trip) => trip.id !== resolvedTripId))
       selectTrip(fallbackTrip.id)
       return
@@ -7782,18 +8129,26 @@ export default function App() {
 
   async function updateDay(dayId, changes) {
     if (!canEditCurrentTrip) return
-    if (changes.date) {
+    const currentDay = tripState.dayMap[dayId]
+    if (!currentDay) return
+    if (Object.prototype.hasOwnProperty.call(changes, 'date')) {
+      if (!parseIsoDay(changes.date)) {
+        await showAlert('Choose a valid date for this itinerary day.')
+        return
+      }
       const duplicate = visibleDays.find((day) => day.id !== dayId && day.date === changes.date)
       if (duplicate) {
         await showAlert('Each day must use a different date.')
         return
       }
     }
-    await saveTripPatch(resolvedTripId, { days: { [dayId]: changes } })
+    await saveTripPatch(resolvedTripId, {
+      days: { [dayId]: { ...changes, updatedAt: currentDay.updatedAt } },
+    })
   }
 
   async function addDay(draft) {
-    if (!firestoreReady || !canEditCurrentTrip || !draft.date) return
+    if (!firestoreReady || !canEditCurrentTrip || !parseIsoDay(draft.date)) return
     if (visibleDays.some((day) => day.date === draft.date)) {
       await showAlert('That date is already in this itinerary.')
       return
@@ -7824,7 +8179,7 @@ export default function App() {
     reordered.splice(targetIndex, 0, day)
     await saveTripPatch(resolvedTripId, {
       days: Object.fromEntries(
-        renumberDays(reordered).map((entry) => [entry.id, { order: entry.order }]),
+        renumberDays(reordered).map((entry) => [entry.id, { order: entry.order, updatedAt: entry.updatedAt }]),
       ),
     })
   }
@@ -7843,20 +8198,20 @@ export default function App() {
     const remaining = visibleDays.filter((entry) => entry.id !== dayId)
     await saveTripPatch(resolvedTripId, {
       days: {
-        [dayId]: { hidden: true },
+        [dayId]: { hidden: true, updatedAt: day.updatedAt },
         ...Object.fromEntries(
-          renumberDays(remaining).map((entry) => [entry.id, { order: entry.order }]),
+          renumberDays(remaining).map((entry) => [entry.id, { order: entry.order, updatedAt: entry.updatedAt }]),
         ),
       },
       items: Object.fromEntries(
         tripState.items
           .filter((item) => item.dayId === dayId && !item.generated)
-          .map((item) => [item.id, { hidden: true }]),
+          .map((item) => [item.id, { hidden: true, updatedAt: item.updatedAt }]),
       ),
       bookingOptions: Object.fromEntries(
         tripState.bookingOptions
           .filter((booking) => booking.dayId === dayId)
-          .map((booking) => [booking.id, { hidden: true }]),
+          .map((booking) => [booking.id, { hidden: true, updatedAt: booking.updatedAt }]),
       ),
     })
     setActiveDayId(remaining[0]?.id || DAY_VIEW_ALL)
@@ -7876,11 +8231,11 @@ export default function App() {
     if (!confirmed) return false
 
     await saveTripPatch(resolvedTripId, {
-      items: { [itemId]: { hidden: true } },
+      items: { [itemId]: { hidden: true, updatedAt: targetItem?.updatedAt } },
       bookingOptions: Object.fromEntries(
         tripState.bookingOptions
           .filter((booking) => booking.linkedItemId === itemId)
-          .map((booking) => [booking.id, { hidden: true }]),
+          .map((booking) => [booking.id, { hidden: true, updatedAt: booking.updatedAt }]),
       ),
     })
     setNoteItem((current) => (current?.id === itemId ? null : current))
@@ -8013,21 +8368,26 @@ export default function App() {
   }
 
   async function saveDetailItem() {
-    if (!detailItem || !firestoreReady || !canEditCurrentTrip) return
+    if (!detailItem || !firestoreReady || !canEditCurrentTrip || saveDetailInFlightRef.current) return
+    saveDetailInFlightRef.current = true
+    try {
 
-    const nextItem = normalizeTransitForItem(normalizeItemTimeFields(detailItem))
+      const nextItem = normalizeTransitForItem(normalizeItemTimeFields(detailItem))
 
-    if (nextItem.generated) {
-      await saveTripPatch(resolvedTripId, {
-        items: {
-          [nextItem.id]: generatedItemPatch(nextItem),
-        },
-      })
-    } else {
-      await saveItem(nextItem)
+      if (nextItem.generated) {
+        await saveTripPatch(resolvedTripId, {
+          items: {
+            [nextItem.id]: generatedItemPatch(nextItem),
+          },
+        })
+      } else {
+        await saveItem(nextItem)
+      }
+
+      setDetailItem(null)
+    } finally {
+      saveDetailInFlightRef.current = false
     }
-
-    setDetailItem(null)
   }
 
   async function addCollaborator(email, role) {
@@ -8039,7 +8399,17 @@ export default function App() {
     }
     if (!currentUser?.uid) return
 
-    const match = await lookupUserByEmail(email)
+    let match
+    try {
+      match = await lookupUserByEmail(email, resolvedTripId)
+    } catch (error) {
+      console.error(error)
+      await showAlert('Collaborator lookup is temporarily unavailable. Please try again.', {
+        title: 'Lookup failed',
+        tone: 'danger',
+      })
+      return
+    }
     if (!match) {
       await showAlert('Ask this person to sign in once before adding them.')
       return
@@ -8341,6 +8711,14 @@ export default function App() {
         showingUtilityScreen={showDeadlines || showParkingLot}
         urgentDeadlineCount={urgentDeadlineCount}
       />
+      {['error', 'warning'].includes(firestoreState.status) && firestoreState.error ? (
+        <div
+          className="pointer-events-none fixed left-1/2 top-3 z-[110] w-[min(calc(100vw-1.5rem),32rem)] -translate-x-1/2 rounded-[1rem] bg-rose-700 px-4 py-3 text-[12px] font-semibold text-white shadow-[0_18px_45px_rgba(136,19,55,0.28)]"
+          role="alert"
+        >
+          {firestoreState.error}
+        </div>
+      ) : null}
       <PdfExportSheet
         loading={pdfExporting}
         onClose={() => {

@@ -11,6 +11,12 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.*
+!.env.example
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
 
 # Editor directories and files
 .vscode/*
@@ -24,3 +30,10 @@ dist-ssr
 *.sw?
 
 .vercel
+
+# Generated audit and browser-test artifacts
+.codex-review/
+.playwright-cli/
+output/
+test-results/
+playwright-report/

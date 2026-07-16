@@ -7,30 +7,44 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "test": "vitest run --exclude tests/firestore.rules.test.js --exclude tests/e2e/** --exclude tests/pwa/**",
+    "test:watch": "vitest --exclude tests/firestore.rules.test.js --exclude tests/e2e/** --exclude tests/pwa/**",
+    "test:rules": "firebase emulators:exec --only firestore \"vitest run tests/firestore.rules.test.js\"",
+    "test:e2e": "playwright test",
+    "test:pwa": "playwright test --config playwright.pwa.config.js",
+    "check": "npm run lint && npm run test && npm run build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource-variable/manrope": "^5.2.8",
     "@tailwindcss/vite": "^4.2.3",
-    "@vis.gl/react-google-maps": "^1.8.3",
     "firebase": "^12.12.1",
-    "html2canvas": "^1.4.1",
+    "firebase-admin": "^14.1.0",
     "jspdf": "^4.2.1",
-    "leaflet": "^1.9.4",
     "lucide-react": "^1.8.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "react-leaflet": "^5.0.0",
     "tailwindcss": "^4.2.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@firebase/rules-unit-testing": "^5.0.1",
+    "@playwright/test": "^1.61.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "firebase-tools": "^14.23.0",
     "globals": "^17.5.0",
-    "vite": "^8.0.9"
+    "jsdom": "^29.1.1",
+    "vite": "^8.1.4",
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "tar": "^7.5.20",
+    "uuid": "^11.1.1"
   }
 }

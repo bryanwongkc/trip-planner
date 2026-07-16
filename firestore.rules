@@ -20,6 +20,9 @@ service cloud.firestore {
         'updatedAt'
       ]) &&
       request.resource.data.uid == request.auth.uid &&
+      request.resource.data.email == (('email' in request.auth.token) ? request.auth.token.email : '') &&
+      request.resource.data.displayName == (('name' in request.auth.token) ? request.auth.token.name : '') &&
+      request.resource.data.photoURL == (('picture' in request.auth.token) ? request.auth.token.picture : '') &&
       (!('onboardingDemoCreated' in request.resource.data) ||
         request.resource.data.onboardingDemoCreated is bool);
     }
@@ -181,14 +184,36 @@ service cloud.firestore {
       (!('isDemo' in request.resource.data) || request.resource.data.isDemo is bool);
     }
 
+    function isSafeEditorMembershipMirrorUpdate(tripId) {
+      return canEditTripAfter(tripId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'title',
+          'startDate',
+          'endDate',
+          'city',
+          'hidden',
+          'updatedAt'
+        ]) &&
+        request.resource.data.title == getAfter(/databases/$(database)/documents/trips/$(tripId)).data.title &&
+        request.resource.data.startDate == getAfter(/databases/$(database)/documents/trips/$(tripId)).data.startDate &&
+        request.resource.data.endDate == getAfter(/databases/$(database)/documents/trips/$(tripId)).data.endDate &&
+        request.resource.data.city == getAfter(/databases/$(database)/documents/trips/$(tripId)).data.city &&
+        request.resource.data.hidden == getAfter(/databases/$(database)/documents/trips/$(tripId)).data.hidden;
+    }
+
     match /users/{uid} {
-      allow read: if isSignedIn();
+      allow read: if userOwnsProfile(uid);
       allow create, update: if userOwnsProfile(uid) && validUserProfile();
       allow delete: if false;
 
       match /tripMemberships/{tripId} {
         allow read: if userOwnsProfile(uid);
-        allow create, update: if validTripMembershipIndex(tripId) && (userOwnsProfile(uid) || canManageTripMembers(tripId));
+        allow create: if validTripMembershipIndex(tripId) && (userOwnsProfile(uid) || canManageTripMembers(tripId));
+        allow update: if validTripMembershipIndex(tripId) && (
+          userOwnsProfile(uid) ||
+          isSafeEditorMembershipMirrorUpdate(tripId) ||
+          canManageTripMembers(tripId)
+        );
         allow delete: if canDeleteTrip(tripId) ||
           ((userOwnsProfile(uid) || canManageTripMembers(tripId)) && resource.data.role != 'owner');
       }

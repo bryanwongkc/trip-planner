@@ -7,23 +7,6 @@ function installPwaViewportGuards() {
   const isTextEditingTarget = (target) =>
     target instanceof Element && Boolean(target.closest("input, textarea, [contenteditable='true']"))
 
-  document.addEventListener('gesturestart', preventDefault, { passive: false })
-  document.addEventListener('gesturechange', preventDefault, { passive: false })
-  document.addEventListener('gestureend', preventDefault, { passive: false })
-  document.addEventListener(
-    'touchmove',
-    (event) => {
-      if (event.touches?.length > 1) event.preventDefault()
-    },
-    { passive: false },
-  )
-  document.addEventListener(
-    'wheel',
-    (event) => {
-      if (event.ctrlKey || event.metaKey) event.preventDefault()
-    },
-    { passive: false },
-  )
   document.addEventListener('dragstart', preventDefault)
   document.addEventListener(
     'selectstart',

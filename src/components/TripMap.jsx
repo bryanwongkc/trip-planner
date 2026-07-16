@@ -1,4 +1,5 @@
 import React, { memo, useEffect, useRef, useState } from 'react'
+import { createMapInfoContent } from '../utils/mapInfo'
 
 const DEFAULT_MAP_CENTER = { lat: 35.6074, lng: 140.1065 }
 
@@ -262,13 +263,7 @@ function TripMap({ fallbackLocationLabel = '', filteredItems, routeSegments }) {
       return
     }
 
-    infoWindow.setContent(`
-      <div style="padding-right:8px">
-        <div style="font-weight:600;color:#111111">${activeItem.title}</div>
-        <div style="font-size:12px;color:#475569;margin-top:4px">${activeItem.locationName || activeItem.address || ''}</div>
-        <div style="font-size:12px;color:#475569;margin-top:4px">${getTimeRange(activeItem)}</div>
-      </div>
-    `)
+    infoWindow.setContent(createMapInfoContent(activeItem, getTimeRange(activeItem)))
     infoWindow.open({
       map: mapRef.current,
       anchor: activeMarker,

@@ -1,4 +1,5 @@
 import { SEED_DAYS, SEED_ITEMS } from '../data/seedItinerary'
+import { normalizeDateTimeForStorage } from './dateTime'
 
 export const DAY_VIEW_ALL = 'all'
 export const PARKING_LOT_DATE = 'TBD'
@@ -194,18 +195,29 @@ export function getScheduleConflicts(items) {
 }
 
 export function formatDayDate(date) {
+  const parsed = parseIsoDay(date)
+  if (!parsed) return 'Date unset'
   return new Intl.DateTimeFormat('en-HK', {
     day: 'numeric',
     month: 'short',
-  }).format(new Date(`${date}T12:00:00`))
+  }).format(parsed)
 }
 
 export function formatFullDayDate(date) {
+  const parsed = parseIsoDay(date)
+  if (!parsed) return 'Date unset'
   return new Intl.DateTimeFormat('en-HK', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
-  }).format(new Date(`${date}T12:00:00`))
+  }).format(parsed)
+}
+
+export function parseIsoDay(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return null
+  const parsed = new Date(`${value}T12:00:00Z`)
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) return null
+  return parsed
 }
 
 export function buildDayLabel(day, index) {
@@ -428,6 +440,7 @@ export function deriveTripState(overrides, options = {}) {
 
     generatedItems.push({
       ...generatedItem,
+      updatedAt: override.updatedAt,
       startTime: override.startTime || generatedItem.startTime,
       endTime: override.endTime || generatedItem.endTime,
       description: override.description ?? generatedItem.description,
@@ -472,8 +485,9 @@ export function movementItemsForDay(activeDayId, tripState) {
 }
 
 export function nextDayDate(days) {
-  if (!days.length) return new Date().toISOString().slice(0, 10)
-  const maxDate = [...days].sort((a, b) => a.date.localeCompare(b.date))[days.length - 1]?.date
+  const validDays = days.filter((day) => parseIsoDay(day.date))
+  if (!validDays.length) return new Date().toISOString().slice(0, 10)
+  const maxDate = [...validDays].sort((a, b) => a.date.localeCompare(b.date))[validDays.length - 1]?.date
   const next = new Date(`${maxDate}T00:00:00Z`)
   next.setUTCDate(next.getUTCDate() + 1)
   return next.toISOString().slice(0, 10)
@@ -500,12 +514,13 @@ export function normalizeBookingOption(option = {}) {
     endDate: option.endDate || '',
     reservationTime: option.reservationTime || '',
     partySize: Number.isFinite(Number(option.partySize)) ? Number(option.partySize) : null,
-    cancellationDeadline: option.cancellationDeadline || '',
+    cancellationDeadline: normalizeDateTimeForStorage(option.cancellationDeadline),
     cancellationPolicy: option.cancellationPolicy || '',
     price: Number.isFinite(Number(option.price)) ? Number(option.price) : null,
     currency: option.currency || 'JPY',
     notes: option.notes || '',
     hidden: Boolean(option.hidden),
+    updatedAt: option.updatedAt,
   }
 }
 

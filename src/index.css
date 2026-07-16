@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+@import '@fontsource-variable/manrope/wght.css';
 @import 'tailwindcss';
 
 :root {
@@ -13,11 +13,16 @@
   --app-primary: #111827;
   color: var(--app-ink);
   background: var(--app-bg);
-  font-family: 'Manrope', 'Segoe UI Variable Text', sans-serif;
+  font-family: 'Manrope Variable', 'Segoe UI Variable Text', sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Keep compact metadata readable on the warm translucent surfaces. */
+.text-slate-400 {
+  color: #64748b;
 }
 
 html {

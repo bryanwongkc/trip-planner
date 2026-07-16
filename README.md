@@ -34,6 +34,9 @@ VITE_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
 VITE_TRIP_DOC_ID=default-trip
 AERODATABOX_RAPIDAPI_KEY=your_aerodatabox_rapidapi_key
 AERODATABOX_RAPIDAPI_HOST=aerodatabox.p.rapidapi.com
+FIREBASE_PROJECT_ID=your_project_id
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk@example.iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 ```
 
 ## Firebase Setup
@@ -44,6 +47,8 @@ Use this Firebase shape:
   Enable `Google` sign-in in Firebase Authentication.
 - Firestore:
   Create a Firestore database in production mode.
+- Admin service account:
+  Add the three server-only `FIREBASE_*` values above to the deployment environment. They power the authenticated collaborator lookup API and must never use a `VITE_` prefix.
 - Rules:
   Deploy [firestore.rules](./firestore.rules).
 - Project alias:
@@ -69,6 +74,8 @@ Use this Firebase shape:
 - `viewer`: read only
 
 Firestore rules are expected to enforce the same model as the UI.
+
+Signed-in trips use Firestore's persistent browser cache so pending changes survive reloads and network loss. Use account-backed editing only on a device you trust because the browser retains that cache between sessions.
 
 ## Deployment Checklist
 

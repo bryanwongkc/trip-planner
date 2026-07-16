@@ -62,7 +62,9 @@ async function fetchHistoricalWeatherReference({ lat, lng, date, locationLabel }
     end_date: endDate,
   })
 
-  const response = await fetch(`https://archive-api.open-meteo.com/v1/archive?${params.toString()}`)
+  const response = await fetch(`https://archive-api.open-meteo.com/v1/archive?${params.toString()}`, {
+    signal: AbortSignal.timeout(10_000),
+  })
 
   if (!response.ok) return null
 
@@ -114,7 +116,9 @@ export async function fetchWeatherSnapshot({ lat, lng, date, label } = {}) {
     forecast_days: String(forecastDays),
   })
 
-  const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`)
+  const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`, {
+    signal: AbortSignal.timeout(10_000),
+  })
 
   if (!response.ok) {
     throw new Error('Unable to fetch weather snapshot')

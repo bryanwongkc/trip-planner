@@ -1,3 +1,5 @@
+import { validateTripPatch } from '../utils/tripValidation'
+
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -7,7 +9,8 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 }
 
-export const firebaseEnabled = Object.values(firebaseConfig).every(Boolean)
+export const firebaseEnabled =
+  import.meta.env.VITE_DISABLE_FIREBASE !== 'true' && Object.values(firebaseConfig).every(Boolean)
 
 let servicesPromise
 
@@ -26,6 +29,7 @@ async function loadFirebaseServices() {
       onAuthStateChanged: null,
       onSnapshot: null,
       query: null,
+      runTransaction: null,
       serverTimestamp: null,
       setDoc: null,
       signInWithPopup: null,
@@ -45,11 +49,23 @@ async function loadFirebaseServices() {
         ? appModule.getApp()
         : appModule.initializeApp(firebaseConfig)
 
+      let db
+      try {
+        db = firestoreModule.initializeFirestore(app, {
+          localCache: firestoreModule.persistentLocalCache({
+            tabManager: firestoreModule.persistentMultipleTabManager(),
+          }),
+        })
+      } catch (error) {
+        if (!['failed-precondition', 'unimplemented'].includes(error?.code)) throw error
+        db = firestoreModule.getFirestore(app)
+      }
+
       return {
         GoogleAuthProvider: authModule.GoogleAuthProvider,
         auth: authModule.getAuth(app),
         collection: firestoreModule.collection,
-        db: firestoreModule.getFirestore(app),
+        db,
         deleteDoc: firestoreModule.deleteDoc,
         doc: firestoreModule.doc,
         getDoc: firestoreModule.getDoc,
@@ -58,6 +74,7 @@ async function loadFirebaseServices() {
         onAuthStateChanged: authModule.onAuthStateChanged,
         onSnapshot: firestoreModule.onSnapshot,
         query: firestoreModule.query,
+        runTransaction: firestoreModule.runTransaction,
         serverTimestamp: firestoreModule.serverTimestamp,
         setDoc: firestoreModule.setDoc,
         signInWithPopup: authModule.signInWithPopup,
@@ -152,6 +169,11 @@ export async function signOutUser() {
   await signOut(auth)
 }
 
+export async function getFirebaseIdToken() {
+  const { auth } = await loadFirebaseServices()
+  return auth?.currentUser ? auth.currentUser.getIdToken() : ''
+}
+
 export async function ensureUserProfile(user) {
   const { db, doc, getDoc, serverTimestamp, setDoc } = await loadFirebaseServices()
   if (!db || !user?.uid) return null
@@ -231,17 +253,21 @@ export async function subscribeToTripMembers(tripId, onValue, onError) {
   )
 }
 
-export async function lookupUserByEmail(email) {
-  const { collection, db, getDocs, limit, query, where } = await loadFirebaseServices()
-  if (!db || !email) return null
-
+export async function lookupUserByEmail(email, tripId) {
+  if (!email || !tripId) return null
   const normalizedEmail = email.trim().toLowerCase()
   if (!normalizedEmail) return null
 
-  const usersQuery = query(collection(db, 'users'), where('email', '==', normalizedEmail), limit(1))
-  const snapshot = await getDocs(usersQuery)
-  const match = snapshot.docs[0]
-  return match ? { id: match.id, ...match.data() } : null
+  const token = await getFirebaseIdToken()
+  if (!token) return null
+  const params = new URLSearchParams({ email: normalizedEmail, tripId })
+  const response = await fetch(`/api/lookup-user?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (response.status === 404) return null
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(payload?.error || 'User lookup failed')
+  return payload ? { id: payload.uid, ...payload } : null
 }
 
 export async function createTripInvite(tripId, actorUser, role, tripMeta = {}) {
@@ -312,32 +338,64 @@ export async function acceptTripInvite(inviteId, user) {
   return { ...invite, id: inviteId }
 }
 
+function timestampsMatch(left, right) {
+  if (!left || !right) return true
+  if (typeof left.isEqual === 'function') return left.isEqual(right)
+  if (typeof left.toMillis === 'function' && typeof right.toMillis === 'function') {
+    return left.toMillis() === right.toMillis()
+  }
+  return String(left) === String(right)
+}
+
+function buildStampedPatch(patch, serverTimestamp) {
+  const payload = { updatedAt: serverTimestamp() }
+  for (const key of ['days', 'items', 'bookingOptions']) {
+    if (patch[key]) payload[key] = stampEntityMap(patch[key], serverTimestamp)
+  }
+  return payload
+}
+
+function assertNoStaleEntities(current, patch) {
+  for (const key of ['days', 'items', 'bookingOptions']) {
+    for (const [id, incoming] of Object.entries(patch[key] || {})) {
+      const existing = current?.[key]?.[id]
+      if (incoming?.updatedAt && existing?.updatedAt && !timestampsMatch(incoming.updatedAt, existing.updatedAt)) {
+        throw new Error('This trip changed on another device. Review the latest version and try again.')
+      }
+    }
+  }
+}
+
 export async function mergeTripPatch(tripId, patch) {
-  const { db, doc, serverTimestamp, setDoc } = await loadFirebaseServices()
+  const { db, doc, runTransaction, serverTimestamp, setDoc } = await loadFirebaseServices()
   if (!db || !tripId) return
 
   const overridesDoc = doc(db, 'trips', tripId, 'overrides', 'shared')
-  const payload = {
-    updatedAt: serverTimestamp(),
+  const queuePatch = async () => {
+    await setDoc(overridesDoc, buildStampedPatch(patch, serverTimestamp), { merge: true })
   }
 
-  if (patch.days) {
-    payload.days = stampEntityMap(patch.days, serverTimestamp)
+  if (globalThis.navigator?.onLine === false || !runTransaction) {
+    await queuePatch()
+    return
   }
 
-  if (patch.items) {
-    payload.items = stampEntityMap(patch.items, serverTimestamp)
+  try {
+    await runTransaction(db, async (transaction) => {
+      const snapshot = await transaction.get(overridesDoc)
+      const current = snapshot.exists() ? snapshot.data() : {}
+      assertNoStaleEntities(current, patch)
+      validateTripPatch(current, patch)
+      transaction.set(overridesDoc, buildStampedPatch(patch, serverTimestamp), { merge: true })
+    })
+  } catch (error) {
+    if (error?.code !== 'unavailable') throw error
+    await queuePatch()
   }
-
-  if (patch.bookingOptions) {
-    payload.bookingOptions = stampEntityMap(patch.bookingOptions, serverTimestamp)
-  }
-
-  await setDoc(overridesDoc, payload, { merge: true })
 }
 
 export async function createTripRecordWithOwner(tripId, payload, ownerUser) {
-  const { db, doc, serverTimestamp, setDoc } = await loadFirebaseServices()
+  const { db, doc, serverTimestamp, writeBatch } = await loadFirebaseServices()
   if (!db || !tripId || !ownerUser?.uid) return
 
   const tripDoc = doc(db, 'trips', tripId)
@@ -356,7 +414,8 @@ export async function createTripRecordWithOwner(tripId, payload, ownerUser) {
     isDemo: Boolean(payload.isDemo),
   }
 
-  await setDoc(
+  const batch = writeBatch(db)
+  batch.set(
     tripDoc,
     stripUndefined({
       ...tripMeta,
@@ -365,7 +424,7 @@ export async function createTripRecordWithOwner(tripId, payload, ownerUser) {
     }),
     { merge: true },
   )
-  await setDoc(
+  batch.set(
     memberDoc,
     stripUndefined({
       ...serializeUserProfile(ownerUser),
@@ -376,12 +435,12 @@ export async function createTripRecordWithOwner(tripId, payload, ownerUser) {
     }),
     { merge: true },
   )
-  await setDoc(
+  batch.set(
     membershipIndexDoc,
     buildTripIndexPayload(tripId, 'owner', tripMeta, serverTimestamp),
     { merge: true },
   )
-  await setDoc(
+  batch.set(
     overridesDoc,
     {
       updatedAt: serverTimestamp(),
@@ -391,6 +450,7 @@ export async function createTripRecordWithOwner(tripId, payload, ownerUser) {
     },
     { merge: true },
   )
+  await batch.commit()
 }
 
 export async function upsertTripMeta(tripId, payload) {
@@ -509,11 +569,11 @@ export async function updateTripMemberRole(tripId, memberUid, role, tripMeta = {
 }
 
 export async function removeTripMember(tripId, memberUid) {
-  const { db, deleteDoc, doc } = await loadFirebaseServices()
+  const { db, doc, writeBatch } = await loadFirebaseServices()
   if (!db || !tripId || !memberUid) return
 
-  await Promise.all([
-    deleteDoc(doc(db, 'trips', tripId, 'members', memberUid)),
-    deleteDoc(doc(db, 'users', memberUid, 'tripMemberships', tripId)),
-  ])
+  const batch = writeBatch(db)
+  batch.delete(doc(db, 'trips', tripId, 'members', memberUid))
+  batch.delete(doc(db, 'users', memberUid, 'tripMemberships', tripId))
+  await batch.commit()
 }
