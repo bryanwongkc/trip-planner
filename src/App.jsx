@@ -85,9 +85,13 @@ import {
   upsertTripMeta,
 } from './services/firebase'
 import {
+  buildFlightCodeChangePatch,
   extractFlightNumber,
   fetchFlightStatusByNumber,
+  getFlightCodeInputValue,
   inferFlightLookupFromItem,
+  selectFlightRecord,
+  stripFlightInfoDescription,
 } from './services/aerodatabox'
 import { fetchWeatherSnapshot } from './services/weather'
 import { submitAppFeedback } from './services/feedback'
@@ -143,6 +147,7 @@ const MOVE_THRESHOLD = 10
 const DROP_DAY_SWITCH_MS = 240
 const FLIGHT_STATUS_LIVE_TTL_MS = 60_000
 const FLIGHT_STATUS_STATIC_TTL_MS = 6 * 60 * 60 * 1000
+const FLIGHT_LOOKUP_VERSION = 2
 const ACTIVE_TRIP_STORAGE_KEY = 'trip-planner-active-trip'
 const TripMap = lazy(() => import('./components/TripMap'))
 const FEEDBACK_CATEGORY_OPTIONS = [
@@ -1686,7 +1691,7 @@ function formatAirportLocalTimeToClock(value) {
 
 function buildFlightLookupKey(flightCode, date) {
   if (!flightCode || !date) return ''
-  return `${flightCode.trim().toUpperCase()}|${date}`
+  return `${FLIGHT_LOOKUP_VERSION}|${flightCode.trim().toUpperCase()}|${date}`
 }
 
 function airportCodeLabel(code, name) {
@@ -1720,9 +1725,7 @@ function buildFlightInfoBlock(record) {
 }
 
 function mergeFlightInfoIntoDescription(description, record) {
-  const base = String(description || '')
-    .replace(/\n?\n?(?:\[Flight details\]\n)?Departure:[\s\S]*$/u, '')
-    .trimEnd()
+  const base = stripFlightInfoDescription(description)
   const block = buildFlightInfoBlock(record)
   return block ? `${base}${block}`.trim() : base
 }
@@ -1764,17 +1767,6 @@ function applyFlightRecordToDraft(item, record, flightCode, lookupKey) {
 
 function hasAppliedFlightLookup(item, lookupKey) {
   return Boolean(item?.flightInfo?.lookupKey && item.flightInfo.lookupKey === lookupKey)
-}
-
-function selectFlightRecord(records, flightCode) {
-  const normalizedCode = extractFlightNumber(flightCode)
-  if (!normalizedCode) return records?.[0] || null
-
-  return (
-    records.find((record) => extractFlightNumber(record.number || '') === normalizedCode) ||
-    records[0] ||
-    null
-  )
 }
 
 function getFlightAnchor(item, mode) {
@@ -4448,7 +4440,7 @@ function AddStopComposer({
         ? draft.dayId
         : dayOptions[0]?.id || ''
   const isDraftParkingLotItem = draft.date === PARKING_LOT_DATE
-  const draftFlightCode = draft.flightCode || extractFlightNumber(draft.title || '')
+  const draftFlightCode = getFlightCodeInputValue(draft)
   const draftDayDate = dayMap[effectiveDraftDayId]?.date || ''
   const draftAppliedLookupKey = draft.flightInfo?.lookupKey || ''
   const draftFlightLookup = inferFlightLookupFromItem({
@@ -4519,7 +4511,7 @@ function AddStopComposer({
         if (!active || !record) return
 
         setDraft((current) => {
-          const currentFlightCode = current.flightCode || extractFlightNumber(current.title || '')
+          const currentFlightCode = getFlightCodeInputValue(current)
           const currentDayDate = dayMap[
             current.dayId && dayOptions.some((day) => day.id === current.dayId)
               ? current.dayId
@@ -4753,7 +4745,7 @@ function AddStopComposer({
                   onChange={(event) =>
                     setDraft((current) =>
                       draft.category === 'Flight'
-                        ? { ...current, flightCode: event.target.value.toUpperCase().replace(/\s+/g, '') }
+                        ? { ...current, ...buildFlightCodeChangePatch(current, event.target.value) }
                         : { ...current, title: event.target.value },
                     )
                   }
@@ -5132,7 +5124,7 @@ function DetailModal({
     detailItem.dayId && dayOptions.some((day) => day.id === detailItem.dayId)
       ? detailItem.dayId
       : dayOptions[0]?.id || ''
-  const effectiveFlightCode = detailItem.flightCode || extractFlightNumber(detailItem.title || '')
+  const effectiveFlightCode = getFlightCodeInputValue(detailItem)
   const travelModeMeta = useMemo(() => {
     if (detailItem.travelModeToNext === 'driving') {
       return { label: 'Car to next stop', icon: CarFront }
@@ -5271,7 +5263,7 @@ function DetailModal({
               onChange={(event) =>
                 onChange(
                   detailItem.category === 'Flight'
-                    ? { flightCode: event.target.value.toUpperCase().replace(/\s+/g, '') }
+                    ? buildFlightCodeChangePatch(detailItem, event.target.value)
                     : { title: event.target.value },
                 )
               }
@@ -5445,7 +5437,7 @@ function PlannerPanel({
   const isDraftParkingLotItem = draft.date === PARKING_LOT_DATE
   const [isComposerOpen, setIsComposerOpen] = useState(false)
   const composerDialogRef = useModalDialog(closeAddComposer, isComposerOpen && canEdit)
-  const draftFlightCode = draft.flightCode || extractFlightNumber(draft.title || '')
+  const draftFlightCode = getFlightCodeInputValue(draft)
   const draftDayDate = dayMap[effectiveDraftDayId]?.date || ''
   const draftAppliedLookupKey = draft.flightInfo?.lookupKey || ''
   const draftFlightLookup = inferFlightLookupFromItem({
@@ -5560,7 +5552,7 @@ function PlannerPanel({
         if (!active || !record) return
 
         setDraft((current) => {
-          const currentFlightCode = current.flightCode || extractFlightNumber(current.title || '')
+          const currentFlightCode = getFlightCodeInputValue(current)
           const currentDayDate = dayMap[
             current.dayId && dayOptions.some((day) => day.id === current.dayId)
               ? current.dayId
@@ -6428,7 +6420,7 @@ function PlannerPanel({
                   onChange={(event) =>
                     setDraft((current) =>
                       draft.category === 'Flight'
-                        ? { ...current, flightCode: event.target.value.toUpperCase().replace(/\s+/g, '') }
+                        ? { ...current, ...buildFlightCodeChangePatch(current, event.target.value) }
                         : { ...current, title: event.target.value },
                     )
                   }
@@ -7073,7 +7065,6 @@ export default function App() {
   const detailDayDate = detailItem?.dayId ? tripState.dayMap[detailItem.dayId]?.date || '' : ''
   const detailFlightLookup = inferFlightLookupFromItem({
     ...(detailItem || {}),
-    flightCode: detailItem?.flightCode || extractFlightNumber(detailItem?.title || ''),
     dayDate: detailDayDate,
   })
   const detailFlightCode = detailFlightLookup?.flightNumber || ''
@@ -7739,7 +7730,7 @@ export default function App() {
         setDetailItem((current) => {
           if (!current) return current
 
-          const currentFlightCode = current.flightCode || extractFlightNumber(current.title || '')
+          const currentFlightCode = getFlightCodeInputValue(current)
           const currentDayDate = current.dayId ? tripState.dayMap[current.dayId]?.date || '' : ''
           const currentLookupKey = buildFlightLookupKey(currentFlightCode, currentDayDate)
 

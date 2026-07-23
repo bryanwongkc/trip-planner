@@ -11,10 +11,40 @@ export function extractFlightNumber(value = '') {
   return ''
 }
 
+export function getFlightCodeInputValue(item) {
+  if (!item) return ''
+  if (Object.prototype.hasOwnProperty.call(item, 'flightCode')) {
+    return String(item.flightCode || '')
+  }
+  return extractFlightNumber(item.title || item.bookingRef || '')
+}
+
+export function stripFlightInfoDescription(description = '') {
+  return String(description)
+    .replace(/\n?\n?(?:\[Flight details\]\n)?Departure:[\s\S]*$/u, '')
+    .trimEnd()
+}
+
+export function buildFlightCodeChangePatch(item, value) {
+  const flightCode = String(value || '').toUpperCase().replace(/\s+/g, '')
+  if (flightCode === getFlightCodeInputValue(item)) return { flightCode }
+
+  return {
+    flightCode,
+    title: flightCode ? `Flight (${flightCode})` : 'Flight',
+    startTime: '',
+    endTime: '',
+    endTimeMode: 'time',
+    durationMinutes: null,
+    description: stripFlightInfoDescription(item?.description),
+    flightInfo: null,
+  }
+}
+
 export function inferFlightLookupFromItem(item) {
   if (!item || item.category !== 'Flight') return null
 
-  const flightNumber = extractFlightNumber(item.flightCode || item.title || item.bookingRef || '')
+  const flightNumber = extractFlightNumber(getFlightCodeInputValue(item))
   if (!flightNumber) return null
 
   return {
@@ -37,6 +67,8 @@ export function normalizeFlightStatusPayload(payload) {
   return entries.map((entry) => ({
     number: entry?.number || '',
     status: entry?.status || '',
+    codeshareStatus: entry?.codeshareStatus || '',
+    lastUpdatedUtc: entry?.lastUpdatedUtc || '',
     airline: entry?.airline?.name || '',
     aircraftModel: entry?.aircraft?.model || '',
     departureAirport: entry?.departure?.airport?.iata || entry?.departure?.airport?.icao || '',
@@ -59,6 +91,51 @@ export function normalizeFlightStatusPayload(payload) {
     scheduledArrival: entry?.arrival?.scheduledTime?.local || '',
     raw: entry,
   }))
+}
+
+function flightRecordRank(record) {
+  const hasCompleteRoute = Boolean(record?.departureAirport && record?.arrivalAirport)
+  const hasCompleteSchedule = Boolean(record?.scheduledDeparture && record?.scheduledArrival)
+  const coreFieldCount = [
+    record?.departureAirport,
+    record?.arrivalAirport,
+    record?.scheduledDeparture,
+    record?.scheduledArrival,
+  ].filter(Boolean).length
+  const isOperatingFlight = record?.codeshareStatus === 'IsOperator'
+  const updatedValue = String(record?.lastUpdatedUtc || '').replace(' ', 'T')
+  const updatedAt = Date.parse(updatedValue)
+
+  return [
+    Number(hasCompleteRoute),
+    Number(hasCompleteSchedule),
+    coreFieldCount,
+    Number.isNaN(updatedAt) ? 0 : updatedAt,
+    Number(isOperatingFlight),
+  ]
+}
+
+function compareFlightRecordRank(left, right) {
+  const leftRank = flightRecordRank(left)
+  const rightRank = flightRecordRank(right)
+
+  for (let index = 0; index < leftRank.length; index += 1) {
+    if (leftRank[index] !== rightRank[index]) return rightRank[index] - leftRank[index]
+  }
+
+  return 0
+}
+
+export function selectFlightRecord(records, flightCode) {
+  if (!Array.isArray(records) || !records.length) return null
+
+  const normalizedCode = extractFlightNumber(flightCode)
+  const exactMatches = normalizedCode
+    ? records.filter((record) => extractFlightNumber(record?.number || '') === normalizedCode)
+    : []
+  const candidates = exactMatches.length ? exactMatches : records
+
+  return [...candidates].sort(compareFlightRecordRank)[0] || null
 }
 
 async function requestAeroDataBox(params) {
