@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  clusterMapMarkers,
   layoutMapMarkers,
   MAP_MARKER_TOUCH_DISTANCE_PX,
   projectMapPoint,
@@ -51,5 +52,23 @@ describe('layoutMapMarkers', () => {
     ]
 
     expect(layoutMapMarkers(items, 12)).toEqual(layoutMapMarkers(items, 12))
+  })
+})
+
+describe('clusterMapMarkers', () => {
+  it('collapses dense overview stops while leaving distant stops separate', () => {
+    const clusters = clusterMapMarkers(
+      [
+        { id: 'first', lat: 35.6074, lng: 140.1065 },
+        { id: 'second', lat: 35.6074, lng: 140.1065 },
+        { id: 'distant', lat: 36.6074, lng: 140.1065 },
+      ],
+      8,
+    )
+
+    expect(clusters.map((cluster) => cluster.items.map((item) => item.id))).toEqual([
+      ['first', 'second'],
+      ['distant'],
+    ])
   })
 })

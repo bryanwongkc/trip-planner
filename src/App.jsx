@@ -6488,6 +6488,7 @@ function MapPanel({
               <TripMap
                 fallbackLocationLabel={fallbackLocationLabel}
                 filteredItems={mapItems}
+                isOverview={activeDayId === DAY_VIEW_ALL}
                 routeSegments={routeSegments}
               />
             </Suspense>

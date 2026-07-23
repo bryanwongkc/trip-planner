@@ -3,6 +3,7 @@ const MAX_MERCATOR_LATITUDE = 85.05112878
 
 export const MAP_MARKER_COLLISION_DISTANCE_PX = 28
 export const MAP_MARKER_TOUCH_DISTANCE_PX = 21.5
+export const MAP_OVERVIEW_CLUSTER_DISTANCE_PX = 48
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value))
@@ -33,6 +34,49 @@ function unprojectMapPoint(point, zoom) {
 
 function distanceBetween(first, second) {
   return Math.hypot(first.x - second.x, first.y - second.y)
+}
+
+export function clusterMapMarkers(
+  items,
+  zoom,
+  clusterDistance = MAP_OVERVIEW_CLUSTER_DISTANCE_PX,
+) {
+  const safeZoom = Number.isFinite(zoom) ? zoom : 9
+  const groups = []
+
+  items.forEach((item, itemIndex) => {
+    const point = projectMapPoint({ lat: item.lat, lng: item.lng }, safeZoom)
+    let closestGroup = null
+    let closestDistance = clusterDistance
+
+    groups.forEach((group) => {
+      const distance = distanceBetween(point, group.centerPoint)
+      if (distance >= closestDistance) return
+      closestGroup = group
+      closestDistance = distance
+    })
+
+    if (!closestGroup) {
+      groups.push({
+        itemIndexes: [itemIndex],
+        centerPoint: point,
+      })
+      return
+    }
+
+    closestGroup.itemIndexes.push(itemIndex)
+    const itemCount = closestGroup.itemIndexes.length
+    closestGroup.centerPoint = {
+      x: closestGroup.centerPoint.x + (point.x - closestGroup.centerPoint.x) / itemCount,
+      y: closestGroup.centerPoint.y + (point.y - closestGroup.centerPoint.y) / itemCount,
+    }
+  })
+
+  return groups.map((group) => ({
+    itemIndexes: group.itemIndexes,
+    items: group.itemIndexes.map((itemIndex) => items[itemIndex]),
+    centerPosition: unprojectMapPoint(group.centerPoint, safeZoom),
+  }))
 }
 
 function collisionGroups(projectedPoints, collisionDistance) {

@@ -9,11 +9,13 @@ describe('TripMap itinerary colors', () => {
   let container
   let root
   let markerOptions
+  let markerInstances
   let polylineOptions
 
   beforeEach(() => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true
     markerOptions = []
+    markerInstances = []
     polylineOptions = []
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -33,11 +35,18 @@ describe('TripMap itinerary colors', () => {
     class MockMarker {
       constructor(options) {
         this.options = options
+        this.map = options.map
+        this.listeners = {}
         markerOptions.push(options)
+        markerInstances.push(this)
       }
 
-      addListener() {}
-      setMap() {}
+      addListener(eventName, listener) {
+        this.listeners[eventName] = listener
+      }
+      setMap(map) {
+        this.map = map
+      }
       setPosition(position) {
         this.options.position = position
       }
@@ -150,5 +159,28 @@ describe('TripMap itinerary colors', () => {
     expect(polylineOptions.map((options) => options.path[1])).toEqual(
       markerOptions.map((options) => options.position),
     )
+  })
+
+  it('uses a single zoomable count marker for dense overview stops', () => {
+    act(() => {
+      root = createRoot(container)
+      root.render(
+        <TripMap
+          filteredItems={[
+            { id: 'first', title: 'First', lat: 35.6074, lng: 140.1065 },
+            { id: 'second', title: 'Second', lat: 35.6074, lng: 140.1065 },
+            { id: 'third', title: 'Third', lat: 35.6074, lng: 140.1065 },
+          ]}
+          isOverview
+          routeSegments={[]}
+        />,
+      )
+    })
+
+    expect(markerOptions).toHaveLength(4)
+    expect(markerOptions[3].label.text).toBe('3')
+    expect(markerOptions[3].title).toBe('3 stops — click to zoom in')
+    expect(markerInstances.slice(0, 3).every((marker) => marker.map === null)).toBe(true)
+    expect(polylineOptions).toHaveLength(0)
   })
 })

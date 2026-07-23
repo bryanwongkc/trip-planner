@@ -1,9 +1,10 @@
 import React, { memo, useEffect, useRef, useState } from 'react'
 import { createMapInfoContent } from '../utils/mapInfo'
 import { getItineraryItemColor } from '../utils/itemColors'
-import { layoutMapMarkers } from '../utils/mapMarkerLayout'
+import { clusterMapMarkers, layoutMapMarkers } from '../utils/mapMarkerLayout'
 
 const DEFAULT_MAP_CENTER = { lat: 35.6074, lng: 140.1065 }
+const OVERVIEW_CLUSTER_MAX_ZOOM = 13
 
 function getTimeRange(item) {
   if (item.generated) return 'Linked from previous day'
@@ -124,11 +125,17 @@ function routeColor(mode) {
   return '#334155'
 }
 
-function TripMap({ fallbackLocationLabel = '', filteredItems, routeSegments }) {
+function TripMap({
+  fallbackLocationLabel = '',
+  filteredItems,
+  isOverview = false,
+  routeSegments,
+}) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const overlaysRef = useRef({
     markers: [],
+    clusterMarkers: [],
     polylines: [],
     leaderLines: [],
     infoWindow: null,
@@ -190,9 +197,11 @@ function TripMap({ fallbackLocationLabel = '', filteredItems, routeSegments }) {
 
     overlays.viewportListener?.remove()
     overlays.markers.forEach((marker) => marker.setMap(null))
+    overlays.clusterMarkers.forEach((marker) => marker.setMap(null))
     overlays.polylines.forEach((polyline) => polyline.setMap(null))
     overlays.leaderLines.forEach((polyline) => polyline.setMap(null))
     overlays.markers = []
+    overlays.clusterMarkers = []
     overlays.polylines = []
     overlays.leaderLines = []
     overlays.viewportListener = null
@@ -255,10 +264,65 @@ function TripMap({ fallbackLocationLabel = '', filteredItems, routeSegments }) {
       })
 
     const updateMarkerLayout = () => {
+      overlays.clusterMarkers.forEach((marker) => marker.setMap(null))
+      overlays.clusterMarkers = []
       overlays.leaderLines.forEach((polyline) => polyline.setMap(null))
       overlays.leaderLines = []
 
-      const layouts = layoutMapMarkers(points, map.getZoom?.())
+      const zoom = map.getZoom?.()
+      if (isOverview && (!Number.isFinite(zoom) || zoom < OVERVIEW_CLUSTER_MAX_ZOOM)) {
+        const clusters = clusterMapMarkers(points, zoom)
+        const clusteredItemIndexes = new Set(
+          clusters
+            .filter((cluster) => cluster.itemIndexes.length > 1)
+            .flatMap((cluster) => cluster.itemIndexes),
+        )
+
+        overlays.markers.forEach((marker, index) => {
+          marker.setPosition({ lat: points[index].lat, lng: points[index].lng })
+          marker.setMap(clusteredItemIndexes.has(index) ? null : map)
+        })
+
+        clusters
+          .filter((cluster) => cluster.itemIndexes.length > 1)
+          .forEach((cluster) => {
+            const count = cluster.itemIndexes.length
+            const clusterMarker = new window.google.maps.Marker({
+              map,
+              position: cluster.centerPosition,
+              title: `${count} stops — click to zoom in`,
+              label: {
+                text: String(count),
+                color: '#ffffff',
+                fontSize: '12px',
+                fontWeight: '800',
+              },
+              icon: {
+                path: window.google.maps.SymbolPath.CIRCLE,
+                fillColor: '#334155',
+                fillOpacity: 0.96,
+                strokeColor: '#ffffff',
+                strokeWeight: 3,
+                scale: count > 9 ? 13.5 : 12,
+              },
+              zIndex: 2,
+            })
+
+            clusterMarker.addListener('click', () => {
+              map.setCenter(cluster.centerPosition)
+              map.setZoom(
+                Math.min(OVERVIEW_CLUSTER_MAX_ZOOM, (map.getZoom?.() || 9) + 2),
+              )
+            })
+            overlays.clusterMarkers.push(clusterMarker)
+          })
+
+        overlays.infoWindow?.close()
+        return
+      }
+
+      overlays.markers.forEach((marker) => marker.setMap(map))
+      const layouts = layoutMapMarkers(points, zoom)
       layouts.forEach((layout, index) => {
         overlays.markers[index]?.setPosition(layout.displayPosition)
 
@@ -293,13 +357,15 @@ function TripMap({ fallbackLocationLabel = '', filteredItems, routeSegments }) {
       overlays.viewportListener?.remove()
       overlays.viewportListener = null
       overlays.markers.forEach((marker) => marker.setMap(null))
+      overlays.clusterMarkers.forEach((marker) => marker.setMap(null))
       overlays.polylines.forEach((polyline) => polyline.setMap(null))
       overlays.leaderLines.forEach((polyline) => polyline.setMap(null))
       overlays.markers = []
+      overlays.clusterMarkers = []
       overlays.polylines = []
       overlays.leaderLines = []
     }
-  }, [fallbackCenter, filteredItems, routeSegments])
+  }, [fallbackCenter, filteredItems, isOverview, routeSegments])
 
   useEffect(() => {
     const infoWindow = overlaysRef.current.infoWindow
