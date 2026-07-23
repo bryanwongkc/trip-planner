@@ -2,6 +2,7 @@ const TILE_SIZE = 256
 const MAX_MERCATOR_LATITUDE = 85.05112878
 
 export const MAP_MARKER_COLLISION_DISTANCE_PX = 28
+export const MAP_MARKER_TOUCH_DISTANCE_PX = 21.5
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value))
@@ -68,20 +69,17 @@ function collisionGroups(projectedPoints, collisionDistance) {
   return groups
 }
 
-function radialOffsets(count, collisionDistance) {
+function radialOffsets(count) {
   if (count === 2) {
-    const radius = Math.max(19, collisionDistance * 0.68)
+    const radius = MAP_MARKER_TOUCH_DISTANCE_PX / 2
     return [
       { x: -radius, y: 0 },
       { x: radius, y: 0 },
     ]
   }
 
-  const minimumSpacing = collisionDistance + 4
-  const radius = Math.max(
-    19,
-    minimumSpacing / (2 * Math.sin(Math.PI / count)),
-  )
+  const radius =
+    MAP_MARKER_TOUCH_DISTANCE_PX / (2 * Math.sin(Math.PI / count))
 
   return Array.from({ length: count }, (_, index) => {
     const angle = -Math.PI / 2 + (index * 2 * Math.PI) / count
@@ -118,7 +116,7 @@ export function layoutMapMarkers(
       }),
       { x: 0, y: 0 },
     )
-    const offsets = radialOffsets(group.length, collisionDistance)
+    const offsets = radialOffsets(group.length)
 
     group.forEach((pointIndex, groupIndex) => {
       const offset = offsets[groupIndex]

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { layoutMapMarkers, projectMapPoint } from '../src/utils/mapMarkerLayout'
+import {
+  layoutMapMarkers,
+  MAP_MARKER_TOUCH_DISTANCE_PX,
+  projectMapPoint,
+} from '../src/utils/mapMarkerLayout'
 
 describe('layoutMapMarkers', () => {
   it('keeps separated markers at their exact coordinates', () => {
@@ -17,7 +21,7 @@ describe('layoutMapMarkers', () => {
     expect(layouts.every((layout) => !layout.spiderfied)).toBe(true)
   })
 
-  it('separates colliding markers by more than one marker width', () => {
+  it('places colliding markers edge-to-edge without a visible gap', () => {
     const items = [
       { id: 'first', lat: 35.6074, lng: 140.1065 },
       { id: 'second', lat: 35.6074, lng: 140.1065 },
@@ -32,8 +36,9 @@ describe('layoutMapMarkers', () => {
     expect(layouts.every((layout) => layout.spiderfied)).toBe(true)
     displayPoints.forEach((point, index) => {
       displayPoints.slice(index + 1).forEach((otherPoint) => {
-        expect(Math.hypot(point.x - otherPoint.x, point.y - otherPoint.y)).toBeGreaterThanOrEqual(
-          31.9,
+        expect(Math.hypot(point.x - otherPoint.x, point.y - otherPoint.y)).toBeCloseTo(
+          MAP_MARKER_TOUCH_DISTANCE_PX,
+          5,
         )
       })
     })
