@@ -8,6 +8,10 @@ function addLine(container, text, style) {
 export function createMapInfoContent(item, timeRange) {
   const container = document.createElement('div')
   container.style.paddingRight = '8px'
+  if (item?.itineraryColor?.solid) {
+    container.style.borderLeft = `3px solid ${item.itineraryColor.solid}`
+    container.style.paddingLeft = '8px'
+  }
   addLine(container, item?.title, 'font-weight:600;color:#111111')
   addLine(
     container,

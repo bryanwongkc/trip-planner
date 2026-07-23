@@ -1,15 +1,8 @@
 import React, { memo, useEffect, useRef, useState } from 'react'
 import { createMapInfoContent } from '../utils/mapInfo'
+import { getItineraryItemColor } from '../utils/itemColors'
 
 const DEFAULT_MAP_CENTER = { lat: 35.6074, lng: 140.1065 }
-
-function typeColor(category) {
-  if (category === 'Flight') return '#38bdf8'
-  if (category === 'Car') return '#64748b'
-  if (category === 'Hotel') return '#f59e0b'
-  if (category === 'Wedding') return '#ec4899'
-  return '#14b8a6'
-}
 
 function getTimeRange(item) {
   if (item.generated) return 'Linked from previous day'
@@ -203,8 +196,15 @@ function TripMap({ fallbackLocationLabel = '', filteredItems, routeSegments }) {
     }
 
     const bounds = new window.google.maps.LatLngBounds()
+    const itemColorById = new Map(
+      points.map((item, index) => [
+        item.id,
+        item.itineraryColor || getItineraryItemColor(index),
+      ]),
+    )
 
     points.forEach((item, index) => {
+      const itemColor = itemColorById.get(item.id)
       const marker = new window.google.maps.Marker({
         map,
         position: { lat: item.lat, lng: item.lng },
@@ -215,7 +215,7 @@ function TripMap({ fallbackLocationLabel = '', filteredItems, routeSegments }) {
         },
         icon: {
           path: window.google.maps.SymbolPath.CIRCLE,
-          fillColor: typeColor(item.category),
+          fillColor: itemColor.solid,
           fillOpacity: 0.95,
           strokeColor: '#ffffff',
           strokeWeight: 2.5,
@@ -234,7 +234,7 @@ function TripMap({ fallbackLocationLabel = '', filteredItems, routeSegments }) {
         const polyline = new window.google.maps.Polyline({
           map,
           path: segment.route.path,
-          strokeColor: routeColor(segment.mode),
+          strokeColor: itemColorById.get(segment.from.id)?.solid || routeColor(segment.mode),
           strokeOpacity: 0.58,
           strokeWeight: 2.4,
         })

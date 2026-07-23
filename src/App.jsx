@@ -126,11 +126,18 @@ import {
   sortItemsByTimeline,
   slugId,
   stripFlightLocationFields,
-  timeToMinutes,
 } from './utils/trip'
+import {
+  buildRouteTimelineItems,
+  buildTimelineEntries,
+  hasActiveSelectionStatus,
+  hasActiveStayOrMealStatus,
+  isStackableStayOrMeal,
+} from './utils/timeline'
 import { validateTripPatch } from './utils/tripValidation'
 import { createAsyncTtlCache } from './utils/asyncTtlCache'
 import { createKeyedTaskQueue } from './utils/keyedTaskQueue'
+import { assignItineraryItemColors } from './utils/itemColors'
 import {
   DEFAULT_INVITE_EXPIRY_DAYS,
   DEFAULT_INVITE_MAX_USES,
@@ -468,128 +475,6 @@ function buildTransitSummary(item) {
 
 function itemLocationSummary(item) {
   return item?.locationName || item?.address || ''
-}
-
-function isStackableStayOrMeal(item) {
-  return ['Hotel', 'Restaurant'].includes(item?.category)
-}
-
-function itemInterval(item) {
-  const start = timeToMinutes(item?.startTime || '23:59')
-  const rawEnd = item?.endTime ? timeToMinutes(item.endTime) : start + 1
-  return {
-    start,
-    end: rawEnd > start ? rawEnd : start + 1,
-  }
-}
-
-function intervalsOverlap(a, b) {
-  return a.start < b.end && b.start < a.end
-}
-
-function hasActiveStayOrMealStatus(item) {
-  return item?.status === 'active'
-}
-
-function hasActiveSelectionStatus(item) {
-  return item?.status === 'active'
-}
-
-function chooseStackLead(items) {
-  return [...items].sort((a, b) => {
-    const activeCompare = Number(hasActiveStayOrMealStatus(b)) - Number(hasActiveStayOrMealStatus(a))
-    if (activeCompare !== 0) return activeCompare
-    return itemInterval(a).start - itemInterval(b).start
-  })[0]
-}
-
-function chooseSubstituteStackLead(items) {
-  return [...items].sort((a, b) => {
-    const activeCompare = Number(hasActiveSelectionStatus(b)) - Number(hasActiveSelectionStatus(a))
-    if (activeCompare !== 0) return activeCompare
-    const sourceCompare = Number(Boolean(a.substituteOfItemId)) - Number(Boolean(b.substituteOfItemId))
-    if (sourceCompare !== 0) return sourceCompare
-    return itemInterval(a).start - itemInterval(b).start
-  })[0]
-}
-
-function buildTimelineEntries(items) {
-  const stackByItemId = new Map()
-
-  Object.values(
-    items.reduce((groups, item) => {
-      if (!item.substituteGroupId) return groups
-      groups[item.substituteGroupId] = groups[item.substituteGroupId] || []
-      groups[item.substituteGroupId].push(item)
-      return groups
-    }, {}),
-  )
-    .filter((groupItems) => groupItems.length > 1)
-    .forEach((groupItems) => {
-      const leadItem = chooseSubstituteStackLead(groupItems)
-      const stack = {
-        id: `substitute-stack:${leadItem.substituteGroupId}`,
-        type: 'stack',
-        stackKind: 'substitute',
-        dayId: leadItem.dayId,
-        item: leadItem,
-        items: [leadItem, ...groupItems.filter((item) => item.id !== leadItem.id)],
-      }
-      groupItems.forEach((item) => stackByItemId.set(item.id, stack))
-    })
-
-  Object.values(
-    items.filter((item) => isStackableStayOrMeal(item) && !stackByItemId.has(item.id)).reduce((groups, item) => {
-      const key = `${item.dayId}:${item.category}`
-      groups[key] = groups[key] || []
-      groups[key].push(item)
-      return groups
-    }, {}),
-  ).forEach((groupItems) => {
-    const ordered = [...groupItems].sort((a, b) => itemInterval(a).start - itemInterval(b).start)
-    const clusters = []
-
-    ordered.forEach((item) => {
-      const interval = itemInterval(item)
-      const cluster = clusters.find((entry) =>
-        entry.items.some((candidate) => intervalsOverlap(interval, itemInterval(candidate))),
-      )
-
-      if (cluster) {
-        cluster.items.push(item)
-        return
-      }
-
-      clusters.push({ items: [item] })
-    })
-
-    clusters
-      .filter((cluster) => cluster.items.length > 1)
-      .forEach((cluster) => {
-        const leadItem = chooseStackLead(cluster.items)
-        const stack = {
-          id: `stack:${leadItem.dayId}:${leadItem.category}:${cluster.items.map((item) => item.id).sort().join(':')}`,
-          type: 'stack',
-          dayId: leadItem.dayId,
-          item: leadItem,
-          items: [leadItem, ...cluster.items.filter((item) => item.id !== leadItem.id)],
-        }
-        cluster.items.forEach((item) => stackByItemId.set(item.id, stack))
-      })
-  })
-
-  const emittedStacks = new Set()
-  return items.flatMap((item) => {
-    const stack = stackByItemId.get(item.id)
-    if (!stack) return [{ id: item.id, type: 'item', dayId: item.dayId, item, items: [item] }]
-    if (emittedStacks.has(stack.id)) return []
-    emittedStacks.add(stack.id)
-    return [stack]
-  })
-}
-
-function buildRouteTimelineItems(items) {
-  return buildTimelineEntries(items).map((entry) => entry.item)
 }
 
 function scheduleConflictsForItems(items) {
@@ -1971,12 +1856,21 @@ function makeMovementPairs(items) {
 }
 
 function buildMapItems(items) {
-  return items
-    .filter((item) => item.category !== 'Flight')
-    .map((item, index) => {
-      const nextItem = items[index + 1] || null
+  const timelineItems = buildRouteTimelineItems(items)
+  const colorAssignments = assignItineraryItemColors(timelineItems)
 
-      return resolveTravelPoint(item, 'outbound', nextItem)
+  return timelineItems
+    .map((item, index) => {
+      if (item.category === 'Flight') return null
+      const nextItem = timelineItems[index + 1] || null
+      const point = resolveTravelPoint(item, 'outbound', nextItem)
+
+      return point
+        ? {
+            ...point,
+            itineraryColor: colorAssignments[index].color,
+          }
+        : null
     })
     .filter(Boolean)
 }
@@ -5473,6 +5367,16 @@ function PlannerPanel({
     () => buildTimelineEntries(filteredItems),
     [filteredItems],
   )
+  const timelineColorAssignments = useMemo(
+    () =>
+      new Map(
+        assignItineraryItemColors(timelineEntries.map((entry) => entry.item)).map((assignment) => [
+          assignment.itemId,
+          assignment,
+        ]),
+      ),
+    [timelineEntries],
+  )
   const dropOrderLookup = useMemo(() => {
     const positions = {}
     const counts = {}
@@ -5683,6 +5587,7 @@ function PlannerPanel({
         {timelineEntries.map((entry, index) => {
           const item = entry.item
           const meta = typeMeta(item.category)
+          const itemColor = timelineColorAssignments.get(item.id)?.color
           const CategoryIcon = CATEGORY_ICON_COMPONENTS[item.category] || CircleEllipsis
           const nextSegment = routeSegmentMap[item.id]
           const isOverview = activeDayId === DAY_VIEW_ALL
@@ -5842,7 +5747,15 @@ function PlannerPanel({
                 {item.endTime ? <div className={`mt-0.5 text-[10px] font-medium tracking-[-0.01em] sm:mt-1 ${isConflicted ? 'text-rose-500' : 'text-slate-400'}`}>{item.endTime}</div> : null}
               </div>
               <div className="timeline-rail timeline-rail--stop">
-                <span className={`timeline-dot ${meta.tone}`}>{index + 1}</span>
+                <span
+                  className="timeline-dot"
+                  style={{
+                    backgroundColor: itemColor?.solid,
+                    color: '#ffffff',
+                  }}
+                >
+                  {index + 1}
+                </span>
               </div>
                 <div
                   data-itinerary-drop-anchor
@@ -5864,15 +5777,22 @@ function PlannerPanel({
                 </div>
               ) : null}
               <article
-                className={`timeline-card ${meta.card} relative z-10 rounded-[1.55rem] transition hover:bg-white active:bg-white ${
+                className={`timeline-card timeline-card--item-color ${meta.card} relative z-10 rounded-[1.55rem] transition hover:bg-white active:bg-white ${
                   isMobilePortrait ? 'px-3.5 py-3' : 'px-3.5 py-3.5 sm:px-5 sm:py-4'
                 } ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
                 } ${isConflicted ? 'ring-2 ring-rose-300/90 shadow-[0_16px_34px_rgba(225,29,72,0.10)]' : ''} ${showCollapsedSubstituteStack ? 'shadow-[0_26px_56px_rgba(17,24,39,0.11)]' : ''}`}
+                style={{
+                  '--itinerary-soft': itemColor?.soft,
+                }}
                 {...cardPressProps(item)}
               >
                   <span
-                    className={`pointer-events-none absolute left-0 top-1/2 z-20 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white shadow-[0_8px_18px_rgba(15,23,42,0.10)] ${meta.tone}`}
+                    className="pointer-events-none absolute left-0 top-1/2 z-20 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white shadow-[0_8px_18px_rgba(15,23,42,0.10)]"
+                    style={{
+                      backgroundColor: itemColor?.soft,
+                      color: itemColor?.solid,
+                    }}
                     aria-hidden="true"
                   >
                     <CategoryIcon className="h-3.5 w-3.5" />
@@ -6224,7 +6144,10 @@ function PlannerPanel({
                     ) : null}
                   </div>
                   <div className="timeline-rail timeline-rail--route">
-                    <span className="timeline-route-dot" />
+                    <span
+                      className="timeline-route-dot"
+                      style={{ backgroundColor: itemColor?.solid }}
+                    />
                   </div>
                   <div className="timeline-route-row flex items-center justify-between gap-3 rounded-[0.9rem] px-2 py-0 text-slate-500 sm:px-3">
                     <div className="flex min-w-0 items-center gap-2.5" aria-label={`${routeLabel(nextSegment.mode)} ${routeDurationText(nextSegment)}`}>

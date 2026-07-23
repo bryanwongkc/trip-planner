@@ -150,6 +150,22 @@ body::before {
   border-color: var(--app-line-warm);
 }
 
+.timeline-card--item-color {
+  background: linear-gradient(
+    90deg,
+    var(--itinerary-soft) 0%,
+    var(--app-surface) 16%
+  );
+}
+
+.timeline-card--item-color:hover {
+  background: linear-gradient(
+    90deg,
+    var(--itinerary-soft) 0%,
+    #ffffff 16%
+  );
+}
+
 .timeline-card h3,
 .timeline-card h4 {
   letter-spacing: -0.012em;
