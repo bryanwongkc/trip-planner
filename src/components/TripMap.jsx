@@ -1,6 +1,7 @@
 import React, { memo, useEffect, useRef, useState } from 'react'
 import { createMapInfoContent } from '../utils/mapInfo'
 import { getItineraryItemColor } from '../utils/itemColors'
+import { layoutMapMarkers } from '../utils/mapMarkerLayout'
 
 const DEFAULT_MAP_CENTER = { lat: 35.6074, lng: 140.1065 }
 
@@ -126,7 +127,13 @@ function routeColor(mode) {
 function TripMap({ fallbackLocationLabel = '', filteredItems, routeSegments }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
-  const overlaysRef = useRef({ markers: [], polylines: [], infoWindow: null })
+  const overlaysRef = useRef({
+    markers: [],
+    polylines: [],
+    leaderLines: [],
+    infoWindow: null,
+    viewportListener: null,
+  })
   const fallbackRequestRef = useRef('')
   const [activeId, setActiveId] = useState('')
   const [fallbackLocation, setFallbackLocation] = useState(null)
@@ -179,11 +186,16 @@ function TripMap({ fallbackLocationLabel = '', filteredItems, routeSegments }) {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !window.google?.maps) return
+    const overlays = overlaysRef.current
 
-    overlaysRef.current.markers.forEach((marker) => marker.setMap(null))
-    overlaysRef.current.polylines.forEach((polyline) => polyline.setMap(null))
-    overlaysRef.current.markers = []
-    overlaysRef.current.polylines = []
+    overlays.viewportListener?.remove()
+    overlays.markers.forEach((marker) => marker.setMap(null))
+    overlays.polylines.forEach((polyline) => polyline.setMap(null))
+    overlays.leaderLines.forEach((polyline) => polyline.setMap(null))
+    overlays.markers = []
+    overlays.polylines = []
+    overlays.leaderLines = []
+    overlays.viewportListener = null
 
     const points = filteredItems.filter(
       (item) => typeof item.lat === 'number' && typeof item.lng === 'number',
@@ -224,7 +236,8 @@ function TripMap({ fallbackLocationLabel = '', filteredItems, routeSegments }) {
       })
 
       marker.addListener('click', () => setActiveId(item.id))
-      overlaysRef.current.markers.push(marker)
+      marker.itineraryItemId = item.id
+      overlays.markers.push(marker)
       bounds.extend({ lat: item.lat, lng: item.lng })
     })
 
@@ -238,14 +251,53 @@ function TripMap({ fallbackLocationLabel = '', filteredItems, routeSegments }) {
           strokeOpacity: 0.58,
           strokeWeight: 2.4,
         })
-        overlaysRef.current.polylines.push(polyline)
+        overlays.polylines.push(polyline)
       })
+
+    const updateMarkerLayout = () => {
+      overlays.leaderLines.forEach((polyline) => polyline.setMap(null))
+      overlays.leaderLines = []
+
+      const layouts = layoutMapMarkers(points, map.getZoom?.())
+      layouts.forEach((layout, index) => {
+        overlays.markers[index]?.setPosition(layout.displayPosition)
+
+        if (!layout.spiderfied) return
+
+        const itemColor =
+          itemColorById.get(layout.item.id) || getItineraryItemColor(index)
+        const leaderLine = new window.google.maps.Polyline({
+          map,
+          path: [layout.truePosition, layout.displayPosition],
+          strokeColor: itemColor.solid,
+          strokeOpacity: 0.48,
+          strokeWeight: 1.35,
+          clickable: false,
+          zIndex: 1,
+        })
+        overlays.leaderLines.push(leaderLine)
+      })
+    }
+
+    updateMarkerLayout()
+    overlays.viewportListener = map.addListener?.('idle', updateMarkerLayout)
 
     if (points.length === 1) {
       map.setCenter(bounds.getCenter())
       map.setZoom(11)
     } else {
       map.fitBounds(bounds, 48)
+    }
+
+    return () => {
+      overlays.viewportListener?.remove()
+      overlays.viewportListener = null
+      overlays.markers.forEach((marker) => marker.setMap(null))
+      overlays.polylines.forEach((polyline) => polyline.setMap(null))
+      overlays.leaderLines.forEach((polyline) => polyline.setMap(null))
+      overlays.markers = []
+      overlays.polylines = []
+      overlays.leaderLines = []
     }
   }, [fallbackCenter, filteredItems, routeSegments])
 
@@ -255,7 +307,7 @@ function TripMap({ fallbackLocationLabel = '', filteredItems, routeSegments }) {
 
     const activeItem = filteredItems.find((item) => item.id === activeId)
     const activeMarker = overlaysRef.current.markers.find(
-      (marker) => marker.getPosition()?.lat() === activeItem?.lat && marker.getPosition()?.lng() === activeItem?.lng,
+      (marker) => marker.itineraryItemId === activeId,
     )
 
     if (!activeItem || !activeMarker) {

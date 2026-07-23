@@ -22,6 +22,12 @@ describe('TripMap itinerary colors', () => {
       setCenter() {}
       setZoom() {}
       fitBounds() {}
+      getZoom() {
+        return 12
+      }
+      addListener() {
+        return { remove() {} }
+      }
     }
 
     class MockMarker {
@@ -32,6 +38,9 @@ describe('TripMap itinerary colors', () => {
 
       addListener() {}
       setMap() {}
+      setPosition(position) {
+        this.options.position = position
+      }
       getPosition() {
         return {
           lat: () => this.options.position.lat,
@@ -108,5 +117,38 @@ describe('TripMap itinerary colors', () => {
       secondColor.solid,
     ])
     expect(polylineOptions[0].strokeColor).toBe(firstColor.solid)
+  })
+
+  it('fans out colliding markers and connects them to their exact locations', () => {
+    const firstColor = { solid: '#0f766e', soft: '#ccfbf1' }
+    const secondColor = { solid: '#7e22ce', soft: '#f3e8ff' }
+    const sharedPosition = { lat: 35.6074, lng: 140.1065 }
+
+    act(() => {
+      root = createRoot(container)
+      root.render(
+        <TripMap
+          filteredItems={[
+            { id: 'first', title: 'First', ...sharedPosition, itineraryColor: firstColor },
+            { id: 'second', title: 'Second', ...sharedPosition, itineraryColor: secondColor },
+          ]}
+          routeSegments={[]}
+        />,
+      )
+    })
+
+    expect(markerOptions[0].position).not.toEqual(markerOptions[1].position)
+    expect(polylineOptions).toHaveLength(2)
+    expect(polylineOptions.map((options) => options.strokeColor)).toEqual([
+      firstColor.solid,
+      secondColor.solid,
+    ])
+    expect(polylineOptions.map((options) => options.path[0])).toEqual([
+      sharedPosition,
+      sharedPosition,
+    ])
+    expect(polylineOptions.map((options) => options.path[1])).toEqual(
+      markerOptions.map((options) => options.position),
+    )
   })
 })
