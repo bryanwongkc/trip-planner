@@ -5403,7 +5403,7 @@ function PlannerPanel({
   const scheduleConflicts = useMemo(
     () =>
       getScheduleConflicts(
-        timelineEntries.map((entry) => entry.item).filter((item) => !item.generated),
+        timelineEntries.map((entry) => entry.item),
         routeSegmentMap,
       ),
     [routeSegmentMap, timelineEntries],
