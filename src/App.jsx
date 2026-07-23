@@ -114,6 +114,7 @@ import {
   formatFullDayDate,
   getDurationMinutes,
   getScheduleConflicts,
+  getTravelTimeConflict,
   movementItemsForDay,
   nextDayDate,
   parseIsoDay,
@@ -1822,7 +1823,7 @@ function getEndTimeWarning(item) {
     : ''
 }
 
-function getScheduleConflictMeta(items) {
+function getScheduleConflictMeta(items, routeSegmentMap = {}) {
   const orderedItems = assignItemOrder(items)
 
   for (let index = 0; index < orderedItems.length - 1; index += 1) {
@@ -1834,6 +1835,15 @@ function getScheduleConflictMeta(items) {
         currentId: current.id,
         nextId: next.id,
         message: `${current.title} ends after ${next.title} starts.`,
+      }
+    }
+
+    const travelConflict = getTravelTimeConflict(current, next, routeSegmentMap)
+    if (travelConflict) {
+      return {
+        currentId: current.id,
+        nextId: next.id,
+        message: travelConflict.message,
       }
     }
   }
@@ -5391,8 +5401,12 @@ function PlannerPanel({
     return { positions, counts }
   }, [dragState?.itemId, filteredItems, isDragging])
   const scheduleConflicts = useMemo(
-    () => getScheduleConflicts(timelineEntries.map((entry) => entry.item).filter((item) => !item.generated)),
-    [timelineEntries],
+    () =>
+      getScheduleConflicts(
+        timelineEntries.map((entry) => entry.item).filter((item) => !item.generated),
+        routeSegmentMap,
+      ),
+    [routeSegmentMap, timelineEntries],
   )
   const visibleConflicts =
     activeDayId === DAY_VIEW_ALL
@@ -5409,11 +5423,14 @@ function PlannerPanel({
     if (isDraftParkingLotItem) return null
     if (!effectiveDraftDayId) return null
     const existingItems = dayMap[effectiveDraftDayId]?.items || []
-    return getScheduleConflictMeta([
-      ...existingItems,
-      { ...draft, id: draftConflictId, dayId: effectiveDraftDayId },
-    ])
-  }, [dayMap, draft, effectiveDraftDayId, isDraftParkingLotItem])
+    return getScheduleConflictMeta(
+      [
+        ...existingItems,
+        { ...draft, id: draftConflictId, dayId: effectiveDraftDayId },
+      ],
+      routeSegmentMap,
+    )
+  }, [dayMap, draft, effectiveDraftDayId, isDraftParkingLotItem, routeSegmentMap])
 
   function getComposerDayId() {
     if (activeDayId !== DAY_VIEW_ALL && dayOptions.some((day) => day.id === activeDayId)) {
@@ -6990,14 +7007,6 @@ export default function App() {
   })
   const detailFlightCode = detailFlightLookup?.flightNumber || ''
   const detailFlightLookupKey = buildFlightLookupKey(detailFlightLookup?.flightNumber, detailFlightLookup?.date)
-  const detailScheduleConflict = useMemo(() => {
-    if (!detailItem?.dayId) return null
-    if (detailItem.date === PARKING_LOT_DATE) return null
-    const existingItems = (tripState.dayMap[detailItem.dayId]?.items || []).filter(
-      (item) => item.id !== detailItem.id,
-    )
-    return getScheduleConflictMeta([...existingItems, detailItem])
-  }, [detailItem, tripState.dayMap])
   const detailEndTimeWarning = useMemo(() => getEndTimeWarning(detailItem), [detailItem])
   const urgentDeadlineCount = useMemo(
     () =>
@@ -8124,6 +8133,14 @@ export default function App() {
     () => Object.fromEntries(routeSegments.map((segment) => [segment.from.id, segment])),
     [routeSegments],
   )
+  const detailScheduleConflict = useMemo(() => {
+    if (!detailItem?.dayId) return null
+    if (detailItem.date === PARKING_LOT_DATE) return null
+    const existingItems = (tripState.dayMap[detailItem.dayId]?.items || []).filter(
+      (item) => item.id !== detailItem.id,
+    )
+    return getScheduleConflictMeta([...existingItems, detailItem], routeSegmentMap)
+  }, [detailItem, routeSegmentMap, tripState.dayMap])
 
   async function handleSignIn() {
     if (isGuestMode && hasTripOverrides(overrides)) {

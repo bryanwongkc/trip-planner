@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { formatDayDate, formatFullDayDate, nextDayDate, parseIsoDay } from '../src/utils/trip'
+import {
+  formatDayDate,
+  formatFullDayDate,
+  getScheduleConflicts,
+  nextDayDate,
+  parseIsoDay,
+} from '../src/utils/trip'
 import { assertTripPatchIsCurrent, validateTripPatch } from '../src/utils/tripValidation'
 
 describe('trip date handling', () => {
@@ -73,5 +79,64 @@ describe('trip patch concurrency', () => {
 
   it('rejects an ordinary stale patch without an explicit expected state', () => {
     expect(() => assertTripPatchIsCurrent(savedReorder, beforeReorder)).toThrow(/another device/i)
+  })
+})
+
+describe('schedule travel-time conflicts', () => {
+  const items = [
+    {
+      id: 'museum',
+      dayId: 'day-a',
+      title: 'Museum',
+      startTime: '10:00',
+      endTime: '11:00',
+    },
+    {
+      id: 'lunch',
+      dayId: 'day-a',
+      title: 'Lunch',
+      startTime: '11:20',
+      endTime: '12:30',
+    },
+  ]
+
+  function routeTaking(durationMin) {
+    return {
+      museum: {
+        from: items[0],
+        to: items[1],
+        mode: 'walking',
+        route: { durationMin, estimated: true },
+      },
+    }
+  }
+
+  it('flags an adjacent pair when the displayed travel duration exceeds the available gap', () => {
+    const result = getScheduleConflicts(items, routeTaking(25.4))
+    const conflict = result.conflicts.find((entry) => entry.type === 'insufficient_travel_time')
+
+    expect(conflict).toMatchObject({
+      itemIds: ['museum', 'lunch'],
+      availableMinutes: 20,
+      travelMinutes: 25,
+      shortfallMinutes: 5,
+      mode: 'walking',
+    })
+    expect(conflict.message).toContain('Walking from Museum to Lunch takes about 25 minutes')
+    expect(result.byItemId.museum).toContain(conflict)
+    expect(result.byItemId.lunch).toContain(conflict)
+  })
+
+  it('allows an exact-fit gap using the same rounded duration shown in the timeline', () => {
+    const result = getScheduleConflicts(items, routeTaking(20.4))
+
+    expect(result.conflicts).toEqual([])
+  })
+
+  it('ignores a stale route segment that points to a different next stop', () => {
+    const routeSegmentMap = routeTaking(30)
+    routeSegmentMap.museum.to = { ...items[1], id: 'dinner' }
+
+    expect(getScheduleConflicts(items, routeSegmentMap).conflicts).toEqual([])
   })
 })

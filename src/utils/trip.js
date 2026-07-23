@@ -143,7 +143,58 @@ function addScheduleConflict(result, conflict) {
   })
 }
 
-export function getScheduleConflicts(items) {
+function travelModeDescription(mode) {
+  if (mode === 'walking') return 'Walking'
+  if (mode === 'transit') return 'Public transport'
+  if (mode === 'driving') return 'Driving'
+  return 'Travel'
+}
+
+export function getTravelTimeConflict(current, next, routeSegmentMap = {}) {
+  if (!current?.id || !next?.id || current.dayId !== next.dayId) return null
+
+  const currentStart = parseScheduleTime(current.startTime)
+  const currentEnd = parseScheduleTime(current.endTime)
+  const nextStart = parseScheduleTime(next.startTime)
+  if (
+    currentStart === null ||
+    currentEnd === null ||
+    nextStart === null ||
+    currentEnd <= currentStart
+  ) {
+    return null
+  }
+
+  const availableMinutes = nextStart - currentEnd
+  if (availableMinutes < 0) return null
+
+  const segment = routeSegmentMap[current.id]
+  if (segment?.from?.id !== current.id || segment?.to?.id !== next.id) return null
+
+  const rawTravelMinutes = Number(segment.route?.durationMin)
+  if (!Number.isFinite(rawTravelMinutes) || rawTravelMinutes <= 0) return null
+
+  const travelMinutes = Math.round(rawTravelMinutes)
+  if (travelMinutes <= availableMinutes) return null
+
+  const shortfallMinutes = travelMinutes - availableMinutes
+  const mode = travelModeDescription(segment.mode)
+  const estimate = segment.route?.estimated ? 'about ' : ''
+
+  return {
+    key: `insufficient-travel-time:${current.id}:${next.id}`,
+    type: 'insufficient_travel_time',
+    dayId: current.dayId,
+    itemIds: [current.id, next.id],
+    availableMinutes,
+    travelMinutes,
+    shortfallMinutes,
+    mode: segment.mode || '',
+    message: `${mode} from ${current.title} to ${next.title} takes ${estimate}${travelMinutes} minute${travelMinutes === 1 ? '' : 's'}, but only ${availableMinutes} minute${availableMinutes === 1 ? '' : 's'} ${availableMinutes === 1 ? 'is' : 'are'} available between the two stops.`,
+  }
+}
+
+export function getScheduleConflicts(items, routeSegmentMap = {}) {
   const orderedItems = items.filter((item) => !item.hidden && item.dayId && item.startTime)
   const result = { conflicts: [], byItemId: {} }
 
@@ -189,6 +240,15 @@ export function getScheduleConflicts(items) {
         message: `${left.title} overlaps ${right.title} by ${overlapMinutes} minute${overlapMinutes === 1 ? '' : 's'}.`,
       })
     }
+  }
+
+  for (let index = 0; index < orderedItems.length - 1; index += 1) {
+    const conflict = getTravelTimeConflict(
+      orderedItems[index],
+      orderedItems[index + 1],
+      routeSegmentMap,
+    )
+    if (conflict) addScheduleConflict(result, conflict)
   }
 
   return result
