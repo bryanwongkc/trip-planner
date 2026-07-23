@@ -341,11 +341,18 @@ export async function acceptTripInvite(inviteId, user) {
       throw new Error('Invitation link is no longer active.')
     }
 
-    const memberDoc = doc(db, 'trips', invite.tripId, 'members', user.uid)
-    const memberSnapshot = await transaction.get(memberDoc)
-    if (memberSnapshot.exists()) return { ...invite, id: inviteId, alreadyMember: true }
-
     const membershipIndexDoc = doc(db, 'users', user.uid, 'tripMemberships', invite.tripId)
+    const membershipIndexSnapshot = await transaction.get(membershipIndexDoc)
+    if (membershipIndexSnapshot.exists()) {
+      return {
+        ...invite,
+        id: inviteId,
+        role: membershipIndexSnapshot.data()?.role || invite.role,
+        alreadyMember: true,
+      }
+    }
+
+    const memberDoc = doc(db, 'trips', invite.tripId, 'members', user.uid)
     const nextUseCount = Number(invite.useCount || 0) + 1
 
     transaction.set(

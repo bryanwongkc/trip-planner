@@ -13,6 +13,7 @@ import {
   getDoc,
   getDocs,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   where,
@@ -130,6 +131,36 @@ function queueInviteAcceptance(db, inviteId, uid, token, role = 'viewer') {
   return batch
 }
 
+function acceptInviteLikeClient(db, inviteId, uid, token, role = 'viewer') {
+  return runTransaction(db, async (transaction) => {
+    const inviteRef = doc(db, `tripInvites/${inviteId}`)
+    const memberRef = doc(db, `trips/trip-one/members/${uid}`)
+    const membershipIndexRef = doc(db, `users/${uid}/tripMemberships/trip-one`)
+    const invite = await transaction.get(inviteRef)
+    const existingMembership = await transaction.get(membershipIndexRef)
+
+    if (!invite.exists()) throw new Error('Invitation link was not found.')
+    if (existingMembership.exists()) return
+
+    transaction.set(
+      inviteRef,
+      {
+        active: false,
+        lastUsedAt: serverTimestamp(),
+        lastUsedBy: uid,
+        updatedAt: serverTimestamp(),
+        useCount: 1,
+      },
+      { merge: true },
+    )
+    transaction.set(memberRef, acceptedMember(uid, token, inviteId, role))
+    const index = membership(uid, role)
+    delete index.uid
+    index.updatedAt = serverTimestamp()
+    transaction.set(membershipIndexRef, index, { merge: true })
+  })
+}
+
 async function seedTrip() {
   await testEnv.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore()
@@ -212,7 +243,9 @@ describe('Firestore authorization', () => {
       getDocs(query(collection(ownerDb, 'tripInvites'), where('tripId', '==', 'trip-one'))),
     )
 
-    await assertSucceeds(queueInviteAcceptance(viewerDb, inviteId, 'viewer', viewerToken).commit())
+    await assertSucceeds(
+      acceptInviteLikeClient(viewerDb, inviteId, 'viewer', viewerToken),
+    )
     const consumed = await getDoc(doc(ownerDb, `tripInvites/${inviteId}`))
     expect(consumed.data()).toMatchObject({ active: false, useCount: 1, lastUsedBy: 'viewer' })
 
