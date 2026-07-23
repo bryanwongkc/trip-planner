@@ -111,20 +111,28 @@ describe('schedule travel-time conflicts', () => {
     }
   }
 
-  it('flags an adjacent pair when the displayed travel duration exceeds the available gap', () => {
-    const result = getScheduleConflicts(items, routeTaking(25.4))
+  it('flags an adjacent pair when the displayed travel duration exceeds the 10-minute tolerance', () => {
+    const result = getScheduleConflicts(items, routeTaking(31.4))
     const conflict = result.conflicts.find((entry) => entry.type === 'insufficient_travel_time')
 
     expect(conflict).toMatchObject({
       itemIds: ['museum', 'lunch'],
       availableMinutes: 20,
-      travelMinutes: 25,
-      shortfallMinutes: 5,
+      travelMinutes: 31,
+      shortfallMinutes: 11,
+      toleranceMinutes: 10,
+      excessMinutes: 1,
       mode: 'walking',
     })
-    expect(conflict.message).toContain('Walking from Museum to Lunch takes about 25 minutes')
+    expect(conflict.message).toContain('exceeds the 10-minute tolerance by 1 minute')
     expect(result.byItemId.museum).toContain(conflict)
     expect(result.byItemId.lunch).toContain(conflict)
+  })
+
+  it('allows travel to exceed the available gap by the full 10-minute tolerance', () => {
+    const result = getScheduleConflicts(items, routeTaking(30.4))
+
+    expect(result.conflicts).toEqual([])
   })
 
   it('allows an exact-fit gap using the same rounded duration shown in the timeline', () => {

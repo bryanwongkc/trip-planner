@@ -3,6 +3,7 @@ import { normalizeDateTimeForStorage } from './dateTime'
 
 export const DAY_VIEW_ALL = 'all'
 export const PARKING_LOT_DATE = 'TBD'
+export const TRAVEL_TIME_TOLERANCE_MINUTES = 10
 
 export function slugId(prefix) {
   return `${prefix}-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`
@@ -175,9 +176,10 @@ export function getTravelTimeConflict(current, next, routeSegmentMap = {}) {
   if (!Number.isFinite(rawTravelMinutes) || rawTravelMinutes <= 0) return null
 
   const travelMinutes = Math.round(rawTravelMinutes)
-  if (travelMinutes <= availableMinutes) return null
+  if (travelMinutes <= availableMinutes + TRAVEL_TIME_TOLERANCE_MINUTES) return null
 
   const shortfallMinutes = travelMinutes - availableMinutes
+  const excessMinutes = shortfallMinutes - TRAVEL_TIME_TOLERANCE_MINUTES
   const mode = travelModeDescription(segment.mode)
   const estimate = segment.route?.estimated ? 'about ' : ''
 
@@ -189,8 +191,10 @@ export function getTravelTimeConflict(current, next, routeSegmentMap = {}) {
     availableMinutes,
     travelMinutes,
     shortfallMinutes,
+    toleranceMinutes: TRAVEL_TIME_TOLERANCE_MINUTES,
+    excessMinutes,
     mode: segment.mode || '',
-    message: `${mode} from ${current.title} to ${next.title} takes ${estimate}${travelMinutes} minute${travelMinutes === 1 ? '' : 's'}, but only ${availableMinutes} minute${availableMinutes === 1 ? '' : 's'} ${availableMinutes === 1 ? 'is' : 'are'} available between the two stops.`,
+    message: `${mode} from ${current.title} to ${next.title} takes ${estimate}${travelMinutes} minute${travelMinutes === 1 ? '' : 's'}; with ${availableMinutes} minute${availableMinutes === 1 ? '' : 's'} available, it exceeds the ${TRAVEL_TIME_TOLERANCE_MINUTES}-minute tolerance by ${excessMinutes} minute${excessMinutes === 1 ? '' : 's'}.`,
   }
 }
 
