@@ -5777,14 +5777,11 @@ function PlannerPanel({
                 </div>
               ) : null}
               <article
-                className={`timeline-card timeline-card--item-color ${meta.card} relative z-10 rounded-[1.55rem] transition hover:bg-white active:bg-white ${
+                className={`timeline-card ${meta.card} relative z-10 rounded-[1.55rem] transition hover:bg-white active:bg-white ${
                   isMobilePortrait ? 'px-3.5 py-3' : 'px-3.5 py-3.5 sm:px-5 sm:py-4'
                 } ${
                   isDraggingItem ? 'scale-[0.995] opacity-45 ring-2 ring-slate-300/70' : ''
                 } ${isConflicted ? 'ring-2 ring-rose-300/90 shadow-[0_16px_34px_rgba(225,29,72,0.10)]' : ''} ${showCollapsedSubstituteStack ? 'shadow-[0_26px_56px_rgba(17,24,39,0.11)]' : ''}`}
-                style={{
-                  '--itinerary-soft': itemColor?.soft,
-                }}
                 {...cardPressProps(item)}
               >
                   <span
