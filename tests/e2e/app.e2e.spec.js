@@ -121,3 +121,25 @@ test('persists independent guest trips and preserves app-like zoom and selection
     inputSelectionPrevented: false,
   })
 })
+
+test('saves a day name once after editing finishes', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Manage days' }).click()
+
+  const nameInput = page.getByPlaceholder('Optional label').first()
+  await nameInput.fill('Tokyo highlights')
+
+  const storedNameBeforeBlur = await page.evaluate(() => {
+    const store = JSON.parse(localStorage.getItem('trip-planner-guest-trips-v2'))
+    return store.trips['trip-a'].overrides.days['day-a'].name
+  })
+  expect(storedNameBeforeBlur).toBeUndefined()
+
+  await nameInput.press('Enter')
+  await expect.poll(() =>
+    page.evaluate(() => {
+      const store = JSON.parse(localStorage.getItem('trip-planner-guest-trips-v2'))
+      return store.trips['trip-a'].overrides.days['day-a'].name
+    }),
+  ).toBe('Tokyo highlights')
+})

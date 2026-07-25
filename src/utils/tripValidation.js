@@ -1,8 +1,35 @@
 export function mergeTripEntityMaps(current = {}, patch = {}) {
   return Object.fromEntries(
+    ['days', 'items', 'bookingOptions'].map((key) => {
+      const currentEntities = current?.[key] || {}
+      const patchEntities = patch?.[key] || {}
+      return [
+        key,
+        Object.fromEntries(
+          [...new Set([...Object.keys(currentEntities), ...Object.keys(patchEntities)])].map((id) => [
+            id,
+            { ...(currentEntities[id] || {}), ...(patchEntities[id] || {}) },
+          ]),
+        ),
+      ]
+    }),
+  )
+}
+
+export const TRIP_VERSION_CONFLICT_CODE = 'trip-version-conflict'
+
+export function getExpectedTripPatchState(current = {}, patch = {}, explicitExpected) {
+  if (explicitExpected) return explicitExpected
+
+  return Object.fromEntries(
     ['days', 'items', 'bookingOptions'].map((key) => [
       key,
-      { ...(current?.[key] || {}), ...(patch?.[key] || {}) },
+      Object.fromEntries(
+        Object.keys(patch?.[key] || {}).flatMap((id) => {
+          const entity = current?.[key]?.[id]
+          return entity ? [[id, entity]] : []
+        }),
+      ),
     ]),
   )
 }
@@ -50,7 +77,9 @@ export function assertTripPatchIsCurrent(current, patch, expectedCurrent = {}) {
       const expectedEntity = expectedCurrent?.[key]?.[id]
       if (expectedEntity && entitiesMatchIgnoringUpdatedAt(existing, expectedEntity)) continue
 
-      throw new Error('This trip changed on another device. Review the latest version and try again.')
+      const error = new Error('This trip changed on another device. Review the latest version and try again.')
+      error.code = TRIP_VERSION_CONFLICT_CODE
+      throw error
     }
   }
 }

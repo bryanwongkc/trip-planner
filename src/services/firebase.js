@@ -234,7 +234,11 @@ export async function subscribeToTripState(tripId, onValue, onError) {
   const overridesDoc = doc(db, 'trips', tripId, 'overrides', 'shared')
   return onSnapshot(
     overridesDoc,
-    (snapshot) => onValue(snapshot.exists() ? snapshot.data() : null),
+    (snapshot) =>
+      onValue(snapshot.exists() ? snapshot.data() : null, {
+        fromCache: snapshot.metadata.fromCache,
+        hasPendingWrites: snapshot.metadata.hasPendingWrites,
+      }),
     onError,
   )
 }

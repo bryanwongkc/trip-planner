@@ -135,7 +135,12 @@ import {
   hasActiveStayOrMealStatus,
   isStackableStayOrMeal,
 } from './utils/timeline'
-import { validateTripPatch } from './utils/tripValidation'
+import {
+  getExpectedTripPatchState,
+  mergeTripEntityMaps,
+  TRIP_VERSION_CONFLICT_CODE,
+  validateTripPatch,
+} from './utils/tripValidation'
 import { createAsyncTtlCache } from './utils/asyncTtlCache'
 import { createKeyedTaskQueue } from './utils/keyedTaskQueue'
 import { assignItineraryItemColors } from './utils/itemColors'
@@ -997,11 +1002,7 @@ function buildLocalTripSummaries() {
 }
 
 function mergeTripOverrides(current, patch) {
-  return {
-    days: { ...(current.days || {}), ...(patch.days || {}) },
-    items: { ...(current.items || {}), ...(patch.items || {}) },
-    bookingOptions: { ...(current.bookingOptions || {}), ...(patch.bookingOptions || {}) },
-  }
+  return mergeTripEntityMaps(current, patch)
 }
 
 function pdfSafeText(value) {
@@ -3957,12 +3958,11 @@ function DayManagerModal({
             >
               <div className="grid gap-3 sm:grid-cols-[1.2fr_1fr_auto] sm:items-end">
                 <Field label={`Day ${index + 1}`}>
-                  <input
-                    value={day.name || ''}
-                    onChange={(event) => onUpdateDay(day.id, { name: event.target.value })}
+                  <DayNameEditor
+                    key={`${day.id}:${day.name || ''}`}
+                    day={day}
                     disabled={!firestoreReady || !canEdit}
-                    placeholder="Optional label"
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+                    onUpdateDay={onUpdateDay}
                   />
                 </Field>
                 <Field label="Date">
@@ -4040,6 +4040,36 @@ function DayManagerModal({
         </div>
       </div>
     </div>
+  )
+}
+
+function DayNameEditor({ day, disabled, onUpdateDay }) {
+  const [saving, setSaving] = useState(false)
+
+  async function saveValue(input) {
+    const value = input.value
+    if (saving || value === (day.name || '')) return
+    setSaving(true)
+    try {
+      await onUpdateDay(day.id, { name: value })
+    } catch {
+      input.value = day.name || ''
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <input
+      defaultValue={day.name || ''}
+      onBlur={(event) => void saveValue(event.currentTarget)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+      }}
+      disabled={disabled || saving}
+      placeholder="Optional label"
+      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm disabled:bg-slate-100"
+    />
   )
 }
 
@@ -7063,7 +7093,14 @@ export default function App() {
         return nextOverrides
       }
 
-      await mergeTripPatch(tripId, patch, options)
+      await mergeTripPatch(tripId, patch, {
+        ...options,
+        expectedCurrent: getExpectedTripPatchState(
+          currentOverrides,
+          patch,
+          options?.expectedCurrent,
+        ),
+      })
       if (datePatch && globalThis.navigator?.onLine !== false) {
         try {
           await upsertTripMeta(tripId, {
@@ -7084,7 +7121,12 @@ export default function App() {
     } catch (error) {
       console.error(error)
       const message = error instanceof Error ? error.message : 'We could not save that change. Please try again.'
-      if (activeTripRef.current === tripId) setFirestoreState({ status: 'error', error: message })
+      if (activeTripRef.current === tripId) {
+        setFirestoreState({
+          status: error?.code === TRIP_VERSION_CONFLICT_CODE ? 'warning' : 'error',
+          error: message,
+        })
+      }
       throw error
     }
   }, [isGuestMode])
@@ -7108,7 +7150,7 @@ export default function App() {
           options,
           tripSummary,
         )
-        if (activeTripRef.current === tripId) {
+        if (isGuestMode && activeTripRef.current === tripId) {
           overridesRef.current = nextOverrides
           setOverrides(nextOverrides)
         }
@@ -7549,7 +7591,7 @@ export default function App() {
     async function connectTrip() {
       unsubscribe = await subscribeToTripState(
         resolvedTripId,
-        (payload) => {
+        (payload, snapshotMetadata = {}) => {
           if (!active) return
           const nextOverrides = {
             days: payload?.days || {},
@@ -7559,7 +7601,13 @@ export default function App() {
           saveQueueRef.current.setState(resolvedTripId, nextOverrides)
           overridesRef.current = nextOverrides
           setOverrides(nextOverrides)
-          setFirestoreState({ status: 'ready', error: '' })
+          setFirestoreState({
+            status:
+              snapshotMetadata.fromCache && !snapshotMetadata.hasPendingWrites
+                ? 'connecting'
+                : 'ready',
+            error: '',
+          })
         },
         (error) => {
           console.error(error)

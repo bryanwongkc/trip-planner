@@ -6,7 +6,12 @@ import {
   nextDayDate,
   parseIsoDay,
 } from '../src/utils/trip'
-import { assertTripPatchIsCurrent, validateTripPatch } from '../src/utils/tripValidation'
+import {
+  assertTripPatchIsCurrent,
+  getExpectedTripPatchState,
+  TRIP_VERSION_CONFLICT_CODE,
+  validateTripPatch,
+} from '../src/utils/tripValidation'
 
 describe('trip date handling', () => {
   it('renders invalid or empty day dates without throwing', () => {
@@ -26,6 +31,19 @@ describe('trip date handling', () => {
         { days: { two: { date: '2026-07-16' } } },
       ),
     ).toThrow(/different date/i)
+  })
+
+  it('preserves required entity fields when validating a partial patch', () => {
+    expect(
+      validateTripPatch(
+        { days: { one: { id: 'one', date: '2026-07-16', name: '' } } },
+        { days: { one: { name: 'Tokyo highlights' } } },
+      ).days.one,
+    ).toEqual({
+      id: 'one',
+      date: '2026-07-16',
+      name: 'Tokyo highlights',
+    })
   })
 
   it('measures the UTF-8 payload before it reaches Firestore document limits', () => {
@@ -79,6 +97,40 @@ describe('trip patch concurrency', () => {
 
   it('rejects an ordinary stale patch without an explicit expected state', () => {
     expect(() => assertTripPatchIsCurrent(savedReorder, beforeReorder)).toThrow(/another device/i)
+  })
+
+  it('allows a queued same-user edit after the preceding save receives a new timestamp', () => {
+    const secondEdit = {
+      items: {
+        first: { ...forwardReorder.items.first, title: 'Second local edit' },
+      },
+    }
+    const expectedCurrent = getExpectedTripPatchState(forwardReorder, secondEdit)
+
+    expect(() =>
+      assertTripPatchIsCurrent(savedReorder, secondEdit, expectedCurrent),
+    ).not.toThrow()
+  })
+
+  it('only builds an automatic expected state for entities touched by the patch', () => {
+    expect(
+      getExpectedTripPatchState(beforeReorder, {
+        items: { first: { ...beforeReorder.items.first, title: 'Changed' } },
+      }),
+    ).toEqual({
+      days: {},
+      items: { first: beforeReorder.items.first },
+      bookingOptions: {},
+    })
+  })
+
+  it('marks rejected stale patches as version conflicts', () => {
+    try {
+      assertTripPatchIsCurrent(savedReorder, beforeReorder)
+      throw new Error('Expected the stale patch to be rejected.')
+    } catch (error) {
+      expect(error.code).toBe(TRIP_VERSION_CONFLICT_CODE)
+    }
   })
 })
 
