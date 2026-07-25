@@ -5073,11 +5073,30 @@ function DetailModal({
   }, [detailItem.travelModeToNext])
   const TravelModeIcon = travelModeMeta?.icon
   const dialogRef = useModalDialog(onClose)
+  const backdropPointerRef = useRef(null)
+
+  function handleBackdropPointerDown(event) {
+    backdropPointerRef.current =
+      event.isPrimary && event.button === 0 && event.target === event.currentTarget
+        ? event.pointerId
+        : null
+  }
+
+  function handleBackdropPointerUp(event) {
+    const shouldClose =
+      backdropPointerRef.current === event.pointerId && event.target === event.currentTarget
+    backdropPointerRef.current = null
+    if (shouldClose) onClose()
+  }
 
   return (
     <div
       className="premium-backdrop fixed inset-0 z-50 flex items-end overflow-x-hidden bg-slate-950/40 p-3 pt-10 sm:items-center sm:justify-center sm:p-4"
-      onClick={onClose}
+      onPointerDown={handleBackdropPointerDown}
+      onPointerUp={handleBackdropPointerUp}
+      onPointerCancel={() => {
+        backdropPointerRef.current = null
+      }}
     >
       <div
         ref={dialogRef}
