@@ -7610,7 +7610,7 @@ export default function App() {
     async function connectTrip() {
       unsubscribe = await subscribeToTripState(
         resolvedTripId,
-        (payload, snapshotMetadata = {}) => {
+        (payload) => {
           if (!active) return
           const nextOverrides = {
             days: payload?.days || {},
@@ -7620,13 +7620,7 @@ export default function App() {
           saveQueueRef.current.setState(resolvedTripId, nextOverrides)
           overridesRef.current = nextOverrides
           setOverrides(nextOverrides)
-          setFirestoreState({
-            status:
-              snapshotMetadata.fromCache && !snapshotMetadata.hasPendingWrites
-                ? 'connecting'
-                : 'ready',
-            error: '',
-          })
+          setFirestoreState({ status: 'ready', error: '' })
         },
         (error) => {
           console.error(error)
