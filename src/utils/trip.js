@@ -220,6 +220,42 @@ export function getScheduleConflicts(items, routeSegmentMap = {}) {
     })
   }
 
+  for (let index = 0; index < orderedItems.length - 1; index += 1) {
+    const current = orderedItems[index]
+    const next = orderedItems[index + 1]
+    if (current.dayId !== next.dayId) continue
+
+    const currentStart = parseScheduleTime(current.startTime)
+    const currentEnd = parseScheduleTime(current.endTime)
+    const nextStart = parseScheduleTime(next.startTime)
+    const nextEnd = parseScheduleTime(next.endTime)
+    const nextHasSameDayInterval =
+      nextStart !== null && nextEnd !== null && nextEnd > nextStart
+
+    if (
+      currentStart === null ||
+      currentEnd === null ||
+      currentEnd <= currentStart ||
+      nextStart === null ||
+      nextHasSameDayInterval ||
+      nextStart >= currentEnd
+    ) {
+      continue
+    }
+
+    const overlapMinutes = currentEnd - Math.max(currentStart, nextStart)
+    if (overlapMinutes <= 0) continue
+
+    addScheduleConflict(result, {
+      key: `overlap:${[current.id, next.id].sort().join(':')}`,
+      type: 'overlap',
+      dayId: current.dayId,
+      itemIds: [current.id, next.id],
+      overlapMinutes,
+      message: `${current.title} overlaps ${next.title} by ${overlapMinutes} minute${overlapMinutes === 1 ? '' : 's'}.`,
+    })
+  }
+
   for (let leftIndex = 0; leftIndex < orderedItems.length; leftIndex += 1) {
     const left = orderedItems[leftIndex]
     const leftStart = parseScheduleTime(left.startTime)

@@ -278,4 +278,42 @@ describe('schedule travel-time conflicts', () => {
     expect(result.byItemId[dinner.id]).toContain(conflict)
     expect(result.byItemId[hotel.id]).toContain(conflict)
   })
+
+  it('flags overlap when the next stop is an overnight hotel', () => {
+    const restaurant = {
+      id: 'restaurant',
+      dayId: 'day-a',
+      title: 'Shinobuya Nishinasunoten',
+      category: 'Restaurant',
+      startTime: '18:30',
+      endTime: '20:00',
+    }
+    const hotel = {
+      id: 'hotel',
+      dayId: 'day-a',
+      title: 'Grand Mercure Nasu Highlands Resort & Spa',
+      category: 'Hotel',
+      startTime: '19:30',
+      endTime: '11:00',
+    }
+    const routeSegmentMap = {
+      [restaurant.id]: {
+        from: restaurant,
+        to: hotel,
+        mode: 'driving',
+        route: { durationMin: 31 },
+      },
+    }
+
+    const result = getScheduleConflicts([restaurant, hotel], routeSegmentMap)
+
+    expect(result.conflicts).toHaveLength(1)
+    expect(result.conflicts[0]).toMatchObject({
+      type: 'overlap',
+      itemIds: [restaurant.id, hotel.id],
+      overlapMinutes: 30,
+    })
+    expect(result.byItemId[restaurant.id]).toContain(result.conflicts[0])
+    expect(result.byItemId[hotel.id]).toContain(result.conflicts[0])
+  })
 })
