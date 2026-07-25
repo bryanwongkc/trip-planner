@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatDayDate,
   formatFullDayDate,
+  getEndTimeWarning,
   getScheduleConflicts,
   nextDayDate,
   parseIsoDay,
@@ -53,6 +54,28 @@ describe('trip date handling', () => {
         { items: { large: { description: '旅'.repeat(260_000) } } },
       ),
     ).toThrow(/too large/i)
+  })
+})
+
+describe('end-time warnings', () => {
+  it('allows hotels to end the following morning', () => {
+    expect(
+      getEndTimeWarning({
+        category: 'Hotel',
+        startTime: '19:30',
+        endTime: '11:00',
+      }),
+    ).toBe('')
+  })
+
+  it('still warns other event types when the end time is earlier', () => {
+    expect(
+      getEndTimeWarning({
+        category: 'Activity',
+        startTime: '19:30',
+        endTime: '11:00',
+      }),
+    ).toMatch(/earlier than start time/i)
   })
 })
 

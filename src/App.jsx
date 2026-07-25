@@ -113,6 +113,7 @@ import {
   formatDayDate,
   formatFullDayDate,
   getDurationMinutes,
+  getEndTimeWarning,
   getScheduleConflicts,
   getTravelTimeConflict,
   movementItemsForDay,
@@ -363,6 +364,15 @@ function CategoryControl({ disabled = false, label = 'Category', onChange, value
     })
   }, [])
 
+  const scrollCategories = useCallback((direction) => {
+    const node = scrollerRef.current
+    if (!node) return
+    node.scrollBy({
+      left: direction * Math.max(Math.round(node.clientWidth * 0.72), 180),
+      behavior: 'smooth',
+    })
+  }, [])
+
   useEffect(() => {
     updateScrollHints()
     const node = scrollerRef.current
@@ -383,14 +393,24 @@ function CategoryControl({ disabled = false, label = 'Category', onChange, value
       </div>
       <div className="relative">
         {scrollHints.left ? (
-          <div className="pointer-events-none absolute left-1 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200/80 bg-white/95 text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.12)]">
+          <button
+            type="button"
+            aria-label="Show previous categories"
+            onClick={() => scrollCategories(-1)}
+            className="absolute left-1 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200/80 bg-white/95 text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.12)] transition hover:bg-white hover:text-slate-900 active:scale-95"
+          >
             <ChevronDown className="h-4 w-4 rotate-90" />
-          </div>
+          </button>
         ) : null}
         {scrollHints.right ? (
-          <div className="pointer-events-none absolute right-1 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200/80 bg-white/95 text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.12)]">
+          <button
+            type="button"
+            aria-label="Show more categories"
+            onClick={() => scrollCategories(1)}
+            className="absolute right-1 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200/80 bg-white/95 text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.12)] transition hover:bg-white hover:text-slate-900 active:scale-95"
+          >
             <ChevronDown className="h-4 w-4 -rotate-90" />
-          </div>
+          </button>
         ) : null}
         <div
           ref={scrollerRef}
@@ -1815,13 +1835,6 @@ function applyItemDraftPatch(item, patch) {
   }
 
   return normalizeTransitForItem(stripFlightLocationFields(normalizeItemTimeFields({ ...nextItem, ...cancellationFields })))
-}
-
-function getEndTimeWarning(item) {
-  if (!item?.startTime || !item?.endTime) return ''
-  return compareTime(item.endTime, item.startTime) < 0
-    ? 'End time is earlier than start time. For overnight items, split into two items.'
-    : ''
 }
 
 function getScheduleConflictMeta(items, routeSegmentMap = {}) {

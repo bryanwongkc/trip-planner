@@ -13,6 +13,13 @@ export function compareTime(a = '00:00', b = '00:00') {
   return a.localeCompare(b)
 }
 
+export function getEndTimeWarning(item) {
+  if (!item?.startTime || !item?.endTime || item.category === 'Hotel') return ''
+  return compareTime(item.endTime, item.startTime) < 0
+    ? 'End time is earlier than start time. For overnight items, split into two items.'
+    : ''
+}
+
 export function timeToMinutes(time = '00:00') {
   const [hours = 0, minutes = 0] = String(time || '00:00').split(':').map(Number)
   return hours * 60 + minutes
