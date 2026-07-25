@@ -4,6 +4,7 @@ import {
   formatFullDayDate,
   getEndTimeWarning,
   getScheduleConflicts,
+  getUnplannedTimeGap,
   nextDayDate,
   parseIsoDay,
 } from '../src/utils/trip'
@@ -338,5 +339,63 @@ describe('schedule travel-time conflicts', () => {
     })
     expect(result.byItemId[restaurant.id]).toContain(result.conflicts[0])
     expect(result.byItemId[hotel.id]).toContain(result.conflicts[0])
+  })
+})
+
+describe('unplanned time between itinerary items', () => {
+  const current = {
+    id: 'museum',
+    dayId: 'day-a',
+    title: 'Museum',
+    startTime: '09:00',
+    endTime: '10:00',
+  }
+  const next = {
+    id: 'lunch',
+    dayId: 'day-a',
+    title: 'Lunch',
+    startTime: '12:00',
+    endTime: '13:00',
+  }
+
+  function routeTaking(durationMin) {
+    return {
+      museum: {
+        from: current,
+        to: next,
+        mode: 'walking',
+        route: { durationMin },
+      },
+    }
+  }
+
+  it('warns when more than 45 minutes remain after travel', () => {
+    expect(getUnplannedTimeGap(current, next, routeTaking(30))).toMatchObject({
+      itemIds: ['museum', 'lunch'],
+      availableMinutes: 120,
+      travelMinutes: 30,
+      unplannedMinutes: 90,
+    })
+  })
+
+  it('does not warn when exactly 45 minutes remain', () => {
+    expect(
+      getUnplannedTimeGap(
+        current,
+        { ...next, startTime: '11:15' },
+        {
+          museum: {
+            from: current,
+            to: { ...next, startTime: '11:15' },
+            mode: 'walking',
+            route: { durationMin: 30 },
+          },
+        },
+      ),
+    ).toBeNull()
+  })
+
+  it('does not guess when the route estimate is missing', () => {
+    expect(getUnplannedTimeGap(current, next)).toBeNull()
   })
 })

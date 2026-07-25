@@ -4,6 +4,7 @@ import { normalizeDateTimeForStorage } from './dateTime'
 export const DAY_VIEW_ALL = 'all'
 export const PARKING_LOT_DATE = 'TBD'
 export const TRAVEL_TIME_TOLERANCE_MINUTES = 10
+export const UNPLANNED_GAP_THRESHOLD_MINUTES = 45
 
 export function slugId(prefix) {
   return `${prefix}-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`
@@ -202,6 +203,34 @@ export function getTravelTimeConflict(current, next, routeSegmentMap = {}) {
     excessMinutes,
     mode: segment.mode || '',
     message: `${mode} from ${current.title} to ${next.title} takes ${estimate}${travelMinutes} minute${travelMinutes === 1 ? '' : 's'}; with ${availableMinutes} minute${availableMinutes === 1 ? '' : 's'} available, it exceeds the ${TRAVEL_TIME_TOLERANCE_MINUTES}-minute tolerance by ${excessMinutes} minute${excessMinutes === 1 ? '' : 's'}.`,
+  }
+}
+
+export function getUnplannedTimeGap(current, next, routeSegmentMap = {}) {
+  if (!current?.id || !next?.id || current.dayId !== next.dayId) return null
+
+  const currentEnd = parseScheduleTime(current.endTime)
+  const nextStart = parseScheduleTime(next.startTime)
+  if (currentEnd === null || nextStart === null || nextStart <= currentEnd) return null
+
+  const segment = routeSegmentMap[current.id]
+  if (segment?.from?.id !== current.id || segment?.to?.id !== next.id) return null
+
+  const rawTravelMinutes = Number(segment.route?.durationMin)
+  if (!Number.isFinite(rawTravelMinutes) || rawTravelMinutes < 0) return null
+
+  const availableMinutes = nextStart - currentEnd
+  const travelMinutes = Math.round(rawTravelMinutes)
+  const unplannedMinutes = availableMinutes - travelMinutes
+  if (unplannedMinutes <= UNPLANNED_GAP_THRESHOLD_MINUTES) return null
+
+  return {
+    dayId: current.dayId,
+    itemIds: [current.id, next.id],
+    availableMinutes,
+    travelMinutes,
+    unplannedMinutes,
+    message: `${unplannedMinutes} min unplanned after travel. Consider adding something in between.`,
   }
 }
 

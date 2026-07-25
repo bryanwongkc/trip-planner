@@ -116,6 +116,7 @@ import {
   getEndTimeWarning,
   getScheduleConflicts,
   getTravelTimeConflict,
+  getUnplannedTimeGap,
   movementItemsForDay,
   nextDayDate,
   parseIsoDay,
@@ -5669,6 +5670,11 @@ function PlannerPanel({
           const itemColor = timelineColorAssignments.get(item.id)?.color
           const CategoryIcon = CATEGORY_ICON_COMPONENTS[item.category] || CircleEllipsis
           const nextSegment = routeSegmentMap[item.id]
+          const unplannedGap = getUnplannedTimeGap(
+            item,
+            timelineEntries[index + 1]?.item,
+            routeSegmentMap,
+          )
           const isOverview = activeDayId === DAY_VIEW_ALL
           const previousItem = timelineEntries[index - 1]?.item
           const showDayDivider = isOverview && (!previousItem || previousItem.dayId !== item.dayId)
@@ -6225,18 +6231,26 @@ function PlannerPanel({
                       style={{ backgroundColor: itemColor?.solid }}
                     />
                   </div>
-                  <div className="timeline-route-row flex items-center justify-between gap-3 rounded-[0.9rem] px-2 py-0 text-slate-500 sm:px-3">
-                    <div className="flex min-w-0 items-center gap-2.5" aria-label={`${routeLabel(nextSegment.mode)} ${routeDurationText(nextSegment)}`}>
-                      {RouteIcon ? <RouteIcon className="h-4 w-4 shrink-0 text-slate-400" /> : null}
-                      <span className="truncate text-[13px] font-bold tracking-[-0.02em] text-slate-500">
-                        {routeDurationText(nextSegment)}
-                      </span>
+                  <div className="timeline-route-row rounded-[0.9rem] px-2 py-0 text-slate-500 sm:px-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2.5" aria-label={`${routeLabel(nextSegment.mode)} ${routeDurationText(nextSegment)}`}>
+                        {RouteIcon ? <RouteIcon className="h-4 w-4 shrink-0 text-slate-400" /> : null}
+                        <span className="truncate text-[13px] font-bold tracking-[-0.02em] text-slate-500">
+                          {routeDurationText(nextSegment)}
+                        </span>
+                      </div>
+                      {canEdit ? (
+                        <RouteModeControl
+                          currentMode={nextSegment.from.travelModeToNext || ''}
+                          onSelect={(mode) => onUpdateTravelMode(nextSegment.from.id, mode)}
+                        />
+                      ) : null}
                     </div>
-                    {canEdit ? (
-                      <RouteModeControl
-                        currentMode={nextSegment.from.travelModeToNext || ''}
-                        onSelect={(mode) => onUpdateTravelMode(nextSegment.from.id, mode)}
-                      />
+                    {unplannedGap ? (
+                      <div className="mt-1.5 flex items-start gap-2 rounded-[0.75rem] bg-amber-50/90 px-2.5 py-2 text-[11px] font-semibold leading-4 text-amber-800">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                        <span>{unplannedGap.message}</span>
+                      </div>
                     ) : null}
                   </div>
                 </>
