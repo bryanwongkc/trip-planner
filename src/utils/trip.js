@@ -10,6 +10,18 @@ export function slugId(prefix) {
   return `${prefix}-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`
 }
 
+export function duplicateItemAsIndependent(item, id = slugId('item')) {
+  return {
+    ...item,
+    id,
+    generated: false,
+    sourceItemId: '',
+    substituteGroupId: '',
+    substituteOfItemId: '',
+    order: (item.order ?? 0) + 1,
+  }
+}
+
 export function compareTime(a = '00:00', b = '00:00') {
   return a.localeCompare(b)
 }

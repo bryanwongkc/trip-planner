@@ -110,6 +110,7 @@ import {
   compareTime,
   deriveEndTimeFromDuration,
   deriveTripState,
+  duplicateItemAsIndependent,
   formatDayDate,
   formatFullDayDate,
   getDurationMinutes,
@@ -8773,11 +8774,7 @@ export default function App() {
     if (!firestoreReady || !canEditCurrentTrip || !item || item.generated) return
 
     const duplicate = normalizeItemForSave({
-      ...createItemDraft(item),
-      id: slugId('item'),
-      generated: false,
-      sourceItemId: '',
-      order: (item.order ?? 0) + 1,
+      ...createItemDraft(duplicateItemAsIndependent(item)),
     })
 
     await saveItem(duplicate)

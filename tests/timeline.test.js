@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildRouteTimelineItems } from '../src/utils/timeline'
+import { duplicateItemAsIndependent } from '../src/utils/trip'
+import { buildRouteTimelineItems, buildTimelineEntries } from '../src/utils/timeline'
 
 const baseItems = [
   {
@@ -52,5 +53,23 @@ describe('substitute items in route and map timelines', () => {
       'a-cowherd',
       'cafe-garden',
     ])
+  })
+
+  it('keeps a duplicate of a grouped event as an independent timeline item', () => {
+    const duplicate = duplicateItemAsIndependent(baseItems[0], 'cheese-garden-copy')
+    const entries = buildTimelineEntries([...baseItems, duplicate])
+
+    expect(duplicate).toMatchObject({
+      id: 'cheese-garden-copy',
+      generated: false,
+      sourceItemId: '',
+      substituteGroupId: '',
+      substituteOfItemId: '',
+    })
+    expect(entries.find((entry) => entry.item.id === duplicate.id)).toMatchObject({
+      type: 'item',
+      item: { id: duplicate.id },
+    })
+    expect(entries.find((entry) => entry.stackKind === 'substitute')?.items).toHaveLength(2)
   })
 })
