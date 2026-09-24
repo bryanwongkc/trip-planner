@@ -69,9 +69,9 @@ function checkSpec(issue) {
 function existingPr(number) {
   const results = JSON.parse(gh([
     'pr', 'list', '--repo', repo, '--state', 'all', '--head', `codex/feedback-${number}`,
-    '--limit', '100', '--json', 'number,state,url',
+    '--limit', '100', '--json', 'number,state,url,headRepositoryOwner',
   ]))
-  return results[0]
+  return results.find((pr) => pr.headRepositoryOwner?.login === repo.split('/')[0])
 }
 
 function selectNext() {
