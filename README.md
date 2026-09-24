@@ -110,6 +110,8 @@ To review feedback daily in ChatGPT:
 3. Paste the contents of [the daily review prompt](./.github/chatgpt/daily-feedback-review.md).
 4. Run the prompt once manually before enabling the daily schedule. It creates a consolidated proposal issue, then labels the source issues `feedback-reviewed`; it never modifies product code.
 
+For human approval and local Codex implementation, see [Feedback to reviewed PR](./docs/feedback-workflow.md). The owner applies `approved-for-build` only after approving a concrete proposal. When the PC is online, Codex claims one approved issue with a unique GitHub branch, implements it locally, runs checks, and opens a PR for human review. The existing Scheduled task was updated to this format on 2026-09-24; future prompt edits must also be copied into that task.
+
 The in-function submission throttle is best-effort because Vercel Functions can run on multiple instances. Firebase sign-in remains the primary inbox protection.
 
 ## Notes
