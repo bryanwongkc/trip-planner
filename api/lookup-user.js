@@ -53,11 +53,17 @@ export default async function handler(request, response) {
     }
 
     const user = await auth.getUserByEmail(email)
+    const profile = await db.doc(`users/${user.uid}`).get()
+    if (!profile.exists) {
+      response.status(404).json({ error: 'Ask this person to sign in once before adding them.' })
+      return
+    }
+    const identity = profile.data()
     response.status(200).json({
       uid: user.uid,
-      displayName: user.displayName || '',
-      email: user.email || email,
-      photoURL: user.photoURL || '',
+      displayName: identity.displayName || '',
+      email: identity.email || '',
+      photoURL: identity.photoURL || '',
     })
   } catch (error) {
     if (error?.code === 'auth/user-not-found') {

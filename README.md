@@ -21,6 +21,8 @@ Mobile-first trip planner for multi-stop travel itineraries with shared trip wor
 4. Start the app:
    `npm run dev`
 
+Guest editing works with Vite alone. Signed-in creation, itinerary writes, and trip renames/restores also need the `/api/trip-state` server function and Firebase Admin credentials; use a Vercel development/preview environment for those flows. The Firestore emulator tests require Java 21 or newer.
+
 ## Required Environment Variables
 
 ```bash
@@ -70,6 +72,10 @@ Use this Firebase shape:
   `tripInvites/{inviteId}`
 - Trip overrides:
   `trips/{tripId}/overrides/shared`
+- Removed-member blocks:
+  `trips/{tripId}/removedMembers/{uid}`
+- Server-only write receipts:
+  `trips/{tripId}/writeReceipts/{uid}-{operationId}`
 
 ## Permissions
 
@@ -82,16 +88,28 @@ Firestore rules are expected to enforce the same model as the UI.
 
 Invitation links expire after 1, 7, or 30 days, allow a configured number of joins, and can be revoked from the Share panel. Acceptance consumes one use and creates the member and membership index in one transaction. A link stops working if its creator is no longer an owner or admin.
 
-Signed-in trips use Firestore's persistent browser cache so pending changes survive reloads and network loss. Use account-backed editing only on a device you trust because the browser retains that cache between sessions.
+Removing a member also blocks that account from rejoining through invitation links. An owner or admin can explicitly add the person again by email. Membership identity must match the joining account's token or the invited person's verified profile.
+
+Removal blocks apply to removals made with this version. Earlier removals have no saved block record; revoke outstanding old links if previously removed people must remain excluded.
+
+Signed-in trips read through Firestore's persistent browser cache. Every itinerary edit is first stored in a per-account browser outbox, including edits made while an earlier request is waiting. `/api/trip-state` checks actual membership, validates nested records, compares the edited records with their original versions, and commits edits and date metadata together. Receipts prevent duplicate commits after a lost response. A queued edit is retired only when the corresponding server revision is observed. Conflicts remain on the device with a visible warning; users can review their local version and explicitly discard the rejected changes. Use account-backed editing only on a trusted device because cached trips and queued edits remain in browser storage between sessions.
+
+Malformed legacy records are hidden with a warning and editing is paused. They are not automatically deleted or rewritten. An administrator must repair those records before editing resumes.
 
 ## Deployment Checklist
 
 1. Confirm all required Vercel env vars are present.
-2. Deploy Firestore rules:
+2. Deploy the frontend and `/api/trip-state` together. Verify authenticated creation and saving in preview with the intended Firebase Admin configuration.
+3. Before tightening the rules, have existing clients finish synchronization. Deploy Firestore rules:
    `firebase deploy --only firestore:rules`
-3. Verify Google sign-in works in the deployed domain.
-4. Verify Google Maps and Places load with the deployed API key restrictions.
-5. Verify the GitHub feedback token can create issues and labels.
+   The rules deny direct browser writes to shared itinerary maps. Old open tabs must refresh to use the new API. Do not deploy these rules alone or roll back only the frontend.
+4. Verify Google sign-in, invitation acceptance, offline edit/reload/reconnect, and collaborator removal/re-add in the deployed domain.
+5. Verify Google Maps and Places load with the deployed API key restrictions.
+6. Verify the GitHub feedback token can create issues and labels.
+
+Write receipts and removed-member blocks persist under each trip. Firestore does not cascade-delete subcollections when a trip is deleted; include them in administrative data-retention cleanup. Do not expire receipts while matching browser outbox operations may still be retried.
+
+Security dependency overrides pin patched gRPC, OpenTelemetry, and FTP implementations where upstream constraints retain vulnerable versions. Recheck these overrides when updating Firebase packages. `npm audit` is expected to report zero findings for this lockfile.
 
 ## Daily Feedback Review
 

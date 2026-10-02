@@ -20,10 +20,13 @@ import {
   writeBatch,
 } from 'firebase/firestore'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { buildStampedPatch } from '../src/services/firebase'
+import { initializeApp, deleteApp } from 'firebase-admin/app'
+import { getFirestore } from 'firebase-admin/firestore'
+import { writeTripState } from '../server/tripState'
+import { getExpectedTripPatchState } from '../src/utils/tripValidation'
 
 const projectId = 'trip-planner-rules-test'
-let testEnv
+let testEnv, adminApp, adminDb
 
 const ownerToken = {
   email: 'owner@example.com',
@@ -171,6 +174,8 @@ async function seedTrip() {
 }
 
 beforeAll(async () => {
+  adminApp = initializeApp({ projectId }, 'trip-rules-admin')
+  adminDb = getFirestore(adminApp)
   testEnv = await initializeTestEnvironment({
     projectId,
     firestore: { rules: readFileSync(resolve('firestore.rules'), 'utf8') },
@@ -178,12 +183,14 @@ beforeAll(async () => {
 })
 
 beforeEach(async () => testEnv.clearFirestore())
-afterAll(async () => testEnv.cleanup())
+afterAll(async () => { await testEnv.cleanup(); await deleteApp(adminApp) })
+
+async function patchAsOwner(current, patch, operationId = crypto.randomUUID()) {
+  return writeTripState(adminDb, { uid: 'owner', ...ownerToken }, { action: 'patch', tripId: 'trip-one', operationId, patch, expectedCurrent: getExpectedTripPatchState(current, patch) })
+}
 
 describe('Firestore itinerary patch preservation', () => {
-  it.each(['setDoc', 'transaction'])(
-    'keeps other days, events and bookings when deleting an empty day via %s',
-    async (writeMode) => {
+  it('keeps other days, events and bookings when deleting an empty day', async () => {
       await seedTrip()
       const db = testEnv.authenticatedContext('owner', ownerToken).firestore()
       const reference = doc(db, 'trips/trip-one/overrides/shared')
@@ -199,20 +206,13 @@ describe('Firestore itinerary patch preservation', () => {
           booking: { id: 'booking', dayId: 'first', linkedItemId: 'event', notes: 'Keep this booking' },
         },
       }
-      await setDoc(reference, original)
-      const patch = buildStampedPatch({
+      await adminDb.doc(reference.path).set(original)
+      const patch = {
         days: { first: { order: 0 }, last: { hidden: true } },
         items: {},
         bookingOptions: {},
-      }, serverTimestamp)
-      if (writeMode === 'transaction') {
-        await runTransaction(db, async (transaction) => {
-          await transaction.get(reference)
-          transaction.set(reference, patch, { merge: true })
-        })
-      } else {
-        await setDoc(reference, patch, { merge: true })
       }
+      await patchAsOwner(original, patch)
       const saved = (await getDoc(reference)).data()
       expect(saved.items).toEqual(original.items)
       expect(saved.bookingOptions).toEqual(original.bookingOptions)
@@ -240,12 +240,12 @@ describe('Firestore itinerary patch preservation', () => {
         remove: { id: 'remove', dayId: 'last' },
       },
     }
-    await setDoc(reference, original)
-    await setDoc(reference, buildStampedPatch({
+    await adminDb.doc(reference.path).set(original)
+    await patchAsOwner(original, {
       days: { first: { order: 0 }, last: { hidden: true } },
       items: { remove: { hidden: true } },
       bookingOptions: { remove: { hidden: true } },
-    }, serverTimestamp), { merge: true })
+    })
     const saved = (await getDoc(reference)).data()
     expect(saved.items.keep).toEqual(original.items.keep)
     expect(saved.bookingOptions.keep).toEqual(original.bookingOptions.keep)
@@ -255,6 +255,39 @@ describe('Firestore itinerary patch preservation', () => {
 })
 
 describe('Firestore authorization', () => {
+  it('rejects spoofed invite identity and direct writes that bypass itinerary validation', async () => {
+    await seedTrip()
+    await adminDb.doc('tripInvites/identity-link').set(invitePayload('identity-link'))
+    const viewerDb = testEnv.authenticatedContext('viewer', viewerToken).firestore()
+    await assertFails(queueInviteAcceptance(viewerDb, 'identity-link', 'viewer', ownerToken).commit())
+    await assertSucceeds(queueInviteAcceptance(viewerDb, 'identity-link', 'viewer', viewerToken).commit())
+    const ownerDb = testEnv.authenticatedContext('owner', ownerToken).firestore()
+    await assertFails(setDoc(doc(ownerDb, 'trips/trip-one/overrides/shared'), { items: { bad: { startTime: 42 } } }))
+    await assertFails(setDoc(doc(viewerDb, 'trips/trip-one/overrides/shared'), { items: {} }))
+  })
+
+  it('blocks removed members from old links and permits an explicit manager re-add with verified identity', async () => {
+    await seedTrip()
+    await adminDb.doc('tripInvites/old-link').set(invitePayload('old-link'))
+    await adminDb.doc('trips/trip-one/members/viewer').set({ uid: 'viewer', role: 'viewer' })
+    await adminDb.doc('users/viewer').set({ uid: 'viewer', email: viewerToken.email, displayName: viewerToken.name, photoURL: viewerToken.picture })
+    const ownerDb = testEnv.authenticatedContext('owner', ownerToken).firestore()
+    const viewerDb = testEnv.authenticatedContext('viewer', viewerToken).firestore()
+    const remove = writeBatch(ownerDb)
+    remove.set(doc(ownerDb, 'trips/trip-one/removedMembers/viewer'), { uid: 'viewer', removedBy: 'owner', removedAt: serverTimestamp() })
+    remove.delete(doc(ownerDb, 'trips/trip-one/members/viewer'))
+    await assertSucceeds(remove.commit())
+    await assertFails(queueInviteAcceptance(viewerDb, 'old-link', 'viewer', viewerToken).commit())
+    const spoofed = writeBatch(ownerDb)
+    spoofed.delete(doc(ownerDb, 'trips/trip-one/removedMembers/viewer'))
+    spoofed.set(doc(ownerDb, 'trips/trip-one/members/viewer'), acceptedMember('viewer', ownerToken, 'old-link'))
+    await assertFails(spoofed.commit())
+    const readd = writeBatch(ownerDb)
+    readd.delete(doc(ownerDb, 'trips/trip-one/removedMembers/viewer'))
+    readd.set(doc(ownerDb, 'trips/trip-one/members/viewer'), acceptedMember('viewer', viewerToken, 'old-link'))
+    await assertSucceeds(readd.commit())
+    expect((await getDoc(doc(ownerDb, 'trips/trip-one/members/viewer'))).data().email).toBe(viewerToken.email)
+  })
   it('keeps profiles private and binds identity fields to auth claims', async () => {
     const ownerDb = testEnv.authenticatedContext('owner', ownerToken).firestore()
     const editorDb = testEnv.authenticatedContext('editor', editorToken).firestore()
@@ -393,5 +426,68 @@ describe('Firestore authorization', () => {
         viewerToken,
       ).commit(),
     )
+  })
+})
+
+describe('authenticated itinerary transactions', () => {
+  const initial = {
+    days: { first: { id: 'first', date: '2026-10-02', order: 0 } },
+    items: { stop: { id: 'stop', dayId: 'first', title: 'Original', startTime: '10:00' } },
+    bookingOptions: {},
+  }
+  beforeEach(async () => {
+    await seedTrip()
+    await adminDb.doc('trips/trip-one/overrides/shared').set(initial)
+  })
+
+  it('rejects stale drafts, allows unrelated edits, and makes commit retries idempotent', async () => {
+    const patch = { items: { stop: { title: 'Collaborator edit' } } }
+    const op = crypto.randomUUID()
+    expect(await patchAsOwner(initial, patch, op)).toEqual({ revision: 1 })
+    expect(await patchAsOwner(initial, patch, op)).toEqual({ revision: 1 })
+    await expect(patchAsOwner(initial, { items: { stop: { title: 'Stale draft' } } })).rejects.toMatchObject({ code: 'trip-version-conflict' })
+    await expect(patchAsOwner(initial, { items: { another: { title: 'Independent stop' } } })).resolves.toEqual({ revision: 2 })
+    const state = (await adminDb.doc('trips/trip-one/overrides/shared').get()).data()
+    expect(state.items.stop.title).toBe('Collaborator edit')
+    expect(state.items.another.title).toBe('Independent stop')
+    expect((await adminDb.collection('trips/trip-one/writeReceipts').get()).size).toBe(2)
+  })
+
+  it('checks actual membership even on retries and rejects invalid nested data', async () => {
+    const patch = { items: { stop: { title: 'Saved' } } }
+    const op = crypto.randomUUID()
+    await patchAsOwner(initial, patch, op)
+    await adminDb.doc('trips/trip-one/members/owner').update({ role: 'viewer' })
+    await expect(patchAsOwner(initial, patch, op)).rejects.toMatchObject({ status: 403 })
+    await adminDb.doc('trips/trip-one/members/owner').update({ role: 'owner' })
+    await expect(patchAsOwner(initial, { items: { malformed: { startTime: 42 } } })).rejects.toMatchObject({ status: 400 })
+    await expect(writeTripState(adminDb, { uid: 'outsider' }, { action: 'patch', tripId: 'trip-one', operationId: crypto.randomUUID(), patch, expectedCurrent: {} })).rejects.toMatchObject({ status: 403 })
+  })
+
+  it('updates metadata and every membership date atomically with a day change', async () => {
+    await adminDb.doc('trips/trip-one/members/viewer').set({ uid: 'viewer', role: 'viewer' })
+    await patchAsOwner(initial, { days: { second: { date: '2026-09-01', order: 1 } } })
+    for (const path of ['trips/trip-one', 'users/owner/tripMemberships/trip-one', 'users/viewer/tripMemberships/trip-one']) {
+      expect((await adminDb.doc(path).get()).data()).toMatchObject({ startDate: '2026-09-01', endDate: '2026-10-02' })
+    }
+  })
+
+  it('renames without copying stale dates and checks owner-only metadata changes', async () => {
+    await patchAsOwner(initial, { days: { second: { date: '2026-12-01', order: 1 } } })
+    const rename = { action: 'metadata', tripId: 'trip-one', operationId: crypto.randomUUID(), payload: { title: 'Renamed' } }
+    await writeTripState(adminDb, { uid: 'owner' }, rename)
+    expect((await adminDb.doc('users/owner/tripMemberships/trip-one').get()).data()).toMatchObject({ title: 'Renamed', startDate: '2026-10-02', endDate: '2026-12-01' })
+    await adminDb.doc('trips/trip-one/members/editor').set({ uid: 'editor', role: 'editor' })
+    await expect(writeTripState(adminDb, { uid: 'editor' }, { ...rename, operationId: crypto.randomUUID(), payload: { hidden: true } })).rejects.toMatchObject({ status: 403 })
+  })
+
+  it('creates a trip with token-bound owner identity and validates its contents', async () => {
+    const request = { action: 'create', tripId: 'new-trip', operationId: crypto.randomUUID(), payload: { title: 'New trip', city: 'Tokyo', ...initial } }
+    const actor = { uid: 'creator', ...viewerToken }
+    await expect(writeTripState(adminDb, actor, request)).resolves.toEqual({ revision: 1 })
+    await expect(writeTripState(adminDb, actor, request)).resolves.toEqual({ revision: 1 })
+    expect((await adminDb.doc('trips/new-trip/members/creator').get()).data()).toMatchObject({ uid: 'creator', email: viewerToken.email, displayName: viewerToken.name, role: 'owner' })
+    await expect(writeTripState(adminDb, actor, { ...request, tripId: 'bad-trip', payload: { ...request.payload, items: { bad: { title: {} } } } })).rejects.toMatchObject({ status: 400 })
+    expect((await adminDb.doc('trips/bad-trip').get()).exists).toBe(false)
   })
 })
