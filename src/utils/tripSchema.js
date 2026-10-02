@@ -98,7 +98,9 @@ export function cleanEntity(kind, id, entity, { legacy = false } = {}) {
   }
   if (kind === 'days' && !clean.hidden && !validIsoDate(clean.date)) throw new Error('Every itinerary day needs a valid date.')
   if (kind === 'items') {
-    if (clean.category && !['Car', 'Activity', 'Restaurant', 'Transport', 'Flight', 'Hotel', 'Others'].includes(clean.category)) throw new Error('Invalid itinerary category.')
+    // Historical categories remain valid in saved trips, even though the editor
+    // no longer offers them. Preserve them when reading and saving older items.
+    if (clean.category && !['Car', 'Activity', 'Restaurant', 'Transport', 'Flight', 'Hotel', 'Others', 'Shopping', 'Wedding'].includes(clean.category)) throw new Error('Invalid itinerary category.')
     for (const key of ['startTime', 'endTime']) {
       if (clean[key] && !/^([01]\d|2[0-3]):[0-5]\d$/.test(clean[key])) throw new Error('Invalid itinerary time.')
     }
