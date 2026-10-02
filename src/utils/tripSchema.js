@@ -33,19 +33,53 @@ function validNested(value, depth = 0) {
     !unsafeKeys.has(key) && validNested(child, depth + 1))
 }
 
-export function cleanEntity(kind, id, entity) {
+function legacyNumber(value) {
+  if (typeof value !== 'string') return value
+  if (!value.trim()) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : value
+}
+
+function legacyDetails(key, value) {
+  if (!isRecord(value)) return value
+  const details = { ...value }
+  if (key === 'transit' && typeof details.approxDurationMinutes === 'number' && Number.isFinite(details.approxDurationMinutes)) {
+    details.approxDurationMinutes = String(details.approxDurationMinutes)
+  }
+  if (key === 'flightInfo') {
+    for (const field of ['departureAirportLocation', 'arrivalAirportLocation']) {
+      if (!isRecord(details[field])) continue
+      details[field] = { ...details[field], lat: legacyNumber(details[field].lat), lng: legacyNumber(details[field].lng) }
+    }
+  }
+  return details
+}
+
+export function cleanEntity(kind, id, entity, { legacy = false } = {}) {
   if (!validEntityId(id) || !isRecord(entity)) throw new Error(`Invalid ${kind} record.`)
   const clean = {}
-  for (const [key, value] of Object.entries(entity)) {
+  for (const [key, originalValue] of Object.entries(entity)) {
+    let value = originalValue
+    if (unsafeKeys.has(key)) throw new Error(`Invalid ${kind} field.`)
     if (value === undefined || derivedFields.has(key)) continue
     if (key === 'updatedAt') { clean[key] = value; continue }
     const text = stringFields[kind].includes(key)
     const number = numberFields[kind].includes(key)
     const bool = booleanFields[kind].includes(key)
+    const details = kind === 'items' && ['transit', 'flightInfo'].includes(key)
+    // Older clients saved optional nulls, numeric text, and extra metadata.
+    // Project those records for display without loosening new-write validation.
+    if (legacy) {
+      if (!text && !number && !bool && !details) continue
+      if (text && value === null) value = key === 'id' ? id : ''
+      if (number) value = legacyNumber(value)
+      if (bool && value === null) value = false
+      if (details) value = legacyDetails(key, value)
+    }
     if (text && typeof value === 'string' && value.length <= 20_000) clean[key] = value
     else if (number && (value === null || (typeof value === 'number' && Number.isFinite(value)))) clean[key] = value
     else if (bool && typeof value === 'boolean') clean[key] = value
-    else if (kind === 'items' && ['transit', 'flightInfo'].includes(key) && (value === null || isRecord(value)) && validNested(value)) {
+    else if (details && (value === null || isRecord(value)) && validNested(value)) {
       // Nested display fields are strings except known coordinate containers.
       if (value && Object.entries(value).some(([field, child]) =>
         !['departureAirportLocation', 'arrivalAirportLocation'].includes(field) && typeof child !== 'string' && child !== null)) {
@@ -80,7 +114,7 @@ export function sanitizeTripSnapshot(value) {
   for (const kind of ENTITY_KINDS) {
     if (value?.[kind] != null && !isRecord(value[kind])) { invalidCount++; continue }
     for (const [id, entity] of Object.entries(value?.[kind] || {})) {
-      try { result[kind][id] = cleanEntity(kind, id, entity) } catch { invalidCount++ }
+      try { result[kind][id] = cleanEntity(kind, id, entity, { legacy: true }) } catch { invalidCount++ }
     }
   }
   return { data: result, invalidCount }

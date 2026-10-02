@@ -7648,7 +7648,7 @@ export default function App() {
             const invalidCount = (metadata.invalidCount || 0) + safe.invalidCount
             setFirestoreState({
               status: metadata.pendingError ? 'error' : invalidCount ? 'warning' : 'ready',
-              error: metadata.pendingError || (invalidCount ? 'Some saved records are invalid and have been hidden. Editing is paused until they are repaired.' : ''),
+              error: metadata.pendingError || (invalidCount ? 'Some saved records could not be displayed safely. They have not been deleted. Editing is paused.' : ''),
               pendingCount: metadata.pendingCount || 0,
               pendingError: metadata.pendingError || '',
               invalidCount,

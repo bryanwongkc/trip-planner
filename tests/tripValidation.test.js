@@ -49,3 +49,62 @@ describe('trip schema and concurrency', () => {
     }
   })
 })
+
+describe('legacy trip compatibility', () => {
+  it('reads older records without hiding them or mutating their stored representation', () => {
+    const raw = {
+      days: { day: { id: 'day', date: '2026-10-02', name: null, order: '0', hidden: null, legacyColor: 'blue' } },
+      items: {
+        stop: {
+          id: null, dayId: 'day', title: 'Legacy stop', description: null, bookingRef: null,
+          startTime: '10:00', endTime: null, category: 'Transport', durationMinutes: '45',
+          lat: '35.5', lng: '139.5', generated: null,
+          transit: { mode: 'train', approxDurationMinutes: 45, notes: null },
+          legacyDetails: { imported: true, labels: ['keep'] },
+        },
+        flight: { dayId: 'day', category: 'Flight', flightInfo: { departureAirportLocation: { lat: '35.5', lng: '139.5' } } },
+      },
+      bookingOptions: { booking: { id: 'booking', linkedItemId: 'stop', title: 'Legacy booking', price: '125.50', partySize: '2', notes: null } },
+    }
+    const original = structuredClone(raw)
+    const safe = sanitizeTripSnapshot(raw)
+    expect(safe.invalidCount).toBe(0)
+    expect(safe.data.days.day).toEqual({ id: 'day', date: '2026-10-02', name: '', order: 0, hidden: false })
+    expect(safe.data.items.stop).toMatchObject({ id: 'stop', description: '', endTime: '', durationMinutes: 45, lat: 35.5, lng: 139.5, generated: false, transit: { approxDurationMinutes: '45' } })
+    expect(safe.data.items.stop).not.toHaveProperty('legacyDetails')
+    expect(safe.data.items.flight.flightInfo.departureAirportLocation).toEqual({ lat: 35.5, lng: 139.5 })
+    expect(safe.data.bookingOptions.booking).toMatchObject({ price: 125.5, partySize: 2, notes: '' })
+    expect(deriveTripState(safe.data, { includeSeed: false }).items.map(item => item.id)).toContain('stop')
+    expect(raw).toEqual(original)
+    expect(sanitizeTripSnapshot(safe.data)).toEqual(safe)
+    expect(() => validateTripPatch(safe.data, { items: { stop: { title: 'Edited' } } })).not.toThrow()
+  })
+
+  it.each([
+    { description: null },
+    { durationMinutes: '45' },
+    { hidden: null },
+    { legacyDetails: { imported: true } },
+    { transit: { approxDurationMinutes: 45 } },
+  ])('normalizes saved %j while keeping new writes strict', legacy => {
+    const raw = { items: { stop: { title: 'Stop', ...legacy } } }
+    expect(sanitizeTripSnapshot(raw).invalidCount).toBe(0)
+    expect(() => validateTripPatch({}, raw)).toThrow()
+    expect(() => validateTripPatch(sanitizeTripSnapshot(raw).data, raw)).toThrow()
+  })
+
+  it.each([
+    { durationMinutes: 'not a number' },
+    { durationMinutes: Infinity },
+    { lat: '91' },
+    { startTime: '25:00' },
+    { title: { nested: 'not text' } },
+    { transit: { approxDurationMinutes: [] } },
+    JSON.parse('{"__proto__":{"polluted":true}}'),
+  ])('continues to quarantine unsafe saved fields %j', fields => {
+    const safe = sanitizeTripSnapshot({ items: { bad: fields, good: { title: 'Safe' } } })
+    expect(safe.invalidCount).toBe(1)
+    expect(Object.keys(safe.data.items)).toEqual(['good'])
+    expect(() => validateTripPatch({}, { items: { bad: fields } })).toThrow()
+  })
+})

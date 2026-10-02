@@ -75,7 +75,9 @@ export async function writeTripState(db, actor, request) {
     } else {
       const updates = [new FieldPath('updatedAt'), now, new FieldPath('revision'), revision]
       for (const kind of ENTITY_KINDS) for (const id of Object.keys((action === 'patch' ? request.patch[kind] : {}) || {})) {
-        updates.push(new FieldPath(kind, id), { ...next[kind][id], updatedAt: now })
+        // Reading projects legacy records onto the supported schema. Keep stored
+        // extra fields when editing; never turn that projection into data loss.
+        updates.push(new FieldPath(kind, id), { ...state.data()?.[kind]?.[id], ...next[kind][id], updatedAt: now })
       }
       transaction.update(stateRef, ...updates)
       if (members) {

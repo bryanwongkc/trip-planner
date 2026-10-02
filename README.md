@@ -94,7 +94,7 @@ Removal blocks apply to removals made with this version. Earlier removals have n
 
 Signed-in trips read through Firestore's persistent browser cache. Every itinerary edit is first stored in a per-account browser outbox, including edits made while an earlier request is waiting. `/api/trip-state` checks actual membership, validates nested records, compares the edited records with their original versions, and commits edits and date metadata together. Receipts prevent duplicate commits after a lost response. A queued edit is retired only when the corresponding server revision is observed. Conflicts remain on the device with a visible warning; users can review their local version and explicitly discard the rejected changes. Use account-backed editing only on a trusted device because cached trips and queued edits remain in browser storage between sessions.
 
-Malformed legacy records are hidden with a warning and editing is paused. They are not automatically deleted or rewritten. An administrator must repair those records before editing resumes.
+Older records with optional nulls, numeric text, or extra metadata are normalized for display without rewriting them on load. Extra stored fields are preserved when the record is edited; new edits still use strict validation. Records that cannot be displayed safely are hidden with a warning and editing is paused. They are not automatically deleted or rewritten. An administrator must repair those records before editing resumes.
 
 ## Deployment Checklist
 

@@ -92,3 +92,22 @@ it('hides the previous itinerary during directory fallback without copying dates
   expect(container.textContent).not.toContain('INVITATION_TEST_STOP')
   expect(container.textContent).toContain('Loading your itinerary')
 })
+
+it('shows compatible legacy records and enables editing without a repair warning', async () => {
+  await signedIn()
+  await flush(() => mock.directory([{ ...trip, role: 'editor' }]))
+  const legacy = {
+    ...payload,
+    days: { d1: { ...payload.days.d1, order: '0', name: null } },
+    items: { i1: { ...payload.items.i1, description: null, durationMinutes: '30', oldImportData: { source: 'synthetic fixture' } } },
+  }
+  await flush(() => mock.states.get(trip.id).cb(legacy, { fromCache: false }))
+  expect(container.textContent).toContain('INVITATION_TEST_STOP')
+  expect(container.textContent).not.toContain('Editing is paused')
+  expect(container.textContent).not.toContain('Loading your itinerary')
+  const add = container.querySelector('button[aria-label="Add stop"]')
+  expect(add).not.toBeNull()
+  await flush(() => add.click())
+  expect(container.querySelector('button[aria-label="Close add stop form"]')).not.toBeNull()
+  expect(mock.meta).not.toHaveBeenCalled()
+})
