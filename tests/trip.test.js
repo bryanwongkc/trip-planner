@@ -52,7 +52,7 @@ describe('trip date handling', () => {
     expect(() =>
       validateTripPatch(
         { days: { one: { date: '2026-07-16' } } },
-        { items: { large: { description: '旅'.repeat(260_000) } } },
+        { items: Object.fromEntries(Array.from({ length: 14 }, (_, index) => [`large-${index}`, { description: '旅'.repeat(19_000) }])) },
       ),
     ).toThrow(/too large/i)
   })

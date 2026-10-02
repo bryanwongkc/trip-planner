@@ -65,6 +65,7 @@ import {
 import {
   addTripMember,
   acceptTripInvite,
+  discardRejectedTripChanges,
   createTripRecordWithOwner,
   createTripInvite,
   deleteTripRecord,
@@ -139,13 +140,14 @@ import {
   isStackableStayOrMeal,
 } from './utils/timeline'
 import {
+  assertTripPatchIsCurrent,
   getExpectedTripPatchState,
-  mergeTripEntityMaps,
   TRIP_VERSION_CONFLICT_CODE,
   validateTripPatch,
 } from './utils/tripValidation'
 import { createAsyncTtlCache } from './utils/asyncTtlCache'
 import { createKeyedTaskQueue } from './utils/keyedTaskQueue'
+import { ENTITY_KINDS, sanitizeTripSnapshot, tripDateRange } from './utils/tripSchema'
 import { assignItineraryItemColors } from './utils/itemColors'
 import {
   DEFAULT_INVITE_EXPIRY_DAYS,
@@ -1021,10 +1023,6 @@ function hasTripOverrides(overrides) {
 function buildLocalTripSummaries() {
   if (typeof window === 'undefined') return []
   return listGuestTripSummaries(window.localStorage, localGuestOptions())
-}
-
-function mergeTripOverrides(current, patch) {
-  return mergeTripEntityMaps(current, patch)
 }
 
 function pdfSafeText(value) {
@@ -6780,6 +6778,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null)
   const [authReady, setAuthReady] = useState(!firebaseEnabled)
   const [authError, setAuthError] = useState('')
+  const [loadedTripKey, setLoadedTripKey] = useState('')
   const [firestoreState, setFirestoreState] = useState({
     status: firebaseEnabled ? 'ready' : 'disabled',
     error: '',
@@ -6838,6 +6837,8 @@ export default function App() {
   })
   const appDialogResolveRef = useRef(null)
   const saveDetailInFlightRef = useRef(false)
+  const detailBaseRef = useRef(null)
+  const authIdentityRef = useRef(null)
   const pressStateRef = useRef({
     timer: null,
     pointerId: null,
@@ -6869,9 +6870,11 @@ export default function App() {
     ? activeTripId
     : availableTrips[0]?.id || ''
 
+  const currentTripKey = `${currentUser?.uid || ''}/${resolvedTripId}`
+  const tripDataLoaded = isGuestMode || loadedTripKey === currentTripKey
   const tripState = useMemo(
-    () => deriveTripState(overrides, { includeSeed: false }),
-    [overrides],
+    () => deriveTripState(sanitizeTripSnapshot(tripDataLoaded ? overrides : emptyTripOverrides()).data, { includeSeed: false }),
+    [overrides, tripDataLoaded],
   )
   const activeTripSummary = availableTrips.find((trip) => trip.id === resolvedTripId) || null
   const activeRole = activeTripSummary?.role || ''
@@ -7073,7 +7076,7 @@ export default function App() {
     : { loading: false, data: null, error: '' }
   const firestoreReady =
     isGuestMode ||
-    (firebaseEnabled && authReady && isSignedIn && ['ready', 'warning'].includes(firestoreState.status))
+    (firebaseEnabled && authReady && isSignedIn && tripDataLoaded && !firestoreState.invalidCount && !firestoreState.pendingError && ['ready', 'warning'].includes(firestoreState.status))
   const detailItemId = detailItem?.id || ''
   const detailCategory = detailItem?.category || ''
   const detailAppliedLookupKey = detailItem?.flightInfo?.lookupKey || ''
@@ -7113,17 +7116,13 @@ export default function App() {
   }, [])
 
   const performTripPatch = useCallback(async (tripId, currentOverrides, patch, options, tripSummary) => {
-    const nextOverrides = mergeTripOverrides(currentOverrides, patch)
     try {
-      validateTripPatch(currentOverrides, patch)
+      const nextOverrides = validateTripPatch(currentOverrides, patch)
       const nextTripState = patch.days
         ? deriveTripState(nextOverrides, { includeSeed: false })
         : null
       const datePatch = nextTripState
-        ? {
-            startDate: nextTripState.days[0]?.date || '',
-            endDate: nextTripState.days[nextTripState.days.length - 1]?.date || '',
-          }
+        ? tripDateRange(nextOverrides.days)
         : null
 
       if (isGuestMode) {
@@ -7140,30 +7139,12 @@ export default function App() {
         return nextOverrides
       }
 
-      await mergeTripPatch(tripId, patch, {
-        ...options,
-        expectedCurrent: getExpectedTripPatchState(
-          currentOverrides,
-          patch,
-          options?.expectedCurrent,
-        ),
-      })
-      if (datePatch && globalThis.navigator?.onLine !== false) {
-        try {
-          await upsertTripMeta(tripId, {
-            ...datePatch,
-            title: tripSummary?.title || '',
-            city: tripSummary?.city || '',
-          })
-        } catch (error) {
-          console.error(error)
-          if (activeTripRef.current === tripId) {
-            setFirestoreState({ status: 'warning', error: 'The itinerary saved, but trip dates are still synchronizing.' })
-          }
-          return nextOverrides
-        }
-      }
-      if (activeTripRef.current === tripId) setFirestoreState({ status: 'ready', error: '' })
+      const expectedCurrent = getExpectedTripPatchState(currentOverrides, patch, options?.expectedCurrent)
+      assertTripPatchIsCurrent(currentOverrides, patch, expectedCurrent)
+      const cleanPatch = Object.fromEntries(ENTITY_KINDS.map(kind => [kind,
+        Object.fromEntries(Object.keys(patch[kind] || {}).map(id => [id, nextOverrides[kind][id]])),
+      ]))
+      await mergeTripPatch(tripId, cleanPatch, { expectedCurrent, current: currentOverrides })
       return nextOverrides
     } catch (error) {
       console.error(error)
@@ -7197,7 +7178,7 @@ export default function App() {
           options,
           tripSummary,
         )
-        if (isGuestMode && activeTripRef.current === tripId) {
+        if (activeTripRef.current === tripId) {
           overridesRef.current = nextOverrides
           setOverrides(nextOverrides)
         }
@@ -7208,12 +7189,19 @@ export default function App() {
   }, [isGuestMode, performTripPatch, tripSummaries])
 
   const selectTrip = useCallback((tripId) => {
+    if (activeTripRef.current === tripId) {
+      setActiveTripId(tripId)
+      return
+    }
     const nextOverrides = isGuestMode ? readLocalTripOverrides(tripId) : emptyTripOverrides()
     activeTripRef.current = tripId
     saveQueueRef.current.setState(tripId, nextOverrides)
     overridesRef.current = nextOverrides
     setOverrides(nextOverrides)
-    if (!isGuestMode) setFirestoreState({ status: 'connecting', error: '' })
+    if (!isGuestMode) {
+      setLoadedTripKey('')
+      setFirestoreState({ status: 'connecting', error: '' })
+    }
     setNoteItem(null)
     setDetailItem(null)
     setDragState(null)
@@ -7234,8 +7222,8 @@ export default function App() {
 
   useEffect(() => {
     overridesRef.current = overrides
-    if (resolvedTripId) saveQueueRef.current.setState(resolvedTripId, overrides)
-  }, [overrides, resolvedTripId])
+    if (resolvedTripId && tripDataLoaded) saveQueueRef.current.setState(resolvedTripId, overrides)
+  }, [overrides, resolvedTripId, tripDataLoaded])
 
   useEffect(() => {
     activeTripRef.current = resolvedTripId
@@ -7313,6 +7301,10 @@ export default function App() {
           setCurrentUser(user || null)
           setAuthError('')
           setAuthReady(true)
+          const nextUid = user?.uid || ''
+          if (authIdentityRef.current === nextUid) return
+          authIdentityRef.current = nextUid
+          setLoadedTripKey('')
 
           if (user) {
             setTripSummaries([])
@@ -7342,6 +7334,7 @@ export default function App() {
           if (active) {
             setAuthReady(true)
             setAuthError('Sign-in could not be completed. Please try again.')
+            authIdentityRef.current = null
             setCurrentUser(null)
             const localTrips = buildLocalTripSummaries()
             const localTripId = localTrips[0]?.id || ''
@@ -7636,27 +7629,42 @@ export default function App() {
     let unsubscribe = () => {}
 
     async function connectTrip() {
-      unsubscribe = await subscribeToTripState(
-        resolvedTripId,
-        (payload) => {
-          if (!active) return
-          const nextOverrides = {
-            days: payload?.days || {},
-            items: payload?.items || {},
-            bookingOptions: payload?.bookingOptions || {},
-          }
-          saveQueueRef.current.setState(resolvedTripId, nextOverrides)
-          overridesRef.current = nextOverrides
-          setOverrides(nextOverrides)
-          setFirestoreState({ status: 'ready', error: '' })
-        },
-        (error) => {
-          console.error(error)
-          if (active) {
-            setFirestoreState({ status: 'error', error: 'We could not save that change. Please try again.' })
-          }
-        },
-      )
+      try {
+        const stop = await subscribeToTripState(
+          resolvedTripId,
+          (payload, metadata = {}) => {
+            if (!active) return
+            if (!payload && metadata.fromCache) return
+            if (!payload) {
+              setFirestoreState({ status: 'error', error: 'The saved itinerary could not be found. Please contact the trip owner.' })
+              return
+            }
+            const safe = sanitizeTripSnapshot(payload)
+            const nextOverrides = safe.data
+            saveQueueRef.current.setState(resolvedTripId, nextOverrides)
+            overridesRef.current = nextOverrides
+            setOverrides(nextOverrides)
+            setLoadedTripKey(`${currentUser.uid}/${resolvedTripId}`)
+            const invalidCount = (metadata.invalidCount || 0) + safe.invalidCount
+            setFirestoreState({
+              status: metadata.pendingError ? 'error' : invalidCount ? 'warning' : 'ready',
+              error: metadata.pendingError || (invalidCount ? 'Some saved records are invalid and have been hidden. Editing is paused until they are repaired.' : ''),
+              pendingCount: metadata.pendingCount || 0,
+              pendingError: metadata.pendingError || '',
+              invalidCount,
+            })
+          },
+          (error) => {
+            console.error(error)
+            if (active) setFirestoreState({ status: 'error', error: 'This trip could not be loaded. Check your connection or access.' })
+          },
+        )
+        if (active) unsubscribe = stop
+        else stop()
+      } catch (error) {
+        console.error(error)
+        if (active) setFirestoreState({ status: 'error', error: 'This trip could not be loaded. Please reload and try again.' })
+      }
     }
 
     void connectTrip()
@@ -7665,39 +7673,6 @@ export default function App() {
       unsubscribe()
     }
   }, [authReady, currentUser?.uid, isGuestMode, resolvedTripId])
-
-  useEffect(() => {
-    if (
-      isGuestMode ||
-      !['ready', 'warning'].includes(firestoreState.status) ||
-      !resolvedTripId ||
-      !activeTripSummary
-    ) {
-      return undefined
-    }
-
-    const syncDateMetadata = async () => {
-      if (globalThis.navigator?.onLine === false) return
-      const startDate = tripState.days[0]?.date || ''
-      const endDate = tripState.days[tripState.days.length - 1]?.date || ''
-      if (startDate === activeTripSummary.startDate && endDate === activeTripSummary.endDate) return
-      try {
-        await upsertTripMeta(resolvedTripId, {
-          title: activeTripSummary.title || '',
-          city: activeTripSummary.city || '',
-          startDate,
-          endDate,
-        })
-      } catch (error) {
-        console.error(error)
-        setFirestoreState({ status: 'error', error: 'Trip dates could not be synchronized.' })
-      }
-    }
-
-    void syncDateMetadata()
-    window.addEventListener('online', syncDateMetadata)
-    return () => window.removeEventListener('online', syncDateMetadata)
-  }, [activeTripSummary, firestoreState.status, isGuestMode, resolvedTripId, tripState.days])
 
   useEffect(() => {
     let cancelled = false
@@ -8120,7 +8095,6 @@ export default function App() {
       const movedItem = currentDrag.item || tripState.items.find((item) => item.id === currentDrag.itemId)
       const firstConflict = preview.movedItemConflicts[0]
 
-      setOverrides((current) => mergeTripOverrides(current, patch))
       setReorderNotice({
         forwardItems: patch.items,
         inverseItems,
@@ -8262,7 +8236,7 @@ export default function App() {
     }
   }
 
-  async function saveItem(item) {
+  async function saveItem(item, options) {
     if (!canEditCurrentTrip) return
     const normalizedItem = normalizeItemForSave(stripFlightLocationFields(normalizeItemTimeFields(item)))
     const existingItem = [...tripState.items, ...(tripState.parkingLotItems || [])].find(
@@ -8289,7 +8263,7 @@ export default function App() {
       }
       await saveTripPatch(resolvedTripId, {
         items: patchItems,
-      })
+      }, options)
       return
     }
 
@@ -8311,7 +8285,7 @@ export default function App() {
     const patchItems = Object.fromEntries(
       [...sourceItems, ...mergedTargetItems].map((entry) => [entry.id, entry]),
     )
-    await saveTripPatch(resolvedTripId, { items: patchItems })
+    await saveTripPatch(resolvedTripId, { items: patchItems }, options)
   }
 
   async function commitItemReorder(itemId, targetDayId, targetIndex) {
@@ -8331,7 +8305,6 @@ export default function App() {
     }
     const firstConflict = preview.movedItemConflicts[0]
 
-    setOverrides((current) => mergeTripOverrides(current, patch))
     setReorderNotice({
       forwardItems: patch.items,
       inverseItems,
@@ -8376,7 +8349,6 @@ export default function App() {
 
     const inverseItems = Object.fromEntries(manualItems.map((item) => [item.id, item]))
     const patch = { items: Object.fromEntries(sortedItems.map((item) => [item.id, item])) }
-    setOverrides((current) => mergeTripOverrides(current, patch))
     setReorderNotice({ forwardItems: patch.items, inverseItems, message: 'Sorted this day by time.' })
     await saveTripPatch(resolvedTripId, patch)
   }
@@ -8387,7 +8359,6 @@ export default function App() {
     if (!inverseItems || !Object.keys(inverseItems).length) return
     const patch = { items: inverseItems }
     setReorderNotice(null)
-    setOverrides((current) => mergeTripOverrides(current, patch))
     await saveTripPatch(resolvedTripId, patch, {
       expectedCurrent: forwardItems ? { items: forwardItems } : undefined,
     })
@@ -8604,9 +8575,6 @@ export default function App() {
 
     await upsertTripMeta(resolvedTripId, {
       title: nextTitle,
-      startDate: tripState.days[0]?.date || activeTripSummary.startDate || '',
-      endDate: tripState.days[tripState.days.length - 1]?.date || activeTripSummary.endDate || '',
-      city: activeTripSummary.city || '',
     })
   }
 
@@ -8779,6 +8747,7 @@ export default function App() {
 
     await saveItem(duplicate)
     setNoteItem(null)
+    detailBaseRef.current = overridesRef.current.items?.[duplicate.id] || null
     setDetailItem(createItemDraft(duplicate))
   }
 
@@ -8827,6 +8796,7 @@ export default function App() {
 
     await saveTripPatch(resolvedTripId, { items: patchItems })
     setNoteItem(null)
+    detailBaseRef.current = overridesRef.current.items?.[substitute.id] || null
     setDetailItem(createItemDraft(substitute))
   }
 
@@ -8853,7 +8823,6 @@ export default function App() {
       items: Object.fromEntries(nextGroupItems.map((candidate) => [candidate.id, candidate])),
     }
 
-    setOverrides((current) => mergeTripOverrides(current, patch))
     await saveTripPatch(resolvedTripId, patch)
   }
 
@@ -8882,8 +8851,10 @@ export default function App() {
 
   function openDetails(item) {
     if (!canEditCurrentTrip) return
+    const current = [...tripState.items, ...(tripState.parkingLotItems || [])].find(entry => entry.id === item.id) || item
+    detailBaseRef.current = overridesRef.current.items?.[item.id] || null
     setNoteItem(null)
-    setDetailItem(createItemDraft(item))
+    setDetailItem(createItemDraft(current))
   }
 
   function updateDetail(changes) {
@@ -8896,18 +8867,21 @@ export default function App() {
     try {
 
       const nextItem = normalizeTransitForItem(normalizeItemTimeFields(detailItem))
+      const options = { expectedCurrent: { items: { [nextItem.id]: detailBaseRef.current } } }
 
       if (nextItem.generated) {
         await saveTripPatch(resolvedTripId, {
           items: {
             [nextItem.id]: generatedItemPatch(nextItem),
           },
-        })
+        }, options)
       } else {
-        await saveItem(nextItem)
+        await saveItem(nextItem, options)
       }
 
       setDetailItem(null)
+    } catch {
+      // performTripPatch shows the failure; retain the open draft for review.
     } finally {
       saveDetailInFlightRef.current = false
     }
@@ -9274,6 +9248,19 @@ export default function App() {
           {firestoreState.error}
         </div>
       ) : null}
+      {!isGuestMode && tripDataLoaded && firestoreState.pendingCount > 0 ? (
+        <div className="mb-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status">
+          {firestoreState.pendingError
+            ? 'Your unsent changes are kept on this device. Review them before discarding them to load the latest saved itinerary.'
+            : `${firestoreState.pendingCount} change${firestoreState.pendingCount === 1 ? '' : 's'} saved on this device, waiting to synchronize.`}
+          {firestoreState.pendingError ? (
+            <button type="button" className="ml-3 underline" onClick={async () => {
+              const confirmed = await showConfirm('Discard the unsent changes for this trip and show the latest saved itinerary? This cannot be undone.', { title: 'Discard unsent changes', confirmLabel: 'Discard', tone: 'danger' })
+              if (confirmed) discardRejectedTripChanges(currentUser.uid, resolvedTripId)
+            }}>Discard unsent changes</button>
+          ) : null}
+        </div>
+      ) : null}
       <PdfExportSheet
         loading={pdfExporting}
         onClose={() => {
@@ -9307,7 +9294,10 @@ export default function App() {
         }
         onSubmit={(result) => closeAppDialog(result)}
       />
-      {!availableTrips.length ? (
+      {!isGuestMode && (!tripDirectoryLoaded || (availableTrips.length > 0 && !tripDataLoaded)) ? (
+        <div role="status" className="rounded-xl bg-white px-5 py-8 text-sm text-slate-600">Loading your itinerary…</div>
+      ) : null}
+      {!availableTrips.length && tripDirectoryLoaded && !pendingInviteId ? (
         <div className="glass-panel max-w-md rounded-[1.08rem] px-5 py-5">
           <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">Trips</div>
           <h2 className="mt-2 text-[1.35rem] font-extrabold tracking-[-0.03em] text-slate-950">Start a trip</h2>
@@ -9324,7 +9314,7 @@ export default function App() {
           </button>
         </div>
       ) : null}
-      {availableTrips.length ? (
+      {availableTrips.length && tripDataLoaded ? (
         showDeadlines ? (
           <section className={isMobilePortrait ? 'mx-auto max-w-[28rem]' : ''}>
             <CancellationDeadlinesScreen
@@ -9414,7 +9404,7 @@ export default function App() {
         )
       ) : null}
 
-      {availableTrips.length && !showDeadlines && !showParkingLot ? (
+      {availableTrips.length && tripDataLoaded && !showDeadlines && !showParkingLot ? (
         <BottomDayNav
           activeDayId={resolvedActiveDayId}
           canEdit={canEditCurrentTrip}

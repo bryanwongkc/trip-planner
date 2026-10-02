@@ -1,4 +1,6 @@
-import { assertTripPatchIsCurrent, validateTripPatch } from '../utils/tripValidation'
+import { validateTripPatch } from '../utils/tripValidation'
+import { sanitizeTripSnapshot } from '../utils/tripSchema'
+import { createTripOutbox } from '../utils/tripOutbox'
 import {
   normalizeTripInviteOptions,
   tripInviteStatus,
@@ -17,6 +19,45 @@ export const firebaseEnabled =
   import.meta.env.VITE_DISABLE_FIREBASE !== 'true' && Object.values(firebaseConfig).every(Boolean)
 
 let servicesPromise
+let outbox
+
+async function postTripState(uid, body) {
+  const { auth } = await loadFirebaseServices()
+  if (auth?.currentUser?.uid !== uid) throw Object.assign(new Error('Sign in to synchronize your changes.'), { status: 401 })
+  const token = await auth.currentUser.getIdToken()
+  if (auth.currentUser?.uid !== uid) throw Object.assign(new Error('Account changed.'), { status: 401 })
+  const response = await fetch('/api/trip-state', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) throw Object.assign(new Error(payload?.error || 'Your changes could not be synchronized.'), { status: response.status, code: payload?.code })
+  return payload
+}
+
+function getOutbox() {
+  if (!outbox) {
+    outbox = createTripOutbox({
+      storage: window.localStorage,
+      send: (uid, entry) => postTripState(uid, { action: 'patch', tripId: entry.tripId, operationId: entry.operationId, patch: entry.patch, expectedCurrent: entry.expectedCurrent }),
+      isOnline: () => navigator.onLine !== false,
+      withLock: (key, work) => navigator.locks ? navigator.locks.request(key, work) : Promise.resolve().then(work),
+    })
+    const retry = () => { void outbox.flush().catch(() => {}) }
+    window.addEventListener('online', retry)
+    window.addEventListener('storage', () => { outbox.notify(); retry() })
+    window.setInterval(retry, 15_000)
+  }
+  return outbox
+}
+
+export function discardRejectedTripChanges(uid, tripId) {
+  const queue = getOutbox()
+  if (queue.list(uid, tripId).some(entry => entry.status === 'blocked')) queue.discard(uid, tripId)
+}
+
 
 async function loadFirebaseServices() {
   if (!firebaseEnabled) {
@@ -153,7 +194,14 @@ async function getTripMetaAndMembers(tripId) {
 export async function subscribeToAuthState(onValue, onError) {
   const { auth, onAuthStateChanged } = await loadFirebaseServices()
   if (!auth || !onAuthStateChanged) return () => {}
-  return onAuthStateChanged(auth, onValue, onError)
+  return onAuthStateChanged(auth, user => {
+    // Queue/storage failures belong to the trip status, not the sign-in state.
+    try {
+      if (user) void getOutbox().start(user.uid).catch(() => {})
+      else outbox?.stop()
+    } catch { /* subscribeToTripState surfaces storage errors */ }
+    onValue(user)
+  }, onError)
 }
 
 export async function signInWithGoogle() {
@@ -170,6 +218,7 @@ export async function signInWithGoogle() {
 export async function signOutUser() {
   const { auth, signOut } = await loadFirebaseServices()
   if (!auth || !signOut) return
+  outbox?.stop()
   await signOut(auth)
 }
 
@@ -228,19 +277,35 @@ export async function subscribeToUserTripDirectory(uid, onValue, onError) {
 }
 
 export async function subscribeToTripState(tripId, onValue, onError) {
-  const { db, doc, onSnapshot } = await loadFirebaseServices()
-  if (!db || !tripId) return () => {}
-
-  const overridesDoc = doc(db, 'trips', tripId, 'overrides', 'shared')
-  return onSnapshot(
-    overridesDoc,
-    (snapshot) =>
-      onValue(snapshot.exists() ? snapshot.data() : null, {
-        fromCache: snapshot.metadata.fromCache,
-        hasPendingWrites: snapshot.metadata.hasPendingWrites,
-      }),
-    onError,
-  )
+  const { auth, db, doc, onSnapshot } = await loadFirebaseServices()
+  if (!db || !tripId || !auth.currentUser) return () => {}
+  const uid = auth.currentUser.uid
+  const queue = getOutbox()
+  let latest
+  const emit = () => {
+    if (!latest || auth.currentUser?.uid !== uid) return
+    try {
+      const raw = latest.exists() ? latest.data() : null
+      const safe = sanitizeTripSnapshot(raw)
+      const entries = queue.list(uid, tripId)
+      onValue(raw ? queue.overlay(uid, tripId, safe.data) : null, {
+        fromCache: latest.metadata.fromCache,
+        hasPendingWrites: latest.metadata.hasPendingWrites,
+        pendingCount: entries.length,
+        pendingError: entries.find(entry => entry.status === 'blocked')?.error || '',
+        invalidCount: safe.invalidCount,
+      })
+    } catch (error) { onError?.(error) }
+  }
+  const stopQueue = queue.subscribe(emit)
+  const stopSnapshot = onSnapshot(doc(db, 'trips', tripId, 'overrides', 'shared'), { includeMetadataChanges: true }, snapshot => {
+    latest = snapshot
+    try {
+      if (!snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites) queue.acknowledge(uid, tripId, Number(snapshot.data()?.revision) || 0)
+      emit()
+    } catch (error) { onError?.(error) }
+  }, onError)
+  return () => { stopQueue(); stopSnapshot() }
 }
 
 export async function subscribeToTripMembers(tripId, onValue, onError) {
@@ -424,129 +489,23 @@ export function buildStampedPatch(patch, serverTimestamp) {
   return payload
 }
 
-export async function mergeTripPatch(tripId, patch, { expectedCurrent } = {}) {
-  const { db, doc, runTransaction, serverTimestamp, setDoc } = await loadFirebaseServices()
-  if (!db || !tripId) return
-
-  const overridesDoc = doc(db, 'trips', tripId, 'overrides', 'shared')
-  const queuePatch = async () => {
-    await setDoc(overridesDoc, buildStampedPatch(patch, serverTimestamp), { merge: true })
-  }
-
-  if (globalThis.navigator?.onLine === false || !runTransaction) {
-    await queuePatch()
-    return
-  }
-
-  try {
-    await runTransaction(db, async (transaction) => {
-      const snapshot = await transaction.get(overridesDoc)
-      const current = snapshot.exists() ? snapshot.data() : {}
-      assertTripPatchIsCurrent(current, patch, expectedCurrent)
-      validateTripPatch(current, patch)
-      transaction.set(overridesDoc, buildStampedPatch(patch, serverTimestamp), { merge: true })
-    })
-  } catch (error) {
-    if (error?.code !== 'unavailable') throw error
-    await queuePatch()
-  }
+export async function mergeTripPatch(tripId, patch, { expectedCurrent, current } = {}) {
+  const { auth, db } = await loadFirebaseServices()
+  if (!db || !tripId || !auth.currentUser) throw new Error('Sign in to save changes.')
+  validateTripPatch(current || {}, patch)
+  getOutbox().enqueue(auth.currentUser.uid, tripId, patch, expectedCurrent)
+  return { queued: true }
 }
 
 export async function createTripRecordWithOwner(tripId, payload, ownerUser) {
-  const { db, doc, serverTimestamp, writeBatch } = await loadFirebaseServices()
-  if (!db || !tripId || !ownerUser?.uid) return
-
-  const tripDoc = doc(db, 'trips', tripId)
-  const overridesDoc = doc(db, 'trips', tripId, 'overrides', 'shared')
-  const memberDoc = doc(db, 'trips', tripId, 'members', ownerUser.uid)
-  const membershipIndexDoc = doc(db, 'users', ownerUser.uid, 'tripMemberships', tripId)
-
-  const tripMeta = {
-    title: payload.title,
-    startDate: payload.startDate,
-    endDate: payload.endDate,
-    city: payload.city || '',
-    ownerId: ownerUser.uid,
-    createdBy: ownerUser.uid,
-    hidden: false,
-    isDemo: Boolean(payload.isDemo),
-  }
-
-  const batch = writeBatch(db)
-  batch.set(
-    tripDoc,
-    stripUndefined({
-      ...tripMeta,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    }),
-    { merge: true },
-  )
-  batch.set(
-    memberDoc,
-    stripUndefined({
-      ...serializeUserProfile(ownerUser),
-      role: 'owner',
-      invitedBy: ownerUser.uid,
-      joinedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    }),
-    { merge: true },
-  )
-  batch.set(
-    membershipIndexDoc,
-    buildTripIndexPayload(tripId, 'owner', tripMeta, serverTimestamp),
-    { merge: true },
-  )
-  batch.set(
-    overridesDoc,
-    {
-      updatedAt: serverTimestamp(),
-      days: stampEntityMap(payload.days, serverTimestamp),
-      items: stampEntityMap(payload.items, serverTimestamp),
-      bookingOptions: stampEntityMap(payload.bookingOptions, serverTimestamp),
-    },
-    { merge: true },
-  )
-  await batch.commit()
+  if (!tripId || !ownerUser?.uid) throw new Error('Sign in to create a trip.')
+  return postTripState(ownerUser.uid, { action: 'create', tripId, operationId: crypto.randomUUID(), payload })
 }
 
 export async function upsertTripMeta(tripId, payload) {
-  const { db, doc, serverTimestamp, writeBatch } = await loadFirebaseServices()
-  if (!db || !tripId) return
-
-  const { tripData, memberDocs } = await getTripMetaAndMembers(tripId)
-  const tripMeta = {
-    title: payload.title ?? tripData?.title ?? '',
-    startDate: payload.startDate ?? tripData?.startDate ?? '',
-    endDate: payload.endDate ?? tripData?.endDate ?? '',
-    city: payload.city ?? tripData?.city ?? '',
-    ownerId: payload.ownerId ?? tripData?.ownerId,
-    createdBy: payload.createdBy ?? tripData?.createdBy,
-    hidden: payload.hidden ?? tripData?.hidden ?? false,
-  }
-
-  const tripDoc = doc(db, 'trips', tripId)
-  const batch = writeBatch(db)
-  batch.set(
-    tripDoc,
-    stripUndefined({
-      ...payload,
-      updatedAt: serverTimestamp(),
-    }),
-    { merge: true },
-  )
-
-  memberDocs.forEach((member) => {
-    const membershipIndexDoc = doc(db, 'users', member.uid, 'tripMemberships', tripId)
-    batch.set(
-      membershipIndexDoc,
-      buildTripIndexPayload(tripId, member.role, tripMeta, serverTimestamp),
-      { merge: true },
-    )
-  })
-
-  await batch.commit()
+  const { auth } = await loadFirebaseServices()
+  if (!auth?.currentUser) throw new Error('Sign in to update this trip.')
+  return postTripState(auth.currentUser.uid, { action: 'metadata', tripId, operationId: crypto.randomUUID(), payload })
 }
 
 export async function deleteTripRecord(tripId) {
@@ -573,6 +532,7 @@ export async function addTripMember(tripId, actorUser, memberUser, role, tripMet
   const batch = writeBatch(db)
   const memberDoc = doc(db, 'trips', tripId, 'members', memberUser.uid)
   const membershipIndexDoc = doc(db, 'users', memberUser.uid, 'tripMemberships', tripId)
+  batch.delete(doc(db, 'trips', tripId, 'removedMembers', memberUser.uid))
 
   batch.set(
     memberDoc,
@@ -627,10 +587,11 @@ export async function updateTripMemberRole(tripId, memberUid, role, tripMeta = {
 }
 
 export async function removeTripMember(tripId, memberUid) {
-  const { db, doc, writeBatch } = await loadFirebaseServices()
-  if (!db || !tripId || !memberUid) return
+  const { auth, db, doc, serverTimestamp, writeBatch } = await loadFirebaseServices()
+  if (!db || !tripId || !memberUid || !auth.currentUser) return
 
   const batch = writeBatch(db)
+  batch.set(doc(db, 'trips', tripId, 'removedMembers', memberUid), { uid: memberUid, removedBy: auth.currentUser.uid, removedAt: serverTimestamp() })
   batch.delete(doc(db, 'trips', tripId, 'members', memberUid))
   batch.delete(doc(db, 'users', memberUid, 'tripMemberships', tripId))
   await batch.commit()

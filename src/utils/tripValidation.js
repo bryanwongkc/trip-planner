@@ -1,3 +1,5 @@
+import { cleanEntity, ENTITY_KINDS, isRecord } from './tripSchema.js'
+
 export function mergeTripEntityMaps(current = {}, patch = {}) {
   return Object.fromEntries(
     ['days', 'items', 'bookingOptions'].map((key) => {
@@ -19,15 +21,21 @@ export function mergeTripEntityMaps(current = {}, patch = {}) {
 export const TRIP_VERSION_CONFLICT_CODE = 'trip-version-conflict'
 
 export function getExpectedTripPatchState(current = {}, patch = {}, explicitExpected) {
-  if (explicitExpected) return explicitExpected
-
   return Object.fromEntries(
     ['days', 'items', 'bookingOptions'].map((key) => [
       key,
       Object.fromEntries(
-        Object.keys(patch?.[key] || {}).flatMap((id) => {
+        Object.keys(patch?.[key] || {}).map((id) => {
           const entity = current?.[key]?.[id]
-          return entity ? [[id, entity]] : []
+          if (Object.hasOwn(explicitExpected?.[key] || {}, id)) {
+            const expected = explicitExpected[key][id]
+            return [id, expected == null ? null : cleanEntity(key, id, expected)]
+          }
+          const incoming = patch[key][id]
+          if (incoming?.updatedAt && entity?.updatedAt && !timestampsMatch(incoming.updatedAt, entity.updatedAt)) {
+            throw versionConflict()
+          }
+          return [id, entity || null]
         }),
       ),
     ]),
@@ -36,11 +44,10 @@ export function getExpectedTripPatchState(current = {}, patch = {}, explicitExpe
 
 function timestampsMatch(left, right) {
   if (!left || !right) return true
-  if (typeof left.isEqual === 'function') return left.isEqual(right)
-  if (typeof left.toMillis === 'function' && typeof right.toMillis === 'function') {
-    return left.toMillis() === right.toMillis()
-  }
-  return String(left) === String(right)
+  const parts = value => [value.seconds ?? value._seconds, value.nanoseconds ?? value._nanoseconds]
+  const a = parts(left), b = parts(right)
+  if (a[0] !== undefined && b[0] !== undefined) return a[0] === b[0] && a[1] === b[1]
+  return JSON.stringify(left) === JSON.stringify(right)
 }
 
 function normalizeComparableValue(value) {
@@ -58,7 +65,7 @@ function normalizeComparableValue(value) {
 }
 
 function entitiesMatchIgnoringUpdatedAt(left, right) {
-  if (!left || !right) return false
+  if (!left || !right) return !left && !right
   const withoutTimestamp = (entity) => {
     const { updatedAt: _updatedAt, ...rest } = entity
     return normalizeComparableValue(rest)
@@ -66,26 +73,39 @@ function entitiesMatchIgnoringUpdatedAt(left, right) {
   return JSON.stringify(withoutTimestamp(left)) === JSON.stringify(withoutTimestamp(right))
 }
 
+function versionConflict() {
+  const error = new Error('This trip changed on another device. Review the latest version and try again.')
+  error.code = TRIP_VERSION_CONFLICT_CODE
+  return error
+}
+
 export function assertTripPatchIsCurrent(current, patch, expectedCurrent = {}) {
   for (const key of ['days', 'items', 'bookingOptions']) {
     for (const [id, incoming] of Object.entries(patch[key] || {})) {
       const existing = current?.[key]?.[id]
+      if (Object.hasOwn(expectedCurrent?.[key] || {}, id)) {
+        if (!entitiesMatchIgnoringUpdatedAt(existing, expectedCurrent[key][id])) throw versionConflict()
+        continue
+      }
       if (!incoming?.updatedAt || !existing?.updatedAt || timestampsMatch(incoming.updatedAt, existing.updatedAt)) {
         continue
       }
 
-      const expectedEntity = expectedCurrent?.[key]?.[id]
-      if (expectedEntity && entitiesMatchIgnoringUpdatedAt(existing, expectedEntity)) continue
-
-      const error = new Error('This trip changed on another device. Review the latest version and try again.')
-      error.code = TRIP_VERSION_CONFLICT_CODE
-      throw error
+      throw versionConflict()
     }
   }
 }
 
 export function validateTripPatch(current, patch) {
+  if (!isRecord(patch) || Object.keys(patch).some(key => !ENTITY_KINDS.includes(key))) throw new Error('Invalid trip changes.')
+  for (const kind of ENTITY_KINDS) {
+    if (patch[kind] !== undefined && !isRecord(patch[kind])) throw new Error('Invalid trip changes.')
+    if (Object.values(patch[kind] || {}).some(entity => !isRecord(entity))) throw new Error('Invalid trip record.')
+  }
   const merged = mergeTripEntityMaps(current, patch)
+  for (const kind of ENTITY_KINDS) {
+    merged[kind] = Object.fromEntries(Object.entries(merged[kind]).map(([id, entity]) => [id, cleanEntity(kind, id, entity)]))
+  }
   const visibleDates = Object.values(merged.days)
     .filter((day) => !day.hidden)
     .map((day) => String(day.date || ''))
