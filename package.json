@@ -45,10 +45,8 @@
   },
   "overrides": {
     "@grpc/grpc-js": "^1.14.5",
-    "firebase-tools": {
-      "@opentelemetry/core": "^2.8.0",
-      "basic-ftp": "^6.2.1"
-    },
+    "@opentelemetry/core": "^2.8.0",
+    "basic-ftp": "^6.2.1",
     "tar": "^7.5.20",
     "uuid": "^11.1.1"
   }
