@@ -51,6 +51,30 @@ describe('trip schema and concurrency', () => {
 })
 
 describe('legacy trip compatibility', () => {
+  it.each(['Shopping', 'Wedding'])('preserves historical %s records in visible and hidden items', category => {
+    for (const hidden of [false, true]) {
+      const raw = {
+        days: { day: { id: 'day', date: '2026-10-02' } },
+        items: { stop: { id: 'stop', dayId: 'day', title: 'Historical stop', category, hidden } },
+        bookingOptions: {},
+      }
+      const safe = sanitizeTripSnapshot(raw)
+      expect(safe.invalidCount).toBe(0)
+      expect(safe.data).toEqual(raw)
+      const view = deriveTripState(safe.data, { includeSeed: false })
+      expect(view.items).toHaveLength(hidden ? 0 : 1)
+      expect(validateTripPatch(safe.data, { items: { stop: { title: 'Edited' } } }).items.stop).toMatchObject({ category, hidden })
+    }
+  })
+
+  it('does not bypass category validation for hidden records', () => {
+    for (const category of ['Unrecognized', 'constructor', '__proto__']) {
+      const raw = { items: { stop: { category, hidden: true } } }
+      expect(sanitizeTripSnapshot(raw).invalidCount).toBe(1)
+      expect(() => validateTripPatch({}, raw)).toThrow('Invalid itinerary category')
+    }
+  })
+
   it('reads older records without hiding them or mutating their stored representation', () => {
     const raw = {
       days: { day: { id: 'day', date: '2026-10-02', name: null, order: '0', hidden: null, legacyColor: 'blue' } },

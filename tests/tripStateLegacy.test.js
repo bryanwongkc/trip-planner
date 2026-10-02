@@ -59,6 +59,22 @@ it('does not allow the client to add or change unsupported legacy fields', async
   expect(transaction.create).not.toHaveBeenCalled()
 })
 
+it('allows editing an active stop without rewriting hidden historical categories', async () => {
+  const state = legacyState()
+  state.items.archivedShop = { id: 'archivedShop', category: 'Shopping', hidden: true }
+  state.items.archivedEvent = { id: 'archivedEvent', category: 'Wedding', hidden: true }
+  const original = structuredClone(state)
+  const { db, transaction } = database(state)
+  const patch = { items: { stop: { title: 'Edited active stop' } } }
+  await expect(writeTripState(db, { uid: 'editor' }, requestFor(state, patch))).resolves.toEqual({ revision: 5 })
+  expect(transaction.update).toHaveBeenCalledTimes(1)
+  const updates = transaction.update.mock.calls[0]
+  expect(updates).toHaveLength(7)
+  expect(updates[5].isEqual(new FieldPath('items', 'stop'))).toBe(true)
+  expect(updates[6].title).toBe('Edited active stop')
+  expect(state).toEqual(original)
+})
+
 it('still rejects stale drafts after normalizing stored legacy fields', async () => {
   const state = legacyState()
   const patch = { items: { stop: { title: 'Old draft' } } }

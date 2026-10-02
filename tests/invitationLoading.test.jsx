@@ -111,3 +111,24 @@ it('shows compatible legacy records and enables editing without a repair warning
   expect(container.querySelector('button[aria-label="Close add stop form"]')).not.toBeNull()
   expect(mock.meta).not.toHaveBeenCalled()
 })
+
+it('keeps editing available when retired categories exist in hidden records', async () => {
+  await signedIn()
+  await flush(() => mock.directory([{ ...trip, role: 'editor' }]))
+  const legacy = {
+    ...payload,
+    items: {
+      ...payload.items,
+      archivedShop: { id: 'archivedShop', dayId: 'd1', title: 'HIDDEN_SHOP', category: 'Shopping', hidden: true },
+      archivedEvent: { id: 'archivedEvent', dayId: 'd1', title: 'HIDDEN_EVENT', category: 'Wedding', hidden: true },
+    },
+  }
+  await flush(() => mock.states.get(trip.id).cb(legacy, { fromCache: false }))
+  expect(container.textContent).toContain('INVITATION_TEST_STOP')
+  expect(container.textContent).not.toContain('Editing is paused')
+  expect(container.textContent).not.toContain('HIDDEN_SHOP')
+  expect(container.textContent).not.toContain('HIDDEN_EVENT')
+  await flush(() => container.querySelector('button[aria-label="Add stop"]').click())
+  expect(container.querySelector('button[aria-label="Close add stop form"]')).not.toBeNull()
+  expect(mock.meta).not.toHaveBeenCalled()
+})
