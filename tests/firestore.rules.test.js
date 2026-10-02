@@ -20,6 +20,7 @@ import {
   writeBatch,
 } from 'firebase/firestore'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { buildStampedPatch } from '../src/services/firebase'
 
 const projectId = 'trip-planner-rules-test'
 let testEnv
@@ -178,6 +179,80 @@ beforeAll(async () => {
 
 beforeEach(async () => testEnv.clearFirestore())
 afterAll(async () => testEnv.cleanup())
+
+describe('Firestore itinerary patch preservation', () => {
+  it.each(['setDoc', 'transaction'])(
+    'keeps other days, events and bookings when deleting an empty day via %s',
+    async (writeMode) => {
+      await seedTrip()
+      const db = testEnv.authenticatedContext('owner', ownerToken).firestore()
+      const reference = doc(db, 'trips/trip-one/overrides/shared')
+      const original = {
+        days: {
+          first: { id: 'first', date: '2030-01-01', order: 0 },
+          last: { id: 'last', date: '2030-01-02', order: 1 },
+        },
+        items: {
+          event: { id: 'event', dayId: 'first', title: 'Keep this event', bookingRef: 'TEST' },
+        },
+        bookingOptions: {
+          booking: { id: 'booking', dayId: 'first', linkedItemId: 'event', notes: 'Keep this booking' },
+        },
+      }
+      await setDoc(reference, original)
+      const patch = buildStampedPatch({
+        days: { first: { order: 0 }, last: { hidden: true } },
+        items: {},
+        bookingOptions: {},
+      }, serverTimestamp)
+      if (writeMode === 'transaction') {
+        await runTransaction(db, async (transaction) => {
+          await transaction.get(reference)
+          transaction.set(reference, patch, { merge: true })
+        })
+      } else {
+        await setDoc(reference, patch, { merge: true })
+      }
+      const saved = (await getDoc(reference)).data()
+      expect(saved.items).toEqual(original.items)
+      expect(saved.bookingOptions).toEqual(original.bookingOptions)
+      expect(saved.days.first).toMatchObject(original.days.first)
+      expect(saved.days.first.hidden).toBeUndefined()
+      expect(saved.days.last).toMatchObject({ ...original.days.last, hidden: true })
+    },
+  )
+
+  it('hides only targeted records when the deleted day has events and bookings', async () => {
+    await seedTrip()
+    const db = testEnv.authenticatedContext('owner', ownerToken).firestore()
+    const reference = doc(db, 'trips/trip-one/overrides/shared')
+    const original = {
+      days: {
+        first: { id: 'first', date: '2030-01-01', order: 0 },
+        last: { id: 'last', date: '2030-01-02', order: 1 },
+      },
+      items: {
+        keep: { id: 'keep', dayId: 'first', title: 'Keep this event' },
+        remove: { id: 'remove', dayId: 'last', title: 'Remove this event' },
+      },
+      bookingOptions: {
+        keep: { id: 'keep', dayId: 'first' },
+        remove: { id: 'remove', dayId: 'last' },
+      },
+    }
+    await setDoc(reference, original)
+    await setDoc(reference, buildStampedPatch({
+      days: { first: { order: 0 }, last: { hidden: true } },
+      items: { remove: { hidden: true } },
+      bookingOptions: { remove: { hidden: true } },
+    }, serverTimestamp), { merge: true })
+    const saved = (await getDoc(reference)).data()
+    expect(saved.items.keep).toEqual(original.items.keep)
+    expect(saved.bookingOptions.keep).toEqual(original.bookingOptions.keep)
+    expect(saved.items.remove).toMatchObject({ ...original.items.remove, hidden: true })
+    expect(saved.bookingOptions.remove).toMatchObject({ ...original.bookingOptions.remove, hidden: true })
+  })
+})
 
 describe('Firestore authorization', () => {
   it('keeps profiles private and binds identity fields to auth claims', async () => {

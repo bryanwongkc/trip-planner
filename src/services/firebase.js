@@ -412,10 +412,14 @@ export async function revokeTripInvite(inviteId, actorUid) {
   )
 }
 
-function buildStampedPatch(patch, serverTimestamp) {
+export function buildStampedPatch(patch, serverTimestamp) {
   const payload = { updatedAt: serverTimestamp() }
   for (const key of ['days', 'items', 'bookingOptions']) {
-    if (patch[key]) payload[key] = stampEntityMap(patch[key], serverTimestamp)
+    // Empty maps are no-ops in mergeTripEntityMaps, but Firestore merge writes
+    // replace a stored map with {}. Omit them to preserve unrelated records.
+    if (Object.keys(patch[key] || {}).length > 0) {
+      payload[key] = stampEntityMap(patch[key], serverTimestamp)
+    }
   }
   return payload
 }
